@@ -33,24 +33,30 @@ export default function Dashboard() {
               { icon: BookOpen, title: 'My Notes', desc: 'View your documents' },
               { icon: BarChart3, title: 'Progress', desc: 'Check your stats' },
               { icon: Settings, title: 'Settings', desc: 'Update your profile' },
-            ].map((item, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: i * 0.1 }}
-                whileHover={{ y: -4 }}
-                className="bg-surface-elevated border border-white/5 rounded-2xl p-6 cursor-pointer transition-all hover:border-brand-blue/30"
-              >
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-lg bg-brand-blue/10 border border-brand-blue/20 flex items-center justify-center text-brand-blue">
-                    <item.icon size={20} />
-                  </div>
-                </div>
-                <p className="font-sora font-semibold text-white text-sm">{item.title}</p>
-                <p className="text-xs text-[#8B97B5] mt-1">{item.desc}</p>
-              </motion.div>
-            ))}
+            ].map{[
+  { icon: Mic, title: 'Record Lecture', desc: 'Start a new recording' },
+  { icon: BookOpen, title: 'My Notes', desc: 'View your documents' },
+  { icon: BarChart3, title: 'Progress', desc: 'Check your stats' },
+  { icon: Settings, title: 'Settings', desc: 'Update your profile' },
+].map((item, i) => (
+  <a key={i} href={i === 0 ? '/recording' : '#'}>
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay: i * 0.1 }}
+      whileHover={{ y: -4 }}
+      className="bg-surface-elevated border border-white/5 rounded-2xl p-6 cursor-pointer transition-all hover:border-brand-blue/30"
+    >
+      <div className="flex items-center gap-3 mb-3">
+        <div className="w-10 h-10 rounded-lg bg-brand-blue/10 border border-brand-blue/20 flex items-center justify-center text-brand-blue">
+          <item.icon size={20} />
+        </div>
+      </div>
+      <p className="font-sora font-semibold text-white text-sm">{item.title}</p>
+      <p className="text-xs text-[#8B97B5] mt-1">{item.desc}</p>
+    </motion.div>
+  </a>
+))}
           </div>
 
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.2 }} className="bg-gradient-to-r from-brand-blue/10 to-brand-blue/5 border border-brand-blue/20 rounded-2xl p-8">
