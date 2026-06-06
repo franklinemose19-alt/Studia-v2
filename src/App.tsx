@@ -3,7 +3,7 @@ import Landing from './page/Landing'
 import Login from './page/Login'
 import Signup from './page/Signup'
 import Dashboard from './page/Dashboard'
-
+import Recording from './page/Recording'
 export default function App() {
   return (
     <BrowserRouter>
