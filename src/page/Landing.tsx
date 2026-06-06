@@ -228,7 +228,4 @@ export default function Landing() {
       <Footer />
     </div>
   )
-}
-```
-
-**Commit** → Vercel will redeploy. Say "done" when committed.
+  }
