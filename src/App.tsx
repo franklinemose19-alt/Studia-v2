@@ -1,8 +1,8 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import Landing from './pages/Landing'
-import Login from './pages/Login'
-import Signup from './pages/Signup'
-import Dashboard from './pages/Dashboard'
+import Landing from './page/Landing'
+import Login from './page/Login'
+import Signup from './page/Signup'
+import Dashboard from './page/Dashboard'
 
 export default function App() {
   return (
