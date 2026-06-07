@@ -1,3 +1,4 @@
+import Summarize from './page/Summarize'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import Landing from './page/Landing'
 import Login from './page/Login'
@@ -13,6 +14,7 @@ export default function App() {
         <Route path="/signup" element={<Signup />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/recording" element={<Recording />} />
+        <Route path="/summarize" element={<Summarize />} />
       </Routes>
     </BrowserRouter>
   )
