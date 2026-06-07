@@ -30,7 +30,7 @@ export default function Dashboard() {
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
               { icon: Mic, title: 'Record Lecture', desc: 'Start a new recording', link: '/recording' },
-              { icon: BookOpen, title: 'My Notes', desc: 'View your documents', link: '#' },
+              { icon: BookOpen, title: 'My Notes', desc: 'View your documents', link: '/summarize' },
               { icon: BarChart3, title: 'Progress', desc: 'Check your stats', link: '#' },
               { icon: Settings, title: 'Settings', desc: 'Update your profile', link: '#' },
             ].map((item, i) => (
