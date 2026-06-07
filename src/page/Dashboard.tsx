@@ -31,7 +31,7 @@ export default function Dashboard() {
             {[
               { icon: Mic, title: 'Record Lecture', desc: 'Start a new recording', link: '/recording' },
               { icon: BookOpen, title: 'My Notes', desc: 'View your documents', link: '/summarize' },
-              { icon: BarChart3, title: 'Progress', desc: 'Check your stats', link: '#' },
+              { icon: BarChart3, title: 'Quiz Practice', desc: 'Test your knowledge', path: '/quiz' },
               { icon: Settings, title: 'Settings', desc: 'Update your profile', link: '#' },
             ].map((item, i) => (
               <a key={i} href={item.link}>
