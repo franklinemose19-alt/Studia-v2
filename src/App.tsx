@@ -1,3 +1,4 @@
+import Quiz from './page/Quiz'
 import Summarize from './page/Summarize'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import Landing from './page/Landing'
@@ -9,6 +10,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/quiz" element={<Quiz />} />
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
