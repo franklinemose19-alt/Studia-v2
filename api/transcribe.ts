@@ -1,8 +1,4 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node'
-import FormData from 'form-data'
-import fetch from 'node-fetch'
-
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
@@ -15,16 +11,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const buffer = Buffer.from(audio, 'base64')
-    const form = new FormData()
-    form.append('file', buffer, 'audio.webm')
-    form.append('model', 'whisper-1')
+
+    const formData = new FormData()
+    const blob = new Blob([buffer], { type: 'audio/webm' })
+    formData.append('file', blob, 'audio.webm')
+    formData.append('model', 'whisper-1')
 
     const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       },
-      body: form,
+      body: formData,
     })
 
     const data = (await response.json()) as any
@@ -34,8 +32,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     return res.status(200).json({ text: data.text })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Transcription error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
+    return res.status(500).json({ error: error.message || 'Internal server error' })
   }
 }
