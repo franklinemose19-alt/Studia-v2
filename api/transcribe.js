@@ -1,4 +1,4 @@
-export default async function handler(req: any, res: any) {
+export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
@@ -11,7 +11,6 @@ export default async function handler(req: any, res: any) {
     }
 
     const buffer = Buffer.from(audio, 'base64')
-
     const formData = new FormData()
     const blob = new Blob([buffer], { type: 'audio/webm' })
     formData.append('file', blob, 'audio.webm')
@@ -25,14 +24,14 @@ export default async function handler(req: any, res: any) {
       body: formData,
     })
 
-    const data = (await response.json()) as any
+    const data = await response.json()
 
     if (!response.ok) {
       return res.status(response.status).json({ error: data.error?.message || 'Transcription failed' })
     }
 
     return res.status(200).json({ text: data.text })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Transcription error:', error)
     return res.status(500).json({ error: error.message || 'Internal server error' })
   }
