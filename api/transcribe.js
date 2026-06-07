@@ -11,28 +11,35 @@ export default async function handler(req, res) {
     }
 
     const buffer = Buffer.from(audio, 'base64')
+    const apiKey = process.env.OPENAI_API_KEY
+
+    if (!apiKey) {
+      return res.status(500).json({ error: 'API key not configured' })
+    }
+
     const formData = new FormData()
-    const blob = new Blob([buffer], { type: 'audio/webm' })
-    formData.append('file', blob, 'audio.webm')
+    formData.append('file', new Blob([buffer], { type: 'audio/webm' }), 'audio.webm')
     formData.append('model', 'whisper-1')
 
     const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
       },
       body: formData,
     })
 
-    const data = await response.json()
+    const responseText = await response.text()
 
     if (!response.ok) {
-      return res.status(response.status).json({ error: data.error?.message || 'Transcription failed' })
+      console.error('OpenAI Error:', responseText)
+      return res.status(response.status).json({ error: `OpenAI error: ${responseText}` })
     }
 
-    return res.status(200).json({ text: data.text })
+    const data = JSON.parse(responseText)
+    return res.status(200).json({ text: data.text || data.message || 'No transcription returned' })
   } catch (error) {
     console.error('Transcription error:', error)
-    return res.status(500).json({ error: error.message || 'Internal server error' })
+    return res.status(500).json({ error: `Server error: ${error.message}` })
   }
 }
