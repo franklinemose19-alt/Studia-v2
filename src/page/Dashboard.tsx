@@ -1,3 +1,4 @@
+import { LogOut, Mic, BookOpen, BarChart3, Calendar, Settings, Zap, Award, Clock, ChevronRight, Search, Bell, User, TrendingUp } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { LogOut, Mic, BookOpen, BarChart3, Calendar, Settings, Zap, Award, Clock, ChevronRight, Search, Bell, User } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -30,6 +31,7 @@ export default function Dashboard() {
     { icon: BookOpen, title: 'My Notes', desc: 'Save & organize notes', path: '/notes', color: 'from-purple-premium' },
     { icon: BarChart3, title: 'Quiz Practice', desc: 'Test your knowledge', path: '/quiz', color: 'from-mint' },
     { icon: Calendar, title: 'Exam Countdown', desc: 'Track your exams', path: '/exam-countdown', color: 'from-warning' },
+    { icon: TrendingUp, title: 'Adaptive Learning', desc: 'See your weak topics', path: '/adaptive-learning', color: 'from-mint' },
     { icon: Calendar, title: 'Study Planner', desc: 'Plan your weekly schedule', path: '/study-planner', color: 'from-light-blue' },
   ]
 
@@ -110,7 +112,7 @@ export default function Dashboard() {
           {/* QUICK ACTIONS */}
           <div>
             <h2 className="font-sora font-bold text-2xl text-navy mb-6">Quick Actions</h2>
-            <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="grid md:grid-cols-2 lg:grid-cols-6 gap-4">
               {cards.map((card, i) => (
                 <motion.button
                   key={i}
