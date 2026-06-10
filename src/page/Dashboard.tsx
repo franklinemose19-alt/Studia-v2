@@ -13,7 +13,6 @@ export default function Dashboard() {
   })
 
   useEffect(() => {
-    // Get stats from localStorage (placeholder data)
     const lectureCount = parseInt(localStorage.getItem('lectureCount') || '0')
     const quizCount = parseInt(localStorage.getItem('quizCount') || '0')
     const avgScore = parseInt(localStorage.getItem('avgScore') || '0')
@@ -34,10 +33,10 @@ export default function Dashboard() {
   ]
 
   const statCards = [
-    { icon: Mic, label: 'Lectures Recorded', value: stats.lectures, color: 'brand-blue' },
-    { icon: Award, label: 'Quizzes Completed', value: stats.quizzes, color: 'brand-amber' },
-    { icon: Zap, label: 'Average Score', value: `${stats.avgScore}%`, color: 'brand-green' },
-    { icon: Clock, label: 'Study Streak', value: `${stats.streak} days`, color: 'brand-blue' },
+    { icon: Mic, label: 'Lectures Recorded', value: stats.lectures, bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/20' },
+    { icon: Award, label: 'Quizzes Completed', value: stats.quizzes, bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/20' },
+    { icon: Zap, label: 'Average Score', value: `${stats.avgScore}%`, bg: 'bg-green-500/10', text: 'text-green-400', border: 'border-green-500/20' },
+    { icon: Clock, label: 'Study Streak', value: `${stats.streak} days`, bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/20' },
   ]
 
   return (
@@ -69,9 +68,9 @@ export default function Dashboard() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.1 }}
-                className="bg-surface-elevated border border-white/5 rounded-2xl p-6"
+                className={`${stat.bg} border ${stat.border} rounded-2xl p-6`}
               >
-                <div className={`w-10 h-10 rounded-lg bg-${stat.color}/10 border border-${stat.color}/20 flex items-center justify-center text-${stat.color} mb-3`}>
+                <div className={`w-10 h-10 rounded-lg bg-opacity-20 flex items-center justify-center ${stat.text} mb-3`}>
                   <stat.icon size={20} />
                 </div>
                 <p className="text-3xl font-bold text-white mb-1">{stat.value}</p>
