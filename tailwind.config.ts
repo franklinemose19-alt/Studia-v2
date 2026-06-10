@@ -1,49 +1,22 @@
-import type { Config } from 'tailwindcss'
-
 export default {
-  content: [
-    './index.html',
-    './src/**/*.{ts,tsx}',
-  ],
+  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
-      fontFamily: {
-        sora: ['Sora', 'sans-serif'],
-        sans: ['DM Sans', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace'],
-      },
       colors: {
-        brand: {
-          blue: '#4F8EF7',
-          amber: '#F59E0B',
-          green: '#10B981',
-        },
-        surface: {
-          base: '#080C18',
-          card: '#0E1425',
-          elevated: '#141C30',
-        },
+        'navy': '#0B1B3A',
+        'purple-premium': '#6D5EF7',
+        'indigo-premium': '#4F46E5',
+        'mint': '#2EE59D',
+        'light-blue': '#60A5FA',
+        'warning': '#F59E0B',
+        'surface-dark': '#0A0F1E',
+        'surface-light': '#F5F7FB',
       },
-      animation: {
-        'marquee': 'marquee 30s linear infinite',
-        'float': 'float 4s ease-in-out infinite',
-        'glow-pulse': 'glow-pulse 2s ease-in-out infinite',
-      },
-      keyframes: {
-        marquee: {
-          '0%': { transform: 'translateX(0%)' },
-          '100%': { transform: 'translateX(-50%)' },
-        },
-        float: {
-          '0%, 100%': { transform: 'translateY(0px) rotate(2deg)' },
-          '50%': { transform: 'translateY(-12px) rotate(2deg)' },
-        },
-        'glow-pulse': {
-          '0%, 100%': { boxShadow: '0 0 20px rgba(79,142,247,0.3)' },
-          '50%': { boxShadow: '0 0 40px rgba(79,142,247,0.6)' },
-        },
+      fontFamily: {
+        'sora': ['Sora', 'sans-serif'],
+        'dm': ['DM Sans', 'sans-serif'],
       },
     },
   },
   plugins: [],
-} satisfies Config
+}
