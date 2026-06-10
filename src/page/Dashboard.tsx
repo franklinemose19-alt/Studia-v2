@@ -2,6 +2,7 @@ import { motion } from 'framer-motion'
 import { LogOut, Mic, BookOpen, BarChart3, Settings, Zap, Award, Clock } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
+import { LogOut, Mic, BookOpen, BarChart3, Calendar, Zap, Award, Clock } from 'lucide-react'
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -29,7 +30,7 @@ export default function Dashboard() {
     { icon: Mic, title: 'Record Lecture', desc: 'Start a new recording', path: '/recording' },
     { icon: BookOpen, title: 'My Notes', desc: 'Summarize lecture notes', path: '/summarize' },
     { icon: BarChart3, title: 'Quiz Practice', desc: 'Test your knowledge', path: '/quiz' },
-    { icon: Settings, title: 'Settings', desc: 'Update your profile', path: '#' },
+    { icon: Calendar, title: 'Exam Countdown', desc: 'Track your exams', path: '/exam-countdown' },
   ]
 
   const statCards = [
