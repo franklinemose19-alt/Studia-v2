@@ -31,6 +31,7 @@ export default function Dashboard() {
     { icon: BookOpen, title: 'My Notes', desc: 'Save & organize notes', path: '/notes' },
     { icon: BarChart3, title: 'Quiz Practice', desc: 'Test your knowledge', path: '/quiz' },
     { icon: Calendar, title: 'Exam Countdown', desc: 'Track your exams', path: '/exam-countdown' },
+    { icon: Calendar, title: 'Study Planner', desc: 'Plan your weekly schedule', path: '/study-planner' },
   ]
 
   const statCards = [
@@ -82,7 +83,7 @@ export default function Dashboard() {
 
           <div>
             <h2 className="font-sora font-bold text-2xl text-white mb-4">Quick Actions</h2>
-            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-4">
               {cards.map((card, i) => (
                 <motion.div
                   key={i}
