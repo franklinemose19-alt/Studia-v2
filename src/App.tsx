@@ -1,3 +1,4 @@
+import ExamTimetable from './page/ExamTimetable'
 import StudyPlanner from './page/StudyPlanner'
 import NotesLibrary from './page/NotesLibrary'
 import ExamCountdown from './page/ExamCountdown'
@@ -13,7 +14,8 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-       <Route path="/study-planner" element={<StudyPlanner />} />
+       <Route path="/exam-timetable" element={<ExamTimetable />} />
+        <Route path="/study-planner" element={<StudyPlanner />} />
       <Route path="/notes" element={<NotesLibrary />} />
        <Route path="/exam-countdown" element={<ExamCountdown />} />
         <Route path="/quiz" element={<Quiz />} />
