@@ -70,7 +70,7 @@ export default function Dashboard() {
                 transition={{ delay: i * 0.1 }}
                 className={`${stat.bg} border ${stat.border} rounded-2xl p-6`}
               >
-                <div className={`w-10 h-10 rounded-lg bg-opacity-20 flex items-center justify-center ${stat.text} mb-3`}>
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${stat.text} mb-3`}>
                   <stat.icon size={20} />
                 </div>
                 <p className="text-3xl font-bold text-white mb-1">{stat.value}</p>
@@ -83,21 +83,21 @@ export default function Dashboard() {
             <h2 className="font-sora font-bold text-2xl text-white mb-4">Quick Actions</h2>
             <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
               {cards.map((card, i) => (
-                <a key={i} href={card.path}>
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.1 }}
-                    whileHover={{ y: -4 }}
-                    className="bg-surface-elevated border border-white/5 rounded-2xl p-6 cursor-pointer hover:border-brand-blue/30 transition-all h-full"
-                  >
-                    <div className="w-10 h-10 rounded-lg bg-brand-blue/10 border border-brand-blue/20 flex items-center justify-center text-brand-blue mb-3">
-                      <card.icon size={20} />
-                    </div>
-                    <p className="font-sora font-semibold text-white text-sm">{card.title}</p>
-                    <p className="text-xs text-[#8B97B5] mt-1">{card.desc}</p>
-                  </motion.div>
-                </a>
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.1 }}
+                  whileHover={{ y: -4 }}
+                  onClick={() => card.path !== '#' && navigate(card.path)}
+                  className="bg-surface-elevated border border-white/5 rounded-2xl p-6 cursor-pointer hover:border-brand-blue/30 transition-all h-full"
+                >
+                  <div className="w-10 h-10 rounded-lg bg-brand-blue/10 border border-brand-blue/20 flex items-center justify-center text-brand-blue mb-3">
+                    <card.icon size={20} />
+                  </div>
+                  <p className="font-sora font-semibold text-white text-sm">{card.title}</p>
+                  <p className="text-xs text-[#8B97B5] mt-1">{card.desc}</p>
+                </motion.div>
               ))}
             </div>
           </div>
