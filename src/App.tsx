@@ -1,3 +1,4 @@
+import ExamCountdown from './page/ExamCountdown'
 import Quiz from './page/Quiz'
 import Summarize from './page/Summarize'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
@@ -10,6 +11,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+       <Route path="/exam-countdown" element={<ExamCountdown />} />
         <Route path="/quiz" element={<Quiz />} />
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
