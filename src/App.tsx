@@ -1,3 +1,4 @@
+import AdaptiveLearning from './page/AdaptiveLearning'
 import ExamTimetable from './page/ExamTimetable'
 import StudyPlanner from './page/StudyPlanner'
 import NotesLibrary from './page/NotesLibrary'
@@ -14,7 +15,8 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-       <Route path="/exam-timetable" element={<ExamTimetable />} />
+       <Route path="/adaptive-learning" element={<AdaptiveLearning />} />
+      <Route path="/exam-timetable" element={<ExamTimetable />} />
         <Route path="/study-planner" element={<StudyPlanner />} />
       <Route path="/notes" element={<NotesLibrary />} />
        <Route path="/exam-countdown" element={<ExamCountdown />} />
