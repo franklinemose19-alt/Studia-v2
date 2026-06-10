@@ -28,7 +28,7 @@ export default function Dashboard() {
 
   const cards = [
     { icon: Mic, title: 'Record Lecture', desc: 'Start a new recording', path: '/recording' },
-    { icon: BookOpen, title: 'My Notes', desc: 'Summarize lecture notes', path: '/summarize' },
+    { icon: BookOpen, title: 'My Notes', desc: 'Save & organize notes', path: '/notes' },
     { icon: BarChart3, title: 'Quiz Practice', desc: 'Test your knowledge', path: '/quiz' },
     { icon: Calendar, title: 'Exam Countdown', desc: 'Track your exams', path: '/exam-countdown' },
   ]
