@@ -10,18 +10,16 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Phone number and amount required' })
     }
 
-    // M-Pesa Daraja API Credentials (Replace with your actual credentials)
-    const CONSUMER_KEY = process.env.MPESA_CONSUMER_KEY || 'YOUR_CONSUMER_KEY'
-    const CONSUMER_SECRET = process.env.MPESA_CONSUMER_SECRET || 'YOUR_CONSUMER_SECRET'
-    const BUSINESS_SHORTCODE = process.env.MPESA_SHORTCODE || 'YOUR_SHORTCODE'
-    const PASSKEY = process.env.MPESA_PASSKEY || 'YOUR_PASSKEY'
-    const CALLBACK_URL = process.env.MPESA_CALLBACK_URL || 'https://yourdomain.com/api/mpesa-callback'
+    const CONSUMER_KEY = process.env.MPESA_CONSUMER_KEY
+    const CONSUMER_SECRET = process.env.MPESA_CONSUMER_SECRET
+    const BUSINESS_SHORTCODE = process.env.MPESA_SHORTCODE
+    const PASSKEY = process.env.MPESA_PASSKEY
+    const CALLBACK_URL = process.env.MPESA_CALLBACK_URL
 
-    // Check if credentials are set
-    if (CONSUMER_KEY === 'YOUR_CONSUMER_KEY') {
+    if (!CONSUMER_KEY || !CONSUMER_SECRET) {
       return res.status(500).json({
         success: false,
-        error: 'M-Pesa credentials not configured. Contact admin.',
+        error: 'M-Pesa credentials not configured.',
       })
     }
 
@@ -39,7 +37,7 @@ export default async function handler(req, res) {
     if (!tokenData.access_token) {
       return res.status(500).json({
         success: false,
-        error: 'Failed to get access token. Check M-Pesa credentials.',
+        error: 'Failed to authenticate with M-Pesa.',
       })
     }
 
@@ -67,7 +65,7 @@ export default async function handler(req, res) {
           PhoneNumber: phoneNumber,
           CallBackURL: CALLBACK_URL,
           AccountReference: `STUDIA-${planId}`,
-          TransactionDesc: `STUDIA ${planName} Plan`,
+          TransactionDesc: `STUDIA ${planName}`,
         }),
       }
     )
@@ -75,10 +73,32 @@ export default async function handler(req, res) {
     const stkData = await stkResponse.json()
 
     if (stkData.ResponseCode === '0') {
+      // Create payment record in "pending" status
+      const paymentRecord = {
+        transactionId: stkData.CheckoutRequestID,
+        phoneNumber,
+        amount: Math.ceil(amount),
+        planId,
+        planName,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        mpesaConfirmation: null,
+        processingStarted: null,
+        completedAt: null,
+      }
+
+      // Store in a simple in-memory store (later migrate to Supabase)
+      if (!global.payments) {
+        global.payments = {}
+      }
+      global.payments[stkData.CheckoutRequestID] = paymentRecord
+
       return res.status(200).json({
         success: true,
-        message: 'STK Push sent successfully',
+        message: 'STK Push sent. Payment held in escrow.',
         transactionId: stkData.CheckoutRequestID,
+        status: 'pending',
         phoneNumber,
         amount,
         plan: planName,
