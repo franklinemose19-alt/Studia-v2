@@ -1,3 +1,4 @@
+import Checkout from './page/Checkout'
 import Pricing from './page/Pricing'
 import UnitManagement from './page/UnitManagement'
 import OfflineVault from './page/OfflineVault'
@@ -18,6 +19,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+      <Route path="/checkout" element={<Checkout />} />
       <Route path="/pricing" element={<Pricing />} />
       <Route path="/units" element={<UnitManagement />} />
       <Route path="/offline-vault" element={<OfflineVault />} />
