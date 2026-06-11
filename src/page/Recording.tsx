@@ -103,31 +103,58 @@ export default function Recording() {
   }
 
   const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-      audioContextRef.current = audioContext
-      const analyser = audioContext.createAnalyser()
-      analyserRef.current = analyser
-      const source = audioContext.createMediaStreamSource(stream)
-      source.connect(analyser)
-      const mediaRecorder = new MediaRecorder(stream)
-      mediaRecorderRef.current = mediaRecorder
-      audioChunksRef.current = []
-      mediaRecorder.ondataavailable = (e) => {
-        audioChunksRef.current.push(e.data)
-      }
-      mediaRecorder.start()
-      setIsRecording(true)
-      setDuration(0)
-      timerRef.current = setInterval(() => {
-        setDuration((d) => d + 1)
-      }, 1000)
-      visualize()
-    } catch (err) {
-      alert('Microphone access denied')
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ 
+      audio: {
+        echoCancellation: true,  // SmartCapture: Echo cancellation
+        noiseSuppression: true,  // SmartCapture: Noise reduction
+        autoGainControl: true,   // SmartCapture: Auto volume
+      } 
+    })
+    
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+    audioContextRef.current = audioContext
+    
+    // SmartCapture: Create audio processing chain
+    const source = audioContext.createMediaStreamSource(stream)
+    const analyser = audioContext.createAnalyser()
+    analyserRef.current = analyser
+    
+    // SmartCapture: Add high-pass filter (remove rumble)
+    const highPass = audioContext.createBiquadFilter()
+    highPass.type = 'highpass'
+    highPass.frequency.value = 80  // Remove low frequency noise
+    
+    // SmartCapture: Add compression (normalize volume)
+    const compressor = audioContext.createDynamicsCompressor()
+    compressor.threshold.value = -50
+    compressor.knee.value = 40
+    compressor.ratio.value = 12
+    compressor.attack.value = 0.003
+    compressor.release.value = 0.25
+    
+    // SmartCapture: Connect processing chain
+    source.connect(highPass)
+    highPass.connect(compressor)
+    compressor.connect(analyser)
+    
+    const mediaRecorder = new MediaRecorder(stream)
+    mediaRecorderRef.current = mediaRecorder
+    audioChunksRef.current = []
+    mediaRecorder.ondataavailable = (e) => {
+      audioChunksRef.current.push(e.data)
     }
+    mediaRecorder.start()
+    setIsRecording(true)
+    setDuration(0)
+    timerRef.current = setInterval(() => {
+      setDuration((d) => d + 1)
+    }, 1000)
+    visualize()
+  } catch (err) {
+    alert('Microphone access denied')
   }
+}
 
   const trimSilence = async (audioBlob: Blob): Promise<Blob> => {
     const arrayBuffer = await audioBlob.arrayBuffer()
