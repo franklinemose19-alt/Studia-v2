@@ -1,3 +1,4 @@
+import { LogOut, Mic, BookOpen, BarChart3, Calendar, Settings, Zap, Award, Clock, ChevronRight, Search, Bell, User, TrendingUp, Lock } from 'lucide-react'
 import { LogOut, Mic, BookOpen, BarChart3, Calendar, Settings, Zap, Award, Clock, ChevronRight, Search, Bell, User, TrendingUp } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { LogOut, Mic, BookOpen, BarChart3, Calendar, Settings, Zap, Award, Clock, ChevronRight, Search, Bell, User } from 'lucide-react'
@@ -32,6 +33,7 @@ export default function Dashboard() {
     { icon: BarChart3, title: 'Quiz Practice', desc: 'Test your knowledge', path: '/quiz', color: 'from-mint' },
     { icon: Calendar, title: 'Exam Countdown', desc: 'Track your exams', path: '/exam-countdown', color: 'from-warning' },
     { icon: TrendingUp, title: 'Adaptive Learning', desc: 'See your weak topics', path: '/adaptive-learning', color: 'from-mint' },
+    { icon: Lock, title: 'Offline Vault', desc: 'Download for offline study', path: '/offline-vault', color: 'from-light-blue' },
     { icon: Calendar, title: 'Study Planner', desc: 'Plan your weekly schedule', path: '/study-planner', color: 'from-light-blue' },
   ]
 
@@ -91,7 +93,7 @@ export default function Dashboard() {
           </div>
 
           {/* STATS GRID */}
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
             {statCards.map((stat, i) => (
               <motion.div
                 key={i}
