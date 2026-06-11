@@ -94,7 +94,7 @@ export default function Dashboard() {
           </div>
 
           {/* STATS GRID */}
-          <div className="grid md:grid-cols-2 lg:grid-cols-6 gap-4">
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
             {statCards.map((stat, i) => (
               <motion.div
                 key={i}
