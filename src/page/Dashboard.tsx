@@ -34,6 +34,7 @@ export default function Dashboard() {
     { icon: Calendar, title: 'Exam Countdown', desc: 'Track your exams', path: '/exam-countdown', color: 'from-warning' },
     { icon: TrendingUp, title: 'Adaptive Learning', desc: 'See your weak topics', path: '/adaptive-learning', color: 'from-mint' },
     { icon: Lock, title: 'Offline Vault', desc: 'Download for offline study', path: '/offline-vault', color: 'from-light-blue' },
+    { icon: BookOpen, title: 'Unit Management', desc: 'Define syllabi & topics', path: '/units', color: 'from-warning' },
     { icon: Calendar, title: 'Study Planner', desc: 'Plan your weekly schedule', path: '/study-planner', color: 'from-light-blue' },
   ]
 
@@ -93,7 +94,7 @@ export default function Dashboard() {
           </div>
 
           {/* STATS GRID */}
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid md:grid-cols-2 lg:grid-cols-6 gap-4">
             {statCards.map((stat, i) => (
               <motion.div
                 key={i}
