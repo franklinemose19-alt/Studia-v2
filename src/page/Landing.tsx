@@ -52,8 +52,8 @@ export default function Landing() {
             <span className="font-sora font-bold text-navy text-lg">STUDIA</span>
           </div>
           <div className="hidden md:flex items-center gap-8">
-            <a href="#features" className="text-navy hover:text-indigo-premium transition">Features</a>
-            <a href="#pricing" className="text-navy hover:text-indigo-premium transition">Pricing</a>
+            <button onClick={() => navigate('/pricing')} className="text-navy hover:text-indigo-premium transition">Features</button>
+            <button onClick={() => navigate('/pricing')} className="text-navy hover:text-indigo-premium transition">Pricing</button>
             <button onClick={() => navigate('/login')} className="text-navy hover:text-indigo-premium transition">Sign In</button>
             <button
               onClick={() => navigate('/signup')}
@@ -172,7 +172,7 @@ export default function Landing() {
       </section>
 
       {/* FEATURES GRID */}
-      <section id="features" className="py-20 px-4 sm:px-6 bg-surface-light">
+      <section className="py-20 px-4 sm:px-6 bg-surface-light">
         <div className="max-w-7xl mx-auto">
           <h2 className="font-sora font-bold text-4xl text-navy text-center mb-12">Powerful Features</h2>
           <div className="grid md:grid-cols-3 gap-8">
@@ -221,7 +221,7 @@ export default function Landing() {
       </section>
 
       {/* PRICING */}
-      <section id="pricing" className="py-20 px-4 sm:px-6 bg-surface-light">
+      <section className="py-20 px-4 sm:px-6 bg-surface-light">
         <div className="max-w-7xl mx-auto">
           <h2 className="font-sora font-bold text-4xl text-navy text-center mb-12">Simple Pricing</h2>
           <div className="grid md:grid-cols-3 gap-8">
@@ -268,6 +268,15 @@ export default function Landing() {
                 </button>
               </motion.div>
             ))}
+          </div>
+          <div className="text-center mt-12">
+            <button
+              onClick={() => navigate('/pricing')}
+              className="text-indigo-premium hover:text-purple-premium font-semibold flex items-center gap-2 mx-auto"
+            >
+              View Full Pricing Details
+              <ArrowRight size={18} />
+            </button>
           </div>
         </div>
       </section>
