@@ -1,3 +1,4 @@
+import UnitManagement from './page/UnitManagement'
 import OfflineVault from './page/OfflineVault'
 import AdaptiveLearning from './page/AdaptiveLearning'
 import ExamTimetable from './page/ExamTimetable'
@@ -16,7 +17,8 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-       <Route path="/offline-vault" element={<OfflineVault />} />
+      <Route path="/units" element={<UnitManagement />} />
+      <Route path="/offline-vault" element={<OfflineVault />} />
       <Route path="/adaptive-learning" element={<AdaptiveLearning />} />
       <Route path="/exam-timetable" element={<ExamTimetable />} />
         <Route path="/study-planner" element={<StudyPlanner />} />
