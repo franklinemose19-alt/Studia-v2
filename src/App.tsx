@@ -1,3 +1,4 @@
+import OfflineVault from './page/OfflineVault'
 import AdaptiveLearning from './page/AdaptiveLearning'
 import ExamTimetable from './page/ExamTimetable'
 import StudyPlanner from './page/StudyPlanner'
@@ -15,7 +16,8 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-       <Route path="/adaptive-learning" element={<AdaptiveLearning />} />
+       <Route path="/offline-vault" element={<OfflineVault />} />
+      <Route path="/adaptive-learning" element={<AdaptiveLearning />} />
       <Route path="/exam-timetable" element={<ExamTimetable />} />
         <Route path="/study-planner" element={<StudyPlanner />} />
       <Route path="/notes" element={<NotesLibrary />} />
