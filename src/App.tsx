@@ -1,3 +1,4 @@
+import Pricing from './page/Pricing'
 import UnitManagement from './page/UnitManagement'
 import OfflineVault from './page/OfflineVault'
 import AdaptiveLearning from './page/AdaptiveLearning'
@@ -17,6 +18,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+      <Route path="/pricing" element={<Pricing />} />
       <Route path="/units" element={<UnitManagement />} />
       <Route path="/offline-vault" element={<OfflineVault />} />
       <Route path="/adaptive-learning" element={<AdaptiveLearning />} />
