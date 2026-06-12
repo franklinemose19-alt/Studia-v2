@@ -1,3 +1,4 @@
+import PaymentDashboard from './page/PaymentDashboard'
 import Checkout from './page/Checkout'
 import Pricing from './page/Pricing'
 import UnitManagement from './page/UnitManagement'
@@ -19,6 +20,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+      <Route path="/payments" element={<PaymentDashboard />} />
       <Route path="/checkout" element={<Checkout />} />
       <Route path="/pricing" element={<Pricing />} />
       <Route path="/units" element={<UnitManagement />} />
