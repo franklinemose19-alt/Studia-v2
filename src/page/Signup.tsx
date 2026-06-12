@@ -1,265 +1,279 @@
 import { useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Mail, Lock, User, BookOpen, Calendar, Zap, Eye, EyeOff, ArrowRight, ArrowLeft, CheckCircle2, Building2, Loader } from 'lucide-react'
+import { motion } from 'framer-motion'
+import { ArrowLeft, Loader, Eye, EyeOff, Check } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { supabase, signUp } from '../lib/supabaseClient'
 
 export default function Signup() {
   const navigate = useNavigate()
   const [step, setStep] = useState(1)
-  const [loading, setLoading] = useState(false)
-  const [formData, setFormData] = useState({
-    fullName: '',
-    email: '',
-    password: '',
-    confirmPassword: '',
-    campus: '',
-    courseName: '',
-    yearOfStudy: '',
-    semester: '',
-    studyHoursPerDay: '3',
-    notificationsEnabled: true,
-  })
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [phone, setPhone] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [showConfirm, setShowConfirm] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
 
-  const handleInputChange = (field: string, value: string | boolean) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
+  const validateEmail = (email: string) => {
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    return re.test(email)
   }
 
-  const handleSubmit = async () => {
+  const validatePassword = (password: string) => {
+    return password.length >= 8
+  }
+
+  const handleStep1 = (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+
+    if (!name.trim()) {
+      setError('Please enter your name')
+      return
+    }
+
+    if (!validateEmail(email)) {
+      setError('Please enter a valid email')
+      return
+    }
+
+    setStep(2)
+  }
+
+  const handleStep2 = (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+
+    if (!validatePassword(password)) {
+      setError('Password must be at least 8 characters')
+      return
+    }
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match')
+      return
+    }
+
+    setStep(3)
+  }
+
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault()
     setLoading(true)
-    setTimeout(() => {
-      setLoading(false)
-      navigate('/dashboard')
-    }, 2000)
-  }
+    setError('')
 
-  const canProceed = () => {
-    switch (step) {
-      case 1:
-        return formData.fullName && formData.email && formData.password && formData.confirmPassword
-      case 2:
-        return formData.campus && formData.courseName
-      case 3:
-        return formData.yearOfStudy && formData.semester
-      default:
-        return true
+    try {
+      await signUp(email, password, name)
+
+      setSuccess(true)
+
+      setTimeout(() => {
+        navigate('/login')
+      }, 2000)
+    } catch (err: any) {
+      setError(err.message || 'Signup failed')
+      setLoading(false)
     }
   }
 
-  const campuses = [
-    'University of Nairobi', 'Kenyatta University', 'Strathmore University', 'JKUAT',
-    'Moi University', 'Egerton University', 'Maseno University', 'USIU Africa',
-  ]
-
-  const years = ['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5', 'Year 6', 'Year 7', 'Year 8']
-  const semesters = ['Semester 1', 'Semester 2', 'Semester 3']
+  if (success) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-white via-surface-light to-white flex items-center justify-center px-4">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="text-center max-w-md"
+        >
+          <div className="w-20 h-20 rounded-full bg-mint/20 flex items-center justify-center mx-auto mb-6">
+            <Check className="text-mint" size={40} />
+          </div>
+          <h1 className="font-sora font-bold text-3xl text-navy mb-2">Account Created!</h1>
+          <p className="text-gray-600 mb-8">
+            Welcome to STUDIA. A verification email has been sent. Check your inbox and follow the link to activate your account.
+          </p>
+          <p className="text-sm text-gray-500">Redirecting to login...</p>
+        </motion.div>
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-surface-base flex items-center justify-center px-4 py-12">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="relative w-full max-w-md">
-        <div className="bg-surface-elevated border border-white/5 rounded-3xl p-8 sm:p-10">
-          <div className="mb-8">
-            <a href="/" className="inline-flex items-center gap-1 mb-6">
-              <span className="font-sora font-bold text-2xl text-white">STUDIA</span>
-              <sup className="text-brand-blue text-xs font-mono">β</sup>
-            </a>
+    <div className="min-h-screen bg-gradient-to-br from-white via-surface-light to-white flex items-center justify-center px-4">
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
+        <button
+          onClick={() => navigate('/')}
+          className="flex items-center gap-2 text-navy hover:text-indigo-premium transition mb-8"
+        >
+          <ArrowLeft size={20} />
+          Back
+        </button>
 
-            <div>
-              <h1 className="font-sora font-bold text-2xl text-white">
-                {step === 1 && 'Create your account'}
-                {step === 2 && 'Your campus and course'}
-                {step === 3 && 'Your year and semester'}
-                {step === 4 && 'Study preferences'}
-                {step === 5 && `You're all set!`}
-              </h1>
-              <p className="text-[#8B97B5] text-sm mt-2">
-                {step === 1 && 'Start your AI-powered study journey'}
-                {step === 2 && 'Help us customize your experience'}
-                {step === 3 && 'So we know when your exams are'}
-                {step === 4 && 'When do you study best?'}
-                {step === 5 && 'Welcome to STUDIA'}
-              </p>
-            </div>
+        <div className="bg-white rounded-2xl border border-gray-200 p-8">
+          <h1 className="font-sora font-bold text-4xl text-navy mb-2">Create Account</h1>
+          <p className="text-gray-600 mb-8">Step {step} of 3</p>
 
-            <div className="mt-6 flex gap-1">
-              {[1, 2, 3, 4, 5].map((s) => (
-                <motion.div key={s} className={`h-1.5 flex-1 rounded-full transition-colors ${s <= step ? 'bg-brand-blue' : 'bg-white/10'}`} />
-              ))}
-            </div>
-            <p className="text-xs text-[#4A5568] mt-2">Step {step} of 5</p>
-          </div>
+          {error && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6"
+            >
+              <p className="text-sm text-red-600">{error}</p>
+            </motion.div>
+          )}
 
-          <AnimatePresence mode="wait">
-            {step === 1 && (
-              <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-white mb-2">Full name</label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 text-[#4A5568] w-4 h-4" />
-                    <input type="text" placeholder="John Mwangi" value={formData.fullName} onChange={(e) => handleInputChange('fullName', e.target.value)} className="w-full bg-surface-base border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40" />
-                  </div>
-                </div>
+          {step === 1 && (
+            <form onSubmit={handleStep1} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-navy mb-2">Full Name</label>
+                <input
+                  type="text"
+                  placeholder="Your name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-navy placeholder-gray-400 outline-none focus:border-indigo-premium transition"
+                />
+              </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-white mb-2">Email</label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-[#4A5568] w-4 h-4" />
-                    <input type="email" placeholder="you@university.ac.ke" value={formData.email} onChange={(e) => handleInputChange('email', e.target.value)} className="w-full bg-surface-base border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40" />
-                  </div>
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-navy mb-2">Email</label>
+                <input
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-navy placeholder-gray-400 outline-none focus:border-indigo-premium transition"
+                />
+              </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-white mb-2">Password</label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-[#4A5568] w-4 h-4" />
-                    <input type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={formData.password} onChange={(e) => handleInputChange('password', e.target.value)} className="w-full bg-surface-base border border-white/10 rounded-xl pl-10 pr-10 py-3 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40" />
-                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#4A5568] hover:text-white">
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-white mb-2">Confirm password</label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-[#4A5568] w-4 h-4" />
-                    <input type={showConfirm ? 'text' : 'password'} placeholder="••••••••" value={formData.confirmPassword} onChange={(e) => handleInputChange('confirmPassword', e.target.value)} className="w-full bg-surface-base border border-white/10 rounded-xl pl-10 pr-10 py-3 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40" />
-                    <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#4A5568] hover:text-white">
-                      {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {step === 2 && (
-              <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-white mb-2">Campus</label>
-                  <div className="relative">
-                    <Building2 className="absolute left-3 top-3.5 text-[#4A5568] w-4 h-4 pointer-events-none" />
-                    <select value={formData.campus} onChange={(e) => handleInputChange('campus', e.target.value)} className="w-full bg-surface-base border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white outline-none focus:border-brand-blue/40 appearance-none cursor-pointer">
-                      <option value="">Select your campus...</option>
-                      {campuses.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-white mb-2">Course name</label>
-                  <div className="relative">
-                    <BookOpen className="absolute left-3 top-1/2 -translate-y-1/2 text-[#4A5568] w-4 h-4" />
-                    <input type="text" placeholder="e.g. Computer Science" value={formData.courseName} onChange={(e) => handleInputChange('courseName', e.target.value)} className="w-full bg-surface-base border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40" />
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {step === 3 && (
-              <motion.div key="step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-white mb-2">Year of study</label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-3.5 text-[#4A5568] w-4 h-4 pointer-events-none" />
-                    <select value={formData.yearOfStudy} onChange={(e) => handleInputChange('yearOfStudy', e.target.value)} className="w-full bg-surface-base border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white outline-none focus:border-brand-blue/40 appearance-none cursor-pointer">
-                      <option value="">Select your year...</option>
-                      {years.map((y) => (
-                        <option key={y} value={y}>
-                          {y}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-white mb-2">Current semester</label>
-                  <div className="relative">
-                    <Zap className="absolute left-3 top-3.5 text-[#4A5568] w-4 h-4 pointer-events-none" />
-                    <select value={formData.semester} onChange={(e) => handleInputChange('semester', e.target.value)} className="w-full bg-surface-base border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white outline-none focus:border-brand-blue/40 appearance-none cursor-pointer">
-                      <option value="">Select your semester...</option>
-                      {semesters.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {step === 4 && (
-              <motion.div key="step4" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }} className="space-y-6">
-                <div>
-                  <label className="block text-xs font-medium text-white mb-4">How many hours per day do you study?</label>
-                  <div className="space-y-3">
-                    {['1', '2', '3', '4', '5', '6', '7', '8'].map((h) => (
-                      <label key={h} className="flex items-center gap-3 cursor-pointer">
-                        <input type="radio" name="hours" value={h} checked={formData.studyHoursPerDay === h} onChange={(e) => handleInputChange('studyHoursPerDay', e.target.value)} className="w-4 h-4 accent-brand-blue cursor-pointer" />
-                        <span className="text-white">{h} hour{h !== '1' ? 's' : ''}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {step === 5 && (
-              <motion.div key="step5" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ duration: 0.3 }} className="text-center space-y-6">
-                <motion.div animate={{ scale: [1, 1.1, 1] }} transition={{ duration: 0.6, delay: 0.2 }} className="flex justify-center">
-                  <CheckCircle2 className="w-16 h-16 text-brand-green" />
-                </motion.div>
-                <div>
-                  <h2 className="font-sora font-bold text-2xl text-white mb-2">Welcome to STUDIA!</h2>
-                  <p className="text-[#8B97B5] text-sm">Your account is ready. Let's turn your lectures into smart study material.</p>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          <div className="mt-8 flex gap-3">
-            {step > 1 && (
-              <button onClick={() => setStep(step - 1)} className="flex-1 border border-white/10 text-white font-medium py-3 rounded-xl hover:bg-white/5 flex items-center justify-center gap-2">
-                <ArrowLeft className="w-4 h-4" />
-                Back
+              <button
+                type="submit"
+                className="w-full bg-indigo-premium text-white font-bold py-3 rounded-xl hover:bg-purple-premium transition"
+              >
+                Continue
               </button>
-            )}
+            </form>
+          )}
 
-            {step < 5 && (
-              <button onClick={() => setStep(step + 1)} disabled={!canProceed()} className="flex-1 bg-brand-blue text-white font-medium py-3 rounded-xl hover:bg-brand-blue/90 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
-                Next
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            )}
+          {step === 2 && (
+            <form onSubmit={handleStep2} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-navy mb-2">Password</label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 pr-12 text-navy placeholder-gray-400 outline-none focus:border-indigo-premium transition"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-3.5 text-gray-400 hover:text-navy"
+                  >
+                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">At least 8 characters</p>
+              </div>
 
-            {step === 5 && (
-              <button onClick={handleSubmit} disabled={loading} className="flex-1 bg-brand-blue text-white font-medium py-3 rounded-xl hover:bg-brand-blue/90 flex items-center justify-center gap-2 disabled:opacity-50">
-                {loading ? (
-                  <>
-                    <Loader className="w-4 h-4 animate-spin" />
-                    Setting up...
-                  </>
-                ) : (
-                  <>
-                    Get Started
-                    <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
-              </button>
-            )}
-          </div>
+              <div>
+                <label className="block text-sm font-medium text-navy mb-2">Confirm Password</label>
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 pr-12 text-navy placeholder-gray-400 outline-none focus:border-indigo-premium transition"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-4 top-3.5 text-gray-400 hover:text-navy"
+                  >
+                    {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  </button>
+                </div>
+              </div>
 
-          <p className="text-center text-sm text-[#8B97B5] mt-6">
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  className="flex-1 border border-gray-200 text-navy font-bold py-3 rounded-xl hover:bg-gray-50 transition"
+                >
+                  Back
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-indigo-premium text-white font-bold py-3 rounded-xl hover:bg-purple-premium transition"
+                >
+                  Continue
+                </button>
+              </div>
+            </form>
+          )}
+
+          {step === 3 && (
+            <form onSubmit={handleSignup} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-navy mb-2">Phone Number (Optional)</label>
+                <input
+                  type="tel"
+                  placeholder="0712345678"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-navy placeholder-gray-400 outline-none focus:border-indigo-premium transition"
+                />
+              </div>
+
+              <div className="bg-mint/10 border border-mint/20 rounded-xl p-4">
+                <p className="text-sm text-mint font-semibold mb-2">✓ You're all set!</p>
+                <p className="text-xs text-gray-600">
+                  Email: <strong>{email}</strong>
+                </p>
+                <p className="text-xs text-gray-600 mt-1">
+                  Name: <strong>{name}</strong>
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setStep(2)}
+                  className="flex-1 border border-gray-200 text-navy font-bold py-3 rounded-xl hover:bg-gray-50 transition"
+                >
+                  Back
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex-1 bg-indigo-premium text-white font-bold py-3 rounded-xl hover:bg-purple-premium transition disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <>
+                      <Loader className="animate-spin" size={20} />
+                      Creating...
+                    </>
+                  ) : (
+                    'Create Account'
+                  )}
+                </button>
+              </div>
+            </form>
+          )}
+
+          <p className="text-center text-sm text-gray-600 mt-6">
             Already have an account?{' '}
-            <a href="/login" className="text-brand-blue hover:text-brand-blue/80 font-medium">
+            <button onClick={() => navigate('/login')} className="text-indigo-premium hover:text-purple-premium font-semibold">
               Sign in
-            </a>
+            </button>
           </p>
         </div>
       </motion.div>
