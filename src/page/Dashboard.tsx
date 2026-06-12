@@ -1,3 +1,4 @@
+import { CreditCard } from 'lucide-react'
 import { LogOut, Mic, BookOpen, BarChart3, Calendar, Settings, Zap, Award, Clock, ChevronRight, Search, Bell, User, TrendingUp, Lock } from 'lucide-react'
 import { LogOut, Mic, BookOpen, BarChart3, Calendar, Settings, Zap, Award, Clock, ChevronRight, Search, Bell, User, TrendingUp } from 'lucide-react'
 import { motion } from 'framer-motion'
@@ -35,7 +36,8 @@ export default function Dashboard() {
     { icon: TrendingUp, title: 'Adaptive Learning', desc: 'See your weak topics', path: '/adaptive-learning', color: 'from-mint' },
     { icon: Lock, title: 'Offline Vault', desc: 'Download for offline study', path: '/offline-vault', color: 'from-light-blue' },
     { icon: BookOpen, title: 'Unit Management', desc: 'Define syllabi & topics', path: '/units', color: 'from-warning' },
-    { icon: Calendar, title: 'Study Planner', desc: 'Plan your weekly schedule', path: '/study-planner', color: 'from-light-blue' },
+   { icon: CreditCard, title: 'Payments', desc: 'Track escrow & transactions', path: '/payments', color: 'from-mint' },
+   { icon: Calendar, title: 'Study Planner', desc: 'Plan your weekly schedule', path: '/study-planner', color: 'from-light-blue' },
   ]
 
   const statCards = [
