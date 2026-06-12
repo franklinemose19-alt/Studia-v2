@@ -1,3 +1,6 @@
+const supabaseUrl = process.env.SUPABASE_URL
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
@@ -10,16 +13,25 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Transaction ID required' })
     }
 
-    // Initialize global payments store if needed
-    if (!global.payments) {
-      global.payments = {}
-    }
+    // Get current payment status
+    const getResponse = await fetch(
+      `${supabaseUrl}/rest/v1/payments?transaction_id=eq.${transactionId}`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${supabaseServiceKey}`,
+        },
+      }
+    )
 
-    const payment = global.payments[transactionId]
+    const payments = await getResponse.json()
 
-    if (!payment) {
+    if (!payments || payments.length === 0) {
       return res.status(404).json({ error: 'Payment not found' })
     }
+
+    const payment = payments[0]
 
     if (payment.status !== 'processing') {
       return res.status(400).json({
@@ -27,22 +39,40 @@ export default async function handler(req, res) {
       })
     }
 
-    // Mark as completed - funds released from escrow
-    payment.status = 'completed'
-    payment.processingStarted = payment.processingStarted || new Date().toISOString()
-    payment.completedAt = new Date().toISOString()
-    payment.processingType = processingType || 'lecture'
-    payment.updatedAt = new Date().toISOString()
+    // Update to "completed"
+    const updateResponse = await fetch(
+      `${supabaseUrl}/rest/v1/payments?transaction_id=eq.${transactionId}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${supabaseServiceKey}`,
+        },
+        body: JSON.stringify({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }),
+      }
+    )
 
-    global.payments[transactionId] = payment
+    if (updateResponse.ok) {
+      console.log(`Payment completed: ${transactionId}. Funds released from escrow.`)
 
-    console.log(`Payment completed: ${transactionId}. Funds released from escrow.`)
-
-    return res.status(200).json({
-      success: true,
-      message: 'Payment completed. Funds released.',
-      payment,
-    })
+      return res.status(200).json({
+        success: true,
+        message: 'Payment completed. Funds released.',
+        payment: {
+          transactionId,
+          status: 'completed',
+        },
+      })
+    } else {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to update payment',
+      })
+    }
   } catch (error) {
     console.error('Complete Payment Error:', error)
     return res.status(500).json({
