@@ -1,24 +1,32 @@
 import { createClient } from '@supabase/supabase-js'
 
-let supabaseUrl = ''
-let supabaseKey = ''
+// These will be loaded from the API
+let supabaseInstance: any = null
 
-// Fetch from API endpoint
-;(async () => {
+const initSupabase = async () => {
+  if (supabaseInstance) return supabaseInstance
+
   try {
     const res = await fetch('/api/get-supabase-config')
     const config = await res.json()
-    supabaseUrl = config.url
-    supabaseKey = config.key
-  } catch (err) {
-    console.error('Failed to load Supabase config:', err)
-  }
-})()
 
-export const supabase = createClient(supabaseUrl, supabaseKey)
+    if (!config.url || !config.key) {
+      throw new Error('Missing Supabase config')
+    }
+
+    supabaseInstance = createClient(config.url, config.key)
+    return supabaseInstance
+  } catch (err) {
+    console.error('Failed to initialize Supabase:', err)
+    throw err
+  }
+}
+
+export const supabase = { init: initSupabase }
 
 export const signUp = async (email: string, password: string, name: string) => {
-  const { data, error } = await supabase.auth.signUp({
+  const client = await initSupabase()
+  const { data, error } = await client.auth.signUp({
     email,
     password,
   })
@@ -26,7 +34,7 @@ export const signUp = async (email: string, password: string, name: string) => {
   if (error) throw error
 
   if (data.user) {
-    const { error: profileError } = await supabase.from('users').insert({
+    const { error: profileError } = await client.from('users').insert({
       auth_id: data.user.id,
       email,
       name,
@@ -40,7 +48,8 @@ export const signUp = async (email: string, password: string, name: string) => {
 }
 
 export const signIn = async (email: string, password: string) => {
-  const { data, error } = await supabase.auth.signInWithPassword({
+  const client = await initSupabase()
+  const { data, error } = await client.auth.signInWithPassword({
     email,
     password,
   })
@@ -50,18 +59,21 @@ export const signIn = async (email: string, password: string) => {
 }
 
 export const signOut = async () => {
-  const { error } = await supabase.auth.signOut()
+  const client = await initSupabase()
+  const { error } = await client.auth.signOut()
   if (error) throw error
 }
 
 export const getCurrentUser = async () => {
-  const { data, error } = await supabase.auth.getUser()
+  const client = await initSupabase()
+  const { data, error } = await client.auth.getUser()
   if (error) throw error
   return data.user
 }
 
 export const getUserProfile = async (userId: string) => {
-  const { data, error } = await supabase.from('users').select('*').eq('auth_id', userId).single()
+  const client = await initSupabase()
+  const { data, error } = await client.from('users').select('*').eq('auth_id', userId).single()
   if (error) throw error
   return data
 }
