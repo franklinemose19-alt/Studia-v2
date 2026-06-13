@@ -1,31 +1,48 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-// These will be loaded from the API
-let supabaseInstance: any = null
+let supabaseClient: SupabaseClient | null = null
 
-const initSupabase = async () => {
-  if (supabaseInstance) return supabaseInstance
-
+const getSupabaseConfig = async () => {
   try {
-    const res = await fetch('/api/get-supabase-config')
-    const config = await res.json()
-
-    if (!config.url || !config.key) {
-      throw new Error('Missing Supabase config')
+    const response = await fetch('/api/get-supabase-config')
+    if (!response.ok) {
+      throw new Error('Failed to fetch Supabase config')
     }
-
-    supabaseInstance = createClient(config.url, config.key)
-    return supabaseInstance
-  } catch (err) {
-    console.error('Failed to initialize Supabase:', err)
-    throw err
+    const config = await response.json()
+    return config
+  } catch (error) {
+    console.error('Error fetching Supabase config:', error)
+    throw error
   }
 }
 
-export const supabase = { init: initSupabase }
+const initializeSupabase = async () => {
+  if (supabaseClient) {
+    return supabaseClient
+  }
+
+  try {
+    const config = await getSupabaseConfig()
+
+    if (!config.url || !config.key) {
+      throw new Error('Invalid Supabase configuration')
+    }
+
+    supabaseClient = createClient(config.url, config.key)
+    return supabaseClient
+  } catch (error) {
+    console.error('Failed to initialize Supabase:', error)
+    throw error
+  }
+}
+
+export const getSupabase = async () => {
+  return initializeSupabase()
+}
 
 export const signUp = async (email: string, password: string, name: string) => {
-  const client = await initSupabase()
+  const client = await getSupabase()
+
   const { data, error } = await client.auth.signUp({
     email,
     password,
@@ -48,7 +65,8 @@ export const signUp = async (email: string, password: string, name: string) => {
 }
 
 export const signIn = async (email: string, password: string) => {
-  const client = await initSupabase()
+  const client = await getSupabase()
+
   const { data, error } = await client.auth.signInWithPassword({
     email,
     password,
@@ -59,21 +77,30 @@ export const signIn = async (email: string, password: string) => {
 }
 
 export const signOut = async () => {
-  const client = await initSupabase()
+  const client = await getSupabase()
   const { error } = await client.auth.signOut()
   if (error) throw error
 }
 
 export const getCurrentUser = async () => {
-  const client = await initSupabase()
+  const client = await getSupabase()
   const { data, error } = await client.auth.getUser()
   if (error) throw error
   return data.user
 }
 
 export const getUserProfile = async (userId: string) => {
-  const client = await initSupabase()
+  const client = await getSupabase()
   const { data, error } = await client.from('users').select('*').eq('auth_id', userId).single()
   if (error) throw error
   return data
+}
+
+export const supabase = {
+  getSupabase,
+  signUp,
+  signIn,
+  signOut,
+  getCurrentUser,
+  getUserProfile,
 }
