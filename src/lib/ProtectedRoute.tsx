@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { supabase } from './supabaseClient'
+import { getCurrentUser } from './supabaseClient'
 
 interface ProtectedRouteProps {
   children: React.ReactNode
@@ -13,8 +13,8 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const { data } = await supabase.auth.getUser()
-        setIsAuthenticated(!!data.user)
+        const user = await getCurrentUser()
+        setIsAuthenticated(!!user)
       } catch (err) {
         setIsAuthenticated(false)
       } finally {
@@ -23,15 +23,6 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     }
 
     checkAuth()
-
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsAuthenticated(!!session)
-    })
-
-    return () => subscription?.unsubscribe()
   }, [])
 
   if (loading) {
