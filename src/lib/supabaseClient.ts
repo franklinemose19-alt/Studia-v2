@@ -51,7 +51,11 @@ export const signUp = async (email: string, password: string, name: string) => {
   if (error) throw error
 
   if (data.user) {
+    // Generate a UUID for the id
+    const newId = crypto.randomUUID()
+    
     const { error: profileError } = await client.from('users').insert({
+      id: newId,
       auth_id: data.user.id,
       email,
       name,
@@ -62,6 +66,7 @@ export const signUp = async (email: string, password: string, name: string) => {
   }
 
   return data
+
 }
 
 export const signIn = async (email: string, password: string) => {
