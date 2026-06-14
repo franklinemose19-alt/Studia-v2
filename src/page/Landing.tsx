@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { ArrowRight, Mic, BookOpen, Zap, Image, Calendar, Lock, Star } from 'lucide-react'
+import { Mic, BookOpen, Zap, Image, Calendar, Lock, Star } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 export default function Landing() {
