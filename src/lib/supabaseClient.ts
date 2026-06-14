@@ -2,19 +2,9 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 let supabaseClient: SupabaseClient | null = null
 
-const getSupabaseConfig = async () => {
-  try {
-    const response = await fetch('/api/get-supabase-config')
-    if (!response.ok) {
-      throw new Error(`Failed to fetch Supabase config: ${response.status}`)
-    }
-    const config = await response.json()
-    return config
-  } catch (error) {
-    console.error('Error fetching Supabase config:', error)
-    throw error
-  }
-}
+// Hardcode Supabase config (anon key is public)
+const SUPABASE_URL = 'https://dmqjhhbjhzzyinxnblge.supabase.co'
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRtcWpoaGJqaHp6eWlueG5ibGdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyNDkwNzMsImV4cCI6MjA5NjgyNTA3M30.SEGicDknNe-iNewG7FHbO5nWKoJj0im6kBWTtR9_4uc'
 
 const initializeSupabase = async () => {
   if (supabaseClient) {
@@ -22,13 +12,7 @@ const initializeSupabase = async () => {
   }
 
   try {
-    const config = await getSupabaseConfig()
-
-    if (!config.url || !config.key) {
-      throw new Error('Invalid Supabase configuration')
-    }
-
-    supabaseClient = createClient(config.url, config.key)
+    supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY)
     return supabaseClient
   } catch (error) {
     console.error('Failed to initialize Supabase:', error)
