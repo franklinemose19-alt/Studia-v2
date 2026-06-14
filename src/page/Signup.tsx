@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Loader, Eye, EyeOff, Check } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { supabase, signUp } from '../lib/supabaseClient'
+import { supabase } from '../lib/supabaseClient'
 
 export default function Signup() {
   const navigate = useNavigate()
@@ -67,7 +67,9 @@ export default function Signup() {
     setError('')
 
     try {
-      await signUp(email, password, name)
+      console.log('Starting signup process...')
+      await supabase.signUp(email, password, name)
+      console.log('Signup successful')
 
       setSuccess(true)
 
@@ -75,6 +77,7 @@ export default function Signup() {
         navigate('/login')
       }, 2000)
     } catch (err: any) {
+      console.error('Signup error:', err)
       setError(err.message || 'Signup failed')
       setLoading(false)
     }
@@ -93,7 +96,7 @@ export default function Signup() {
           </div>
           <h1 className="font-sora font-bold text-3xl text-navy mb-2">Account Created!</h1>
           <p className="text-gray-600 mb-8">
-            Welcome to STUDIA. A verification email has been sent. Check your inbox and follow the link to activate your account.
+            Welcome to STUDIA. Your account has been created successfully.
           </p>
           <p className="text-sm text-gray-500">Redirecting to login...</p>
         </motion.div>
@@ -105,7 +108,7 @@ export default function Signup() {
     <div className="min-h-screen bg-gradient-to-br from-white via-surface-light to-white flex items-center justify-center px-4">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
         <button
-          onClick={() => navigate('/')}
+          onClick={() => window.history.back()}
           className="flex items-center gap-2 text-navy hover:text-indigo-premium transition mb-8"
         >
           <ArrowLeft size={20} />
@@ -204,12 +207,12 @@ export default function Signup() {
 
               <div className="flex gap-3">
                 <button
-  onClick={() => window.history.back()}
-  className="flex items-center gap-2 text-navy hover:text-indigo-premium transition mb-8"
->
-  <ArrowLeft size={20} />
-  Back
-</button>
+                  type="button"
+                  onClick={() => setStep(1)}
+                  className="flex-1 border border-gray-200 text-navy font-bold py-3 rounded-xl hover:bg-gray-50 transition"
+                >
+                  Back
+                </button>
                 <button
                   type="submit"
                   className="flex-1 bg-indigo-premium text-white font-bold py-3 rounded-xl hover:bg-purple-premium transition"
