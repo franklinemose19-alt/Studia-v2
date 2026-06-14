@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Mail, Lock, Eye, EyeOff, ArrowRight, Loader } from 'lucide-react'
+import { ArrowLeft, Loader, Eye, EyeOff } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabaseClient'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -9,86 +10,125 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
-    setTimeout(() => {
+    setError('')
+
+    try {
+      if (!email || !password) {
+        setError('Please enter email and password')
+        setLoading(false)
+        return
+      }
+
+      console.log('Attempting login with email:', email)
+      const data = await supabase.signIn(email, password)
+
+      console.log('Login successful:', data)
+
+      // Store session
+      if (data.user) {
+        localStorage.setItem('user', JSON.stringify(data.user))
+        localStorage.setItem('session', JSON.stringify(data.session))
+        console.log('Session stored')
+      }
+
+      // Redirect
+      console.log('Redirecting to dashboard...')
+      setTimeout(() => {
+        navigate('/dashboard')
+      }, 500)
+    } catch (err: any) {
+      console.error('Login error:', err)
+      setError(err.message || 'An error occurred during login')
       setLoading(false)
-      navigate('/dashboard')
-    }, 1500)
+    }
   }
 
   return (
-    <div className="min-h-screen bg-surface-base flex items-center justify-center px-4">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        className="relative w-full max-w-md"
-      >
-        <div className="bg-surface-elevated border border-white/5 rounded-3xl p-8 sm:p-10">
-          <div className="mb-8 text-center">
-            <a href="/" className="inline-flex items-center gap-1 mb-6">
-              <span className="font-sora font-bold text-2xl text-white">STUDIA</span>
-              <sup className="text-brand-blue text-xs font-mono">β</sup>
-            </a>
-            <h1 className="font-sora font-bold text-3xl text-white mb-2">Welcome back</h1>
-            <p className="text-[#8B97B5] text-sm">Sign in to your study dashboard</p>
-          </div>
+    <div className="min-h-screen bg-gradient-to-br from-white via-surface-light to-white flex items-center justify-center px-4">
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
+        <button
+          onClick={() => window.history.back()}
+          className="flex items-center gap-2 text-navy hover:text-indigo-premium transition mb-8"
+        >
+          <ArrowLeft size={20} />
+          Back
+        </button>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="bg-white rounded-2xl border border-gray-200 p-8">
+          <h1 className="font-sora font-bold text-4xl text-navy mb-2">Welcome Back</h1>
+          <p className="text-gray-600 mb-8">Sign in to continue to STUDIA</p>
+
+          {error && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6"
+            >
+              <p className="text-sm text-red-600">{error}</p>
+            </motion.div>
+          )}
+
+          <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-white mb-2">Email</label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-[#4A5568] w-4 h-4" />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@university.ac.ke"
-                  className="w-full bg-surface-base border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40 focus:ring-1 focus:ring-brand-blue/20"
-                  required
-                />
-              </div>
+              <label className="block text-sm font-medium text-navy mb-2">Email</label>
+              <input
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={loading}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-navy placeholder-gray-400 outline-none focus:border-indigo-premium transition disabled:opacity-50"
+              />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-white mb-2">Password</label>
+              <label className="block text-sm font-medium text-navy mb-2">Password</label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-[#4A5568] w-4 h-4" />
                 <input
                   type={showPassword ? 'text' : 'password'}
+                  placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full bg-surface-base border border-white/10 rounded-xl pl-10 pr-10 py-3 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40 focus:ring-1 focus:ring-brand-blue/20"
-                  required
+                  disabled={loading}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 pr-12 text-navy placeholder-gray-400 outline-none focus:border-indigo-premium transition disabled:opacity-50"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#4A5568] hover:text-white"
+                  className="absolute right-4 top-3.5 text-gray-400 hover:text-navy"
+                  disabled={loading}
                 >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
               </div>
             </div>
 
             <button
-  onClick={() => window.history.back()}
-  className="flex items-center gap-2 text-navy hover:text-indigo-premium transition mb-8"
->
-  <ArrowLeft size={20} />
-  Back
-</button>
+              type="submit"
+              disabled={loading}
+              className="w-full bg-indigo-premium text-white font-bold py-3 rounded-xl hover:bg-purple-premium transition disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                <>
+                  <Loader className="animate-spin" size={20} />
+                  Signing in...
+                </>
+              ) : (
+                'Sign In'
+              )}
+            </button>
           </form>
 
-          <p className="text-center text-sm text-[#8B97B5] mt-8">
+          <p className="text-center text-sm text-gray-600 mt-6">
             Don't have an account?{' '}
-            <a href="/signup" className="text-brand-blue hover:text-brand-blue/80 font-medium">
-              Sign up free
-            </a>
+            <button onClick={() => navigate('/signup')} className="text-indigo-premium hover:text-purple-premium font-semibold">
+              Sign up
+            </button>
           </p>
         </div>
       </motion.div>
