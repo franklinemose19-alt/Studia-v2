@@ -204,12 +204,12 @@ export default function Signup() {
 
               <div className="flex gap-3">
                 <button
-                  type="button"
-                  onClick={() => setStep(1)}
-                  className="flex-1 border border-gray-200 text-navy font-bold py-3 rounded-xl hover:bg-gray-50 transition"
-                >
-                  Back
-                </button>
+  onClick={() => window.history.back()}
+  className="flex items-center gap-2 text-navy hover:text-indigo-premium transition mb-8"
+>
+  <ArrowLeft size={20} />
+  Back
+</button>
                 <button
                   type="submit"
                   className="flex-1 bg-indigo-premium text-white font-bold py-3 rounded-xl hover:bg-purple-premium transition"
