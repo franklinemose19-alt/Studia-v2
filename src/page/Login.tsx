@@ -76,22 +76,12 @@ export default function Login() {
             </div>
 
             <button
-              type="submit"
-              disabled={loading}
-              className="w-full mt-6 bg-brand-blue text-white font-medium py-3 rounded-xl hover:bg-brand-blue/90 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {loading ? (
-                <>
-                  <Loader className="w-4 h-4 animate-spin" />
-                  Signing in...
-                </>
-              ) : (
-                <>
-                  Sign in
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
-            </button>
+  onClick={() => window.history.back()}
+  className="flex items-center gap-2 text-navy hover:text-indigo-premium transition mb-8"
+>
+  <ArrowLeft size={20} />
+  Back
+</button>
           </form>
 
           <p className="text-center text-sm text-[#8B97B5] mt-8">
