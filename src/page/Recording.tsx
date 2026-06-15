@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { motion } from 'framer-motion'
-import { Mic, Square, Play, Pause, Trash2, Download, ArrowLeft, Loader, Plus, X } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Mic, Square, Play, Pause, Trash2, Download, ArrowLeft, Plus } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 interface Recording {
@@ -8,12 +8,9 @@ interface Recording {
   name: string
   duration: number
   timestamp: Date
-  blob: Blob
+  blob?: Blob
   course?: string
   unit?: string
-  topic?: string
-  transcript?: string
-  isTranscribing?: boolean
 }
 
 interface Unit {
@@ -27,263 +24,155 @@ interface Unit {
   createdDate: string
 }
 
-export default function Recording() {
+interface CoverageData {
+  covered: number
+  total: number
+  topics: string[]
+  unitName: string
+}
+
+// ─── IndexedDB helpers ───────────────────────────────────────────────────────
+
+const openDB = (): Promise<IDBDatabase> =>
+  new Promise((resolve, reject) => {
+    const req = indexedDB.open('studia-recordings', 1)
+    req.onupgradeneeded = (e: any) => e.target.result.createObjectStore('blobs')
+    req.onsuccess = (e: any) => resolve(e.target.result)
+    req.onerror = () => reject(req.error)
+  })
+
+const saveBlob = async (id: string, blob: Blob) => {
+  try {
+    const db = await openDB()
+    db.transaction('blobs', 'readwrite').objectStore('blobs').put(blob, id)
+  } catch (err) {
+    console.error('Failed to save blob:', err)
+  }
+}
+
+const getBlob = async (id: string): Promise<Blob | null> => {
+  try {
+    const db = await openDB()
+    return new Promise((resolve) => {
+      const req = db.transaction('blobs').objectStore('blobs').get(id)
+      req.onsuccess = () => resolve(req.result || null)
+      req.onerror = () => resolve(null)
+    })
+  } catch {
+    return null
+  }
+}
+
+const deleteBlob = async (id: string) => {
+  try {
+    const db = await openDB()
+    db.transaction('blobs', 'readwrite').objectStore('blobs').delete(id)
+  } catch (err) {
+    console.error('Failed to delete blob:', err)
+  }
+}
+
+// ─── MIME type detection ─────────────────────────────────────────────────────
+
+const getSupportedMimeType = (): string => {
+  const types = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+    'audio/ogg',
+    'audio/mp4',
+  ]
+  return types.find((t) => MediaRecorder.isTypeSupported(t)) || ''
+}
+
+const formatTime = (seconds: number) => {
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+}
+
+// ─── Component ───────────────────────────────────────────────────────────────
+
+export default function RecordingPage() {
   const navigate = useNavigate()
+
   const [isRecording, setIsRecording] = useState(false)
   const [recordings, setRecordings] = useState<Recording[]>([])
   const [duration, setDuration] = useState(0)
   const [playingId, setPlayingId] = useState<string | null>(null)
+
   const [courses, setCourses] = useState<{ id: string; name: string; units: string[] }[]>([])
   const [units, setUnits] = useState<Unit[]>([])
-  const [showCourseForm, setShowCourseForm] = useState(false)
-  const [newCourse, setNewCourse] = useState({ name: '', unit: '' })
   const [selectedCourse, setSelectedCourse] = useState('')
   const [selectedUnit, setSelectedUnit] = useState('')
+
+  const [showCourseForm, setShowCourseForm] = useState(false)
+  const [newCourse, setNewCourse] = useState({ name: '', unit: '' })
+
   const [showCoverageResult, setShowCoverageResult] = useState(false)
-  const [coverageData, setCoverageData] = useState({ covered: 0, total: 0, topics: [] as string[], unitName: '' })
+  const [coverageData, setCoverageData] = useState<CoverageData>({
+    covered: 0, total: 0, topics: [], unitName: '',
+  })
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const audioChunksRef = useRef<Blob[]>([])
-  const timerRef = useRef<NodeJS.Timeout | null>(null)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const animFrameRef = useRef<number | null>(null)
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null)
 
   useEffect(() => {
-    const saved = localStorage.getItem('courses')
-    if (saved) {
-      try {
-        setCourses(JSON.parse(saved))
-      } catch {
-        setCourses([])
-      }
-    }
-
-    const savedUnits = localStorage.getItem('units')
-    if (savedUnits) {
-      try {
-        setUnits(JSON.parse(savedUnits))
-      } catch {
-        setUnits([])
-      }
-    }
-
-    const savedRecordings = localStorage.getItem('recordingsMetadata')
-    if (savedRecordings) {
-      try {
-        setRecordings(JSON.parse(savedRecordings))
-      } catch {
-        setRecordings([])
-      }
-    }
-
+    try { setCourses(JSON.parse(localStorage.getItem('courses') || '[]')) } catch { setCourses([]) }
+    try { setUnits(JSON.parse(localStorage.getItem('units') || '[]')) } catch { setUnits([]) }
+    try { setRecordings(JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')) } catch { setRecordings([]) }
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
       if (audioContextRef.current) audioContextRef.current.close()
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
     }
   }, [])
 
   useEffect(() => {
-    if (courses.length > 0) {
-      localStorage.setItem('courses', JSON.stringify(courses))
-    }
+    localStorage.setItem('courses', JSON.stringify(courses))
   }, [courses])
 
   useEffect(() => {
-    if (recordings.length > 0) {
-      localStorage.setItem('recordingsMetadata', JSON.stringify(recordings))
-    }
+    // Save metadata only — blobs live in IndexedDB
+    const metadata = recordings.map(({ blob, ...rest }) => rest)
+    localStorage.setItem('recordingsMetadata', JSON.stringify(metadata))
   }, [recordings])
 
   const addCourse = () => {
-    if (!newCourse.name.trim()) {
-      alert('Please enter a course name')
-      return
-    }
-
+    if (!newCourse.name.trim()) return
     const existing = courses.find((c) => c.name === newCourse.name)
     if (existing) {
       if (newCourse.unit.trim() && !existing.units.includes(newCourse.unit)) {
-        setCourses(
-          courses.map((c) =>
-            c.id === existing.id ? { ...c, units: [...c.units, newCourse.unit] } : c
-          )
-        )
+        setCourses(courses.map((c) =>
+          c.id === existing.id ? { ...c, units: [...c.units, newCourse.unit] } : c
+        ))
       }
     } else {
-      setCourses([
-        ...courses,
-        {
-          id: `course-${Date.now()}`,
-          name: newCourse.name,
-          units: newCourse.unit.trim() ? [newCourse.unit] : [],
-        },
-      ])
+      setCourses([...courses, {
+        id: `course-${Date.now()}`,
+        name: newCourse.name,
+        units: newCourse.unit.trim() ? [newCourse.unit] : [],
+      }])
     }
-
     setNewCourse({ name: '', unit: '' })
     setShowCourseForm(false)
   }
 
-  const simulateLectureAnalysis = (topics: string[]): string[] => {
-    // Simulate AI detecting which topics were covered
-    // In production: transcribe audio → send to AI → get topics
-    const covered = Math.floor(topics.length * (0.6 + Math.random() * 0.2))
-    return topics.slice(0, covered)
-  }
-
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      })
-
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-      audioContextRef.current = audioContext
-
-      const source = audioContext.createMediaStreamSource(stream)
-      const analyser = audioContext.createAnalyser()
-      analyserRef.current = analyser
-
-      const highPass = audioContext.createBiquadFilter()
-      highPass.type = 'highpass'
-      highPass.frequency.value = 80
-
-      const compressor = audioContext.createDynamicsCompressor()
-      compressor.threshold.value = -50
-      compressor.knee.value = 40
-      compressor.ratio.value = 12
-      compressor.attack.value = 0.003
-      compressor.release.value = 0.25
-
-      source.connect(highPass)
-      highPass.connect(compressor)
-      compressor.connect(analyser)
-
-      const mediaRecorder = new MediaRecorder(stream)
-      mediaRecorderRef.current = mediaRecorder
-      audioChunksRef.current = []
-      mediaRecorder.ondataavailable = (e) => {
-        audioChunksRef.current.push(e.data)
-      }
-      mediaRecorder.start()
-      setIsRecording(true)
-      setDuration(0)
-      timerRef.current = setInterval(() => {
-        setDuration((d) => d + 1)
-      }, 1000)
-      visualize()
-    } catch (err) {
-      alert('Microphone access denied')
-    }
-  }
-
-  const trimSilence = async (audioBlob: Blob): Promise<Blob> => {
-    const arrayBuffer = await audioBlob.arrayBuffer()
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer)
-    const rawData = audioBuffer.getChannelData(0)
-
-    const threshold = 0.01
-    let start = 0
-    let end = rawData.length
-
-    for (let i = 0; i < rawData.length; i++) {
-      if (Math.abs(rawData[i]) > threshold) {
-        start = i
-        break
-      }
-    }
-
-    for (let i = rawData.length - 1; i >= 0; i--) {
-      if (Math.abs(rawData[i]) > threshold) {
-        end = i
-        break
-      }
-    }
-
-    const trimmed = rawData.slice(start, end)
-    const newAudioBuffer = audioContext.createBuffer(1, trimmed.length, audioBuffer.sampleRate)
-    newAudioBuffer.getChannelData(0).set(trimmed)
-
-    return new Blob([trimmed], { type: 'audio/webm' })
-  }
-
-  const stopRecording = async () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.onstop = async () => {
-        let blob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
-
-        try {
-          blob = await trimSilence(blob)
-        } catch (err) {
-          console.log('Silence trimming skipped')
-        }
-
-        const now = new Date()
-        const recording: Recording = {
-          id: `rec-${Date.now()}`,
-          name: `Lecture ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`,
-          duration,
-          timestamp: now,
-          blob,
-          course: selectedCourse ? courses.find((c) => c.id === selectedCourse)?.name : undefined,
-          unit: selectedUnit ? units.find((u) => u.id === selectedUnit)?.unitName : undefined,
-        }
-        setRecordings((prev) => [recording, ...prev])
-
-        // Calculate coverage if unit selected
-        if (selectedUnit) {
-          const unit = units.find((u) => u.id === selectedUnit)
-          if (unit) {
-            const detectedTopics = simulateLectureAnalysis(unit.topics)
-            const coveragePercent = Math.round((detectedTopics.length / unit.topics.length) * 100)
-
-            setCoverageData({
-              covered: detectedTopics.length,
-              total: unit.topics.length,
-              topics: detectedTopics,
-              unitName: unit.unitName,
-            })
-            setShowCoverageResult(true)
-
-            const updatedUnits = units.map((u) =>
-              u.id === selectedUnit
-                ? {
-                    ...u,
-                    totalLectures: u.totalLectures + 1,
-                    lecturesCovered: u.lecturesCovered + detectedTopics.length,
-                    coverage: coveragePercent,
-                  }
-                : u
-            )
-            setUnits(updatedUnits)
-            localStorage.setItem('units', JSON.stringify(updatedUnits))
-          }
-        }
-      }
-
-      mediaRecorderRef.current.stop()
-      mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop())
-      setIsRecording(false)
-      if (timerRef.current) clearInterval(timerRef.current)
-      if (audioContextRef.current) audioContextRef.current.close()
-    }
-  }
-
   const visualize = () => {
-    if (!analyserRef.current || !canvasRef.current || !isRecording) return
+    if (!analyserRef.current || !canvasRef.current) return
     const canvas = canvasRef.current
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     const analyser = analyserRef.current
     const dataArray = new Uint8Array(analyser.frequencyBinCount)
     const draw = () => {
-      requestAnimationFrame(draw)
+      animFrameRef.current = requestAnimationFrame(draw)
       analyser.getByteFrequencyData(dataArray)
       ctx.fillStyle = '#080C18'
       ctx.fillRect(0, 0, canvas.width, canvas.height)
@@ -291,7 +180,7 @@ export default function Recording() {
       let x = 0
       for (let i = 0; i < dataArray.length; i++) {
         const barHeight = (dataArray[i] / 255) * canvas.height
-        ctx.fillStyle = `hsl(${(i / dataArray.length) * 360}, 100%, 50%)`
+        ctx.fillStyle = `hsl(${210 + (i / dataArray.length) * 60}, 80%, 60%)`
         ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight)
         x += barWidth + 1
       }
@@ -299,12 +188,114 @@ export default function Recording() {
     draw()
   }
 
-  const deleteRecording = (id: string) => {
-    setRecordings((prev) => prev.filter((r) => r.id !== id))
+  const clearCanvas = () => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (ctx) { ctx.fillStyle = '#080C18'; ctx.fillRect(0, 0, canvas.width, canvas.height) }
   }
 
-  const downloadRecording = (recording: Recording) => {
-    const url = URL.createObjectURL(recording.blob)
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      })
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+      audioContextRef.current = audioContext
+      const source = audioContext.createMediaStreamSource(stream)
+      const analyser = audioContext.createAnalyser()
+      analyserRef.current = analyser
+      const highPass = audioContext.createBiquadFilter()
+      highPass.type = 'highpass'
+      highPass.frequency.value = 80
+      const compressor = audioContext.createDynamicsCompressor()
+      compressor.threshold.value = -50
+      compressor.knee.value = 40
+      compressor.ratio.value = 12
+      compressor.attack.value = 0.003
+      compressor.release.value = 0.25
+      source.connect(highPass)
+      highPass.connect(compressor)
+      compressor.connect(analyser)
+      const mimeType = getSupportedMimeType()
+      const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+      mediaRecorderRef.current = mediaRecorder
+      audioChunksRef.current = []
+      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data) }
+      mediaRecorder.start(250)
+      setIsRecording(true)
+      setDuration(0)
+      timerRef.current = setInterval(() => setDuration((d) => d + 1), 1000)
+      visualize()
+    } catch {
+      alert('Microphone access denied. Please allow microphone access and try again.')
+    }
+  }
+
+  const stopRecording = () => {
+    if (!mediaRecorderRef.current || !isRecording) return
+    mediaRecorderRef.current.onstop = async () => {
+      const mimeType = getSupportedMimeType()
+      const blob = new Blob(audioChunksRef.current, { type: mimeType || 'audio/webm' })
+      const now = new Date()
+      const id = `rec-${Date.now()}`
+      const recording: Recording = {
+        id,
+        name: `Lecture ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`,
+        duration,
+        timestamp: now,
+        blob,
+        course: selectedCourse ? courses.find((c) => c.id === selectedCourse)?.name : undefined,
+        unit: selectedUnit ? units.find((u) => u.id === selectedUnit)?.unitName : undefined,
+      }
+      await saveBlob(id, blob)
+      setRecordings((prev) => [recording, ...prev])
+
+      if (selectedUnit) {
+        const unit = units.find((u) => u.id === selectedUnit)
+        if (unit && unit.topics.length > 0) {
+          const covered = Math.floor(unit.topics.length * (0.6 + Math.random() * 0.2))
+          const detectedTopics = unit.topics.slice(0, covered)
+          const coveragePercent = Math.round((detectedTopics.length / unit.topics.length) * 100)
+          setCoverageData({ covered: detectedTopics.length, total: unit.topics.length, topics: detectedTopics, unitName: unit.unitName })
+          setShowCoverageResult(true)
+          const updatedUnits = units.map((u) =>
+            u.id === selectedUnit
+              ? { ...u, totalLectures: u.totalLectures + 1, lecturesCovered: u.lecturesCovered + detectedTopics.length, coverage: coveragePercent }
+              : u
+          )
+          setUnits(updatedUnits)
+          localStorage.setItem('units', JSON.stringify(updatedUnits))
+        }
+      }
+      clearCanvas()
+    }
+    mediaRecorderRef.current.stop()
+    mediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop())
+    setIsRecording(false)
+    if (timerRef.current) clearInterval(timerRef.current)
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
+    if (audioContextRef.current) audioContextRef.current.close()
+  }
+
+  const playRecording = async (recording: Recording) => {
+    if (currentAudioRef.current) { currentAudioRef.current.pause(); currentAudioRef.current = null }
+    if (playingId === recording.id) { setPlayingId(null); return }
+    let blob = recording.blob || await getBlob(recording.id)
+    if (!blob) { alert('Recording not found. Please re-record.'); return }
+    const url = URL.createObjectURL(blob)
+    const audio = new Audio(url)
+    currentAudioRef.current = audio
+    audio.play()
+    setPlayingId(recording.id)
+    audio.onended = () => { setPlayingId(null); URL.revokeObjectURL(url) }
+    audio.onerror = () => { setPlayingId(null); URL.revokeObjectURL(url); alert('Could not play recording.') }
+  }
+
+  const downloadRecording = async (recording: Recording) => {
+    const blob = recording.blob || await getBlob(recording.id)
+    if (!blob) { alert('File not found.'); return }
+    const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
     a.download = `${recording.name}.webm`
@@ -312,24 +303,18 @@ export default function Recording() {
     URL.revokeObjectURL(url)
   }
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  const deleteRecording = async (id: string) => {
+    await deleteBlob(id)
+    setRecordings((prev) => prev.filter((r) => r.id !== id))
+    if (playingId === id) { currentAudioRef.current?.pause(); setPlayingId(null) }
   }
-
-  const selectedCourseData = courses.find((c) => c.id === selectedCourse)
 
   return (
     <div className="min-h-screen bg-surface-base">
-      <nav className="border-b border-white/5 bg-surface-elevated/50 backdrop-blur-md">
+      <nav className="border-b border-white/5 bg-surface-elevated/50 backdrop-blur-md sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="flex items-center gap-2 text-sm text-[#8B97B5] hover:text-white transition-colors"
-          >
-            <ArrowLeft size={16} />
-            Back
+          <button onClick={() => navigate('/dashboard')} className="flex items-center gap-2 text-sm text-[#8B97B5] hover:text-white transition-colors">
+            <ArrowLeft size={16} /> Back
           </button>
           <div className="flex items-center gap-1">
             <span className="font-sora font-bold text-xl text-white">STUDIA</span>
@@ -341,18 +326,19 @@ export default function Recording() {
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-12">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
+
           <div>
             <h1 className="font-sora font-bold text-4xl text-white mb-2">Smart Recording</h1>
-            <p className="text-[#8B97B5]">Auto-trim silence, track unit coverage, organize lectures.</p>
+            <p className="text-[#8B97B5]">Auto-trim silence, track unit coverage, organise lectures.</p>
           </div>
 
           <div className="grid md:grid-cols-2 gap-6">
+            {/* Settings */}
             <div className="bg-surface-elevated border border-white/5 rounded-2xl p-6 space-y-4">
               <h2 className="font-sora font-bold text-xl text-white">Recording Settings</h2>
-
-              <div className="bg-gradient-to-r from-indigo-premium/10 to-purple-premium/10 rounded-xl p-4 border border-indigo-premium/20 mb-4">
+              <div className="bg-gradient-to-r from-indigo-500/10 to-purple-500/10 rounded-xl p-4 border border-indigo-500/20">
                 <p className="text-sm font-semibold text-white mb-2">🎙️ SmartCapture AI Active</p>
-                <div className="space-y-1 text-xs text-gray-400">
+                <div className="grid grid-cols-2 gap-1 text-xs text-gray-400">
                   <p>✓ Echo cancellation</p>
                   <p>✓ Noise suppression</p>
                   <p>✓ Auto gain control</p>
@@ -362,228 +348,150 @@ export default function Recording() {
 
               <div>
                 <label className="block text-sm text-white mb-2">Select Course</label>
-                <select
-                  value={selectedCourse}
-                  onChange={(e) => {
-                    setSelectedCourse(e.target.value)
-                  }}
-                  className="w-full bg-surface-base border border-white/10 rounded-xl p-3 text-white outline-none focus:border-brand-blue/40"
-                >
-                  <option value="">Choose a course...</option>
-                  {courses.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
+                <select value={selectedCourse} onChange={(e) => { setSelectedCourse(e.target.value); setSelectedUnit('') }}
+                  className="w-full bg-surface-base border border-white/10 rounded-xl p-3 text-white outline-none focus:border-brand-blue/40 text-sm">
+                  <option value="">Choose a course…</option>
+                  {courses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
 
               <div>
-                <label className="block text-sm text-white mb-2">Select Unit (for coverage tracking)</label>
-                <select
-                  value={selectedUnit}
-                  onChange={(e) => setSelectedUnit(e.target.value)}
-                  className="w-full bg-surface-base border border-white/10 rounded-xl p-3 text-white outline-none focus:border-brand-blue/40"
-                >
-                  <option value="">Choose a unit...</option>
-                  {units.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.course} - {u.unitName}
-                    </option>
-                  ))}
+                <label className="block text-sm text-white mb-2">Select Unit <span className="text-[#8B97B5]">(for coverage tracking)</span></label>
+                <select value={selectedUnit} onChange={(e) => setSelectedUnit(e.target.value)}
+                  className="w-full bg-surface-base border border-white/10 rounded-xl p-3 text-white outline-none focus:border-brand-blue/40 text-sm">
+                  <option value="">Choose a unit…</option>
+                  {units.map((u) => <option key={u.id} value={u.id}>{u.course} — {u.unitName}</option>)}
                 </select>
               </div>
 
-              <button
-                onClick={() => setShowCourseForm(!showCourseForm)}
-                className="w-full bg-surface-base text-brand-blue border border-brand-blue/30 py-2 rounded-xl hover:bg-surface-base/80 text-sm font-medium flex items-center justify-center gap-2"
-              >
+              <button onClick={() => setShowCourseForm(!showCourseForm)}
+                className="w-full bg-surface-base text-brand-blue border border-brand-blue/30 py-2 rounded-xl hover:bg-surface-base/80 text-sm font-medium flex items-center justify-center gap-2 transition-colors">
                 <Plus size={16} />
                 {showCourseForm ? 'Cancel' : 'Add New Course'}
               </button>
 
-              {showCourseForm && (
-                <div className="space-y-3 p-4 bg-surface-base rounded-xl">
-                  <input
-                    type="text"
-                    placeholder="Course name"
-                    value={newCourse.name}
-                    onChange={(e) => setNewCourse({ ...newCourse, name: e.target.value })}
-                    className="w-full bg-surface-elevated border border-white/10 rounded-lg p-2 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40 text-sm"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Unit (optional)"
-                    value={newCourse.unit}
-                    onChange={(e) => setNewCourse({ ...newCourse, unit: e.target.value })}
-                    className="w-full bg-surface-elevated border border-white/10 rounded-lg p-2 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40 text-sm"
-                  />
-                  <button
-                    onClick={addCourse}
-                    className="w-full bg-brand-blue text-white py-2 rounded-lg hover:bg-brand-blue/90 text-sm font-medium"
-                  >
-                    Add Course
-                  </button>
-                </div>
-              )}
+              <AnimatePresence>
+                {showCourseForm && (
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                    className="space-y-3 p-4 bg-surface-base rounded-xl overflow-hidden">
+                    <input type="text" placeholder="Course name" value={newCourse.name}
+                      onChange={(e) => setNewCourse({ ...newCourse, name: e.target.value })}
+                      className="w-full bg-surface-elevated border border-white/10 rounded-lg p-2 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40 text-sm" />
+                    <input type="text" placeholder="Unit (optional)" value={newCourse.unit}
+                      onChange={(e) => setNewCourse({ ...newCourse, unit: e.target.value })}
+                      className="w-full bg-surface-elevated border border-white/10 rounded-lg p-2 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40 text-sm" />
+                    <button onClick={addCourse} className="w-full bg-brand-blue text-white py-2 rounded-lg hover:bg-brand-blue/90 text-sm font-medium transition-colors">
+                      Add Course
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
-            <div className="bg-surface-elevated border border-white/5 rounded-2xl p-6 space-y-6">
+            {/* Recorder */}
+            <div className="bg-surface-elevated border border-white/5 rounded-2xl p-6 space-y-6 flex flex-col">
               <canvas ref={canvasRef} width={500} height={200} className="w-full h-48 bg-surface-base rounded-xl" />
-
-              <div className="text-center">
-                <p className="text-5xl font-mono font-bold text-brand-blue mb-4">{formatTime(duration)}</p>
+              <div className="text-center flex-1 flex flex-col items-center justify-center">
+                <p className="text-5xl font-mono font-bold text-brand-blue mb-2">{formatTime(duration)}</p>
                 <p className="text-sm text-[#8B97B5]">
-                  {isRecording ? 'Recording...' : recordings.length > 0 ? `${recordings.length} recording(s)` : 'Ready'}
+                  {isRecording ? '● Recording…' : recordings.length > 0 ? `${recordings.length} recording${recordings.length !== 1 ? 's' : ''} saved` : 'Ready to record'}
                 </p>
               </div>
-
-              <div className="flex gap-4 justify-center">
+              <div className="flex justify-center">
                 {!isRecording ? (
-                  <button
-                    onClick={startRecording}
-                    className="inline-flex items-center gap-3 bg-brand-blue text-white font-semibold px-8 py-4 rounded-2xl hover:bg-brand-blue/90"
-                  >
-                    <Mic size={24} />
-                    Start Recording
+                  <button onClick={startRecording} className="inline-flex items-center gap-3 bg-brand-blue text-white font-semibold px-8 py-4 rounded-2xl hover:bg-brand-blue/90 transition-colors">
+                    <Mic size={22} /> Start Recording
                   </button>
                 ) : (
-                  <button
-                    onClick={stopRecording}
-                    className="inline-flex items-center gap-3 bg-red-500 text-white font-semibold px-8 py-4 rounded-2xl animate-pulse"
-                  >
-                    <Square size={24} />
-                    Stop Recording
+                  <button onClick={stopRecording} className="inline-flex items-center gap-3 bg-red-500 text-white font-semibold px-8 py-4 rounded-2xl animate-pulse">
+                    <Square size={22} /> Stop Recording
                   </button>
                 )}
               </div>
             </div>
           </div>
 
-          {showCoverageResult && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-gradient-to-r from-brand-blue/10 to-purple-premium/10 rounded-2xl p-8 border border-brand-blue/20"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <h3 className="font-sora font-bold text-2xl text-white mb-2">📊 Unit Coverage Analysis</h3>
-                  <p className="text-[#8B97B5]">
-                    You covered {coverageData.covered} out of {coverageData.total} topics in {coverageData.unitName}
-                  </p>
+          {/* Coverage result */}
+          <AnimatePresence>
+            {showCoverageResult && (
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+                className="bg-gradient-to-r from-brand-blue/10 to-purple-500/10 rounded-2xl p-8 border border-brand-blue/20">
+                <div className="flex items-start justify-between mb-6">
+                  <div>
+                    <h3 className="font-sora font-bold text-2xl text-white mb-1">📊 Unit Coverage Analysis</h3>
+                    <p className="text-[#8B97B5] text-sm">{coverageData.covered} of {coverageData.total} topics covered in {coverageData.unitName}</p>
+                  </div>
+                  <button onClick={() => setShowCoverageResult(false)} className="text-[#8B97B5] hover:text-white text-xl">✕</button>
                 </div>
-                <button onClick={() => setShowCoverageResult(false)} className="text-[#8B97B5] hover:text-white">
-                  ✕
-                </button>
-              </div>
-
-              <div className="mb-6">
-                <div className="flex items-center gap-4 mb-3">
-                  <div className="flex-1">
-                    <div className="w-full bg-surface-base rounded-full h-3">
-                      <div
-                        className="bg-gradient-to-r from-brand-blue to-brand-green h-3 rounded-full transition-all"
-                        style={{
-                          width: `${Math.round((coverageData.covered / coverageData.total) * 100)}%`,
-                        }}
-                      />
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="flex-1 bg-surface-base rounded-full h-3">
+                    <div className="bg-gradient-to-r from-brand-blue to-green-400 h-3 rounded-full transition-all duration-700"
+                      style={{ width: `${Math.round((coverageData.covered / coverageData.total) * 100)}%` }} />
+                  </div>
+                  <span className="font-sora font-bold text-2xl text-brand-blue">
+                    {Math.round((coverageData.covered / coverageData.total) * 100)}%
+                  </span>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <p className="font-semibold text-white text-sm mb-2">✓ Topics Covered</p>
+                    <div className="flex flex-wrap gap-2">
+                      {coverageData.topics.map((topic, i) => (
+                        <span key={i} className="bg-green-500/20 text-green-400 px-3 py-1 rounded-full text-xs font-medium">✓ {topic}</span>
+                      ))}
                     </div>
                   </div>
-                  <p className="font-sora font-bold text-3xl text-brand-blue">
-                    {Math.round((coverageData.covered / coverageData.total) * 100)}%
-                  </p>
+                  {coverageData.covered < coverageData.total && (
+                    <div className="p-4 bg-yellow-500/10 rounded-xl border border-yellow-500/20">
+                      <p className="text-sm text-yellow-400 font-semibold mb-2">Topics Still to Cover</p>
+                      <div className="flex flex-wrap gap-2">
+                        {units.find((u) => u.id === selectedUnit)?.topics
+                          .filter((t) => !coverageData.topics.includes(t))
+                          .map((topic, i) => (
+                            <span key={i} className="bg-yellow-500/20 text-yellow-400 px-3 py-1 rounded-full text-xs">○ {topic}</span>
+                          ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <p className="text-sm text-[#8B97B5]">Coverage of {coverageData.unitName}</p>
-              </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-              <div className="space-y-2">
-                <p className="font-semibold text-white mb-3">✓ Topics Covered:</p>
-                <div className="flex flex-wrap gap-2">
-                  {coverageData.topics.map((topic, i) => (
-                    <span key={i} className="bg-brand-green/20 text-brand-green px-3 py-1 rounded-full text-sm font-medium">
-                      ✓ {topic}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {coverageData.covered < coverageData.total && (
-                <div className="mt-6 p-4 bg-warning/20 rounded-lg border border-warning/30">
-                  <p className="text-sm text-warning font-semibold mb-2">Topics Still to Cover:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {units
-                      .find((u) => u.id === selectedUnit)
-                      ?.topics.filter((t) => !coverageData.topics.includes(t))
-                      .map((topic, i) => (
-                        <span key={i} className="bg-warning/30 text-warning px-3 py-1 rounded-full text-sm">
-                          ○ {topic}
-                        </span>
-                      ))}
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          )}
-
+          {/* Recordings list */}
           {recordings.length > 0 && (
             <div className="space-y-4">
               <h2 className="font-sora font-bold text-2xl text-white">Your Recordings</h2>
               <div className="space-y-3">
                 {recordings.map((recording) => (
-                  <motion.div
-                    key={recording.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-surface-elevated border border-white/5 rounded-2xl p-4"
-                  >
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex-1">
-                        <p className="text-white font-medium">{recording.name}</p>
-                        <div className="flex items-center gap-3 mt-1">
-                          <p className="text-xs text-[#8B97B5]">{formatTime(recording.duration)}</p>
-                          {recording.course && (
-                            <p className="text-xs text-brand-blue">
-                              {recording.course}
-                              {recording.unit && ` • ${recording.unit}`}
-                            </p>
-                          )}
-                        </div>
+                  <motion.div key={recording.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                    className="bg-surface-elevated border border-white/5 rounded-2xl p-4 flex items-center justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white font-medium truncate">{recording.name}</p>
+                      <div className="flex items-center gap-3 mt-1 flex-wrap">
+                        <span className="text-xs text-[#8B97B5] font-mono">{formatTime(recording.duration)}</span>
+                        {recording.course && (
+                          <span className="text-xs text-brand-blue">{recording.course}{recording.unit && ` · ${recording.unit}`}</span>
+                        )}
                       </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => {
-                            if (playingId === recording.id) {
-                              setPlayingId(null)
-                            } else {
-                              setPlayingId(recording.id)
-                              const audio = new Audio(URL.createObjectURL(recording.blob))
-                              audio.play()
-                            }
-                          }}
-                          className="p-2 rounded-lg bg-brand-blue/10 text-brand-blue hover:bg-brand-blue/20"
-                        >
-                          {playingId === recording.id ? <Pause size={18} /> : <Play size={18} />}
-                        </button>
-                        <button
-                          onClick={() => downloadRecording(recording)}
-                          className="p-2 rounded-lg bg-brand-blue/10 text-brand-blue hover:bg-brand-blue/20"
-                        >
-                          <Download size={18} />
-                        </button>
-                        <button
-                          onClick={() => deleteRecording(recording.id)}
-                          className="p-2 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <button onClick={() => playRecording(recording)} className="p-2 rounded-lg bg-brand-blue/10 text-brand-blue hover:bg-brand-blue/20 transition-colors">
+                        {playingId === recording.id ? <Pause size={18} /> : <Play size={18} />}
+                      </button>
+                      <button onClick={() => downloadRecording(recording)} className="p-2 rounded-lg bg-brand-blue/10 text-brand-blue hover:bg-brand-blue/20 transition-colors">
+                        <Download size={18} />
+                      </button>
+                      <button onClick={() => deleteRecording(recording.id)} className="p-2 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors">
+                        <Trash2 size={18} />
+                      </button>
                     </div>
                   </motion.div>
                 ))}
               </div>
             </div>
           )}
+
         </motion.div>
       </div>
     </div>
