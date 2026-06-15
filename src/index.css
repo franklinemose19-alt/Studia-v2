@@ -23,13 +23,16 @@ body {
 ::-webkit-scrollbar {
   width: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: #080C18;
 }
+
 ::-webkit-scrollbar-thumb {
   background: #1E2235;
   border-radius: 3px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: #4F8EF7;
 }
@@ -37,4 +40,24 @@ body {
 ::selection {
   background: rgba(79, 142, 247, 0.3);
   color: #F0F4FF;
+}
+
+input,
+textarea,
+select {
+  color: #F0F4FF;
+  background-color: transparent;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #4A5568;
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #F0F4FF;
+  -webkit-box-shadow: 0 0 0px 1000px #0D1120 inset;
+  transition: background-color 5000s ease-in-out 0s;
 }
