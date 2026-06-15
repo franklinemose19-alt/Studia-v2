@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import { motion } from 'framer-motion'
-import { ArrowLeft, Loader, Copy, Download } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { ArrowLeft, Loader, Copy, Download, Camera, Image, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 export default function Summarize() {
@@ -9,19 +9,90 @@ export default function Summarize() {
   const [summary, setSummary] = useState('')
   const [loading, setLoading] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [uploadedImage, setUploadedImage] = useState<string | null>(null)
+  const [showCamera, setShowCamera] = useState(false)
+  const [inputMode, setInputMode] = useState<'text' | 'image'>('text')
+
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+
+  // ─── Camera ───────────────────────────────────────────────────────────────
+
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' },
+      })
+      streamRef.current = stream
+      setShowCamera(true)
+      setTimeout(() => {
+        if (videoRef.current) videoRef.current.srcObject = stream
+      }, 100)
+    } catch {
+      alert('Camera access denied. Please allow camera access and try again.')
+    }
+  }
+
+  const stopCamera = () => {
+    streamRef.current?.getTracks().forEach((t) => t.stop())
+    streamRef.current = null
+    setShowCamera(false)
+  }
+
+  const capturePhoto = () => {
+    if (!videoRef.current) return
+    const canvas = document.createElement('canvas')
+    canvas.width = videoRef.current.videoWidth
+    canvas.height = videoRef.current.videoHeight
+    canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0)
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
+    setUploadedImage(dataUrl)
+    setInputMode('image')
+    stopCamera()
+  }
+
+  // ─── Gallery upload ────────────────────────────────────────────────────────
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      setUploadedImage(ev.target?.result as string)
+      setInputMode('image')
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
+
+  const clearImage = () => {
+    setUploadedImage(null)
+    setInputMode('text')
+  }
+
+  // ─── Summarize ────────────────────────────────────────────────────────────
 
   const generateSummary = async () => {
-    if (!notes.trim()) {
-      alert('Please paste your lecture notes')
+    if (inputMode === 'text' && !notes.trim()) {
+      alert('Please paste your lecture notes or upload an image')
+      return
+    }
+    if (inputMode === 'image' && !uploadedImage) {
+      alert('Please capture or upload an image first')
       return
     }
 
     setLoading(true)
     try {
+      const body = inputMode === 'image'
+        ? { image: uploadedImage }
+        : { text: notes }
+
       const res = await fetch('/api/summarize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: notes }),
+        body: JSON.stringify(body),
       })
 
       const data = await res.json()
@@ -52,9 +123,39 @@ export default function Summarize() {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const canSubmit = inputMode === 'text' ? notes.trim().length > 0 : !!uploadedImage
+
   return (
     <div className="min-h-screen bg-surface-base">
-      <nav className="border-b border-white/5 bg-surface-elevated/50 backdrop-blur-md">
+      {/* Camera modal */}
+      <AnimatePresence>
+        {showCamera && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center gap-6 p-4"
+          >
+            <video ref={videoRef} autoPlay playsInline className="w-full max-w-lg rounded-2xl" />
+            <div className="flex gap-4">
+              <button
+                onClick={capturePhoto}
+                className="bg-brand-blue text-white px-8 py-3 rounded-xl font-medium hover:bg-brand-blue/90"
+              >
+                📸 Capture
+              </button>
+              <button
+                onClick={stopCamera}
+                className="bg-white/10 text-white px-8 py-3 rounded-xl font-medium hover:bg-white/20"
+              >
+                Cancel
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <nav className="border-b border-white/5 bg-surface-elevated/50 backdrop-blur-md sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <button
             onClick={() => navigate('/dashboard')}
@@ -75,36 +176,144 @@ export default function Summarize() {
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
           <div>
             <h1 className="font-sora font-bold text-4xl text-white mb-2">Summarize Lecture Notes</h1>
-            <p className="text-[#8B97B5]">Paste your lecture notes and get an AI-powered summary instantly.</p>
+            <p className="text-[#8B97B5]">Type, paste, snap a photo, or upload an image — get an AI summary instantly.</p>
           </div>
 
           <div className="grid md:grid-cols-2 gap-6">
+            {/* Input panel */}
             <div className="bg-surface-elevated border border-white/5 rounded-2xl p-6 space-y-4">
-              <label className="block text-sm font-medium text-white">Paste your lecture notes:</label>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Paste your lecture notes here... The more detailed, the better the summary!"
-                className="w-full h-64 bg-surface-base border border-white/10 rounded-xl p-4 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40 resize-none"
-              />
+
+              {/* Mode tabs */}
+              <div className="flex bg-surface-base rounded-xl p-1 gap-1">
+                <button
+                  onClick={() => setInputMode('text')}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    inputMode === 'text'
+                      ? 'bg-brand-blue text-white'
+                      : 'text-[#8B97B5] hover:text-white'
+                  }`}
+                >
+                  ✏️ Type / Paste
+                </button>
+                <button
+                  onClick={() => setInputMode('image')}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    inputMode === 'image'
+                      ? 'bg-brand-blue text-white'
+                      : 'text-[#8B97B5] hover:text-white'
+                  }`}
+                >
+                  📷 Photo / Image
+                </button>
+              </div>
+
+              <AnimatePresence mode="wait">
+                {inputMode === 'text' ? (
+                  <motion.div
+                    key="text"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    <textarea
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      placeholder="Paste your lecture notes here... The more detailed, the better the summary!"
+                      className="w-full h-64 bg-surface-base border border-white/10 rounded-xl p-4 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40 resize-none"
+                    />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="image"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="space-y-3"
+                  >
+                    {uploadedImage ? (
+                      <div className="relative rounded-xl overflow-hidden">
+                        <img
+                          src={uploadedImage}
+                          alt="Uploaded notes"
+                          className="w-full h-64 object-cover rounded-xl"
+                        />
+                        <button
+                          onClick={clearImage}
+                          className="absolute top-2 right-2 bg-black/70 text-white rounded-full p-1 hover:bg-black"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="h-64 bg-surface-base border border-white/10 border-dashed rounded-xl flex flex-col items-center justify-center gap-4 text-[#4A5568]">
+                        <p className="text-sm">Snap or upload a photo of your notes</p>
+                        <div className="flex gap-3">
+                          <button
+                            onClick={startCamera}
+                            className="flex items-center gap-2 bg-surface-elevated border border-white/10 text-white px-4 py-2 rounded-xl hover:border-brand-blue/40 text-sm transition-colors"
+                          >
+                            <Camera size={16} className="text-brand-blue" />
+                            Camera
+                          </button>
+                          <button
+                            onClick={() => fileInputRef.current?.click()}
+                            className="flex items-center gap-2 bg-surface-elevated border border-white/10 text-white px-4 py-2 rounded-xl hover:border-brand-blue/40 text-sm transition-colors"
+                          >
+                            <Image size={16} className="text-brand-blue" />
+                            Gallery
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Show buttons again if image already uploaded */}
+                    {uploadedImage && (
+                      <div className="flex gap-3">
+                        <button
+                          onClick={startCamera}
+                          className="flex-1 flex items-center justify-center gap-2 bg-surface-base border border-white/10 text-white py-2 rounded-xl hover:border-brand-blue/40 text-sm transition-colors"
+                        >
+                          <Camera size={15} className="text-brand-blue" />
+                          Retake
+                        </button>
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          className="flex-1 flex items-center justify-center gap-2 bg-surface-base border border-white/10 text-white py-2 rounded-xl hover:border-brand-blue/40 text-sm transition-colors"
+                        >
+                          <Image size={15} className="text-brand-blue" />
+                          Change
+                        </button>
+                      </div>
+                    )}
+
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleFileUpload}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               <button
                 onClick={generateSummary}
-                disabled={loading || !notes.trim()}
+                disabled={loading || !canSubmit}
                 className="w-full bg-brand-blue text-white font-medium py-3 rounded-xl hover:bg-brand-blue/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {loading ? (
                   <>
                     <Loader className="w-4 h-4 animate-spin" />
-                    Generating...
+                    {inputMode === 'image' ? 'Reading image...' : 'Generating...'}
                   </>
                 ) : (
-                  <>
-                    Generate Summary
-                  </>
+                  'Generate Summary'
                 )}
               </button>
             </div>
 
+            {/* Output panel */}
             <div className="bg-surface-elevated border border-white/5 rounded-2xl p-6 space-y-4">
               <label className="block text-sm font-medium text-white">Your Summary:</label>
               {summary ? (
