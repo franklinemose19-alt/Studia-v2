@@ -28,6 +28,8 @@ export default async function handler(req, res) {
     const BUSINESS_SHORTCODE = process.env.MPESA_SHORTCODE
     const PASSKEY = process.env.MPESA_PASSKEY
     const CALLBACK_URL = process.env.MPESA_CALLBACK_URL
+    const SUPABASE_URL = process.env.SUPABASE_URL
+    const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 
     // ✅ Check all required env vars
     const missingVars = []
@@ -36,16 +38,18 @@ export default async function handler(req, res) {
     if (!BUSINESS_SHORTCODE) missingVars.push('MPESA_SHORTCODE')
     if (!PASSKEY) missingVars.push('MPESA_PASSKEY')
     if (!CALLBACK_URL) missingVars.push('MPESA_CALLBACK_URL')
+    if (!SUPABASE_URL) missingVars.push('SUPABASE_URL')
+    if (!SUPABASE_SERVICE_KEY) missingVars.push('SUPABASE_SERVICE_ROLE_KEY')
 
     if (missingVars.length > 0) {
       console.error('❌ Missing env vars:', missingVars)
       return res.status(500).json({
         success: false,
-        error: `Missing M-Pesa config: ${missingVars.join(', ')}`,
+        error: `Missing config: ${missingVars.join(', ')}`,
       })
     }
 
-    // ✅ Get access token
+    // ✅ Get M-Pesa access token
     const auth = Buffer.from(`${CONSUMER_KEY}:${CONSUMER_SECRET}`).toString('base64')
     const tokenResponse = await fetch(
       'https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials',
@@ -110,30 +114,45 @@ export default async function handler(req, res) {
     console.log('📥 STK Response:', JSON.stringify(stkData))
 
     if (stkData.ResponseCode === '0') {
-      // ✅ Payment initiated — store pending record
-      if (!global.payments) global.payments = {}
-      global.payments[stkData.CheckoutRequestID] = {
-        transactionId: stkData.CheckoutRequestID,
-        phoneNumber: formattedPhone,
-        amount: Math.ceil(amount),
-        planId,
-        planName,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        mpesaConfirmation: null,
-        completedAt: null,
+
+      // ✅ INSERT payment record into Supabase
+      const supabaseRes = await fetch(`${SUPABASE_URL}/rest/v1/payments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+          'apikey': SUPABASE_SERVICE_KEY,
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify({
+          transaction_id: stkData.CheckoutRequestID,
+          phone_number: formattedPhone,
+          amount: Math.ceil(amount),
+          plan_id: planId,
+          plan_name: planName,
+          status: 'pending',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }),
+      })
+
+      if (!supabaseRes.ok) {
+        const supabaseError = await supabaseRes.text()
+        console.error('❌ Supabase insert failed:', supabaseError)
+      } else {
+        console.log('✅ Payment record saved to Supabase')
       }
 
       return res.status(200).json({
         success: true,
-        message: 'STK Push sent successfully. Check your phone.',
+        message: 'STK Push sent. Check your phone to complete payment.',
         transactionId: stkData.CheckoutRequestID,
         status: 'pending',
         phoneNumber: formattedPhone,
         amount,
         plan: planName,
       })
+
     } else {
       console.error('❌ STK Push failed:', stkData)
       return res.status(400).json({
@@ -142,6 +161,7 @@ export default async function handler(req, res) {
         details: stkData,
       })
     }
+
   } catch (error) {
     console.error('💥 M-Pesa STK Error:', error)
     return res.status(500).json({
@@ -150,4 +170,3 @@ export default async function handler(req, res) {
     })
   }
 }
- 
