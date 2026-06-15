@@ -1,3 +1,4 @@
+import AITools from './pages/AITools'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import ProtectedRoute from './lib/ProtectedRoute'
 
@@ -29,7 +30,8 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/pricing" element={<Pricing />} />
-        <Route path="/checkout" element={<Checkout />} />
+       <Route path="/ai-tools" element={<ProtectedRoute><AITools /></ProtectedRoute>} />
+      <Route path="/checkout" element={<Checkout />} />
 
         {/* Protected Routes */}
         <Route
