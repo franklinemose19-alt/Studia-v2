@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, Trash2, Plus, Search, Edit2, X, Save, Camera, Image, Eye } from 'lucide-react'
+import { ArrowLeft, Trash2, Plus, Search, Edit2, X, Save, Camera, Image, Eye, Loader, Sparkles } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 interface Note {
@@ -12,7 +12,7 @@ interface Note {
   images?: string[]
 }
 
-// ─── IndexedDB helpers for images ───────────────────────────────────────────
+// ─── IndexedDB helpers ───────────────────────────────────────────────────────
 
 const openDB = (): Promise<IDBDatabase> =>
   new Promise((resolve, reject) => {
@@ -64,8 +64,11 @@ export default function NotesLibrary() {
   const [showCamera, setShowCamera] = useState(false)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const [noteImages, setNoteImages] = useState<Record<string, string[]>>({})
+  const [generating, setGenerating] = useState(false)
+  const [capturedImage, setCapturedImage] = useState<string | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const generateInputRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
@@ -75,7 +78,6 @@ export default function NotesLibrary() {
       try {
         const parsed = JSON.parse(saved)
         setNotes(parsed)
-        // Load images for all notes
         parsed.forEach(async (note: Note) => {
           if (note.images && note.images.length > 0) {
             const urls: string[] = []
@@ -100,13 +102,13 @@ export default function NotesLibrary() {
 
   // ─── Camera ───────────────────────────────────────────────────────────────
 
-  const startCamera = async () => {
+  const startCamera = async (mode: 'attach' | 'generate') => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment' },
       })
       streamRef.current = stream
-      setShowCamera(true)
+      setShowCamera(mode)
       setTimeout(() => {
         if (videoRef.current) videoRef.current.srcObject = stream
       }, 100)
@@ -121,17 +123,22 @@ export default function NotesLibrary() {
     setShowCamera(false)
   }
 
-  const capturePhoto = () => {
+  const capturePhoto = async (mode: 'attach' | 'generate') => {
     if (!videoRef.current) return
     const canvas = document.createElement('canvas')
     canvas.width = videoRef.current.videoWidth
     canvas.height = videoRef.current.videoHeight
     canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0)
     const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
-    const imgId = `img-${Date.now()}`
-    saveImage(imgId, dataUrl)
-    setFormImages((prev) => [...prev, { id: imgId, url: dataUrl }])
     stopCamera()
+
+    if (mode === 'attach') {
+      const imgId = `img-${Date.now()}`
+      await saveImage(imgId, dataUrl)
+      setFormImages((prev) => [...prev, { id: imgId, url: dataUrl }])
+    } else {
+      await generateNotesFromImage(dataUrl)
+    }
   }
 
   // ─── Gallery upload ────────────────────────────────────────────────────────
@@ -151,9 +158,55 @@ export default function NotesLibrary() {
     e.target.value = ''
   }
 
+  const handleGenerateUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = async (ev) => {
+      const dataUrl = ev.target?.result as string
+      await generateNotesFromImage(dataUrl)
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
+
   const removeFormImage = async (imgId: string) => {
     await deleteImage(imgId)
     setFormImages((prev) => prev.filter((img) => img.id !== imgId))
+  }
+
+  // ─── AI Generate Notes from Image ─────────────────────────────────────────
+
+  const generateNotesFromImage = async (dataUrl: string) => {
+    setGenerating(true)
+    setCapturedImage(dataUrl)
+    try {
+      const res = await fetch('/api/generate-notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: dataUrl }),
+      })
+      const data = await res.json()
+      if (data.title || data.content) {
+        setFormData({
+          title: data.title || '',
+          course: data.course || '',
+          content: data.content || '',
+        })
+        // Also attach the image to the note
+        const imgId = `img-${Date.now()}`
+        await saveImage(imgId, dataUrl)
+        setFormImages((prev) => [...prev, { id: imgId, url: dataUrl }])
+        setShowForm(true)
+      } else {
+        alert('Could not extract notes from image. Try a clearer photo.')
+      }
+    } catch (err) {
+      alert('Failed to generate notes. Check your connection and try again.')
+    } finally {
+      setGenerating(false)
+      setCapturedImage(null)
+    }
   }
 
   // ─── Notes CRUD ───────────────────────────────────────────────────────────
@@ -206,7 +259,6 @@ export default function NotesLibrary() {
     setFormData({ title: note.title, content: note.content, course: note.course || '' })
     setEditingId(note.id)
     setShowForm(true)
-    // Load existing images into form
     if (note.images && note.images.length > 0) {
       const loaded: { id: string; url: string }[] = []
       for (const imgId of note.images) {
@@ -236,6 +288,30 @@ export default function NotesLibrary() {
 
   return (
     <div className="min-h-screen bg-surface-base">
+
+      {/* AI Generating overlay */}
+      <AnimatePresence>
+        {generating && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/80 flex flex-col items-center justify-center gap-6 p-4"
+          >
+            {capturedImage && (
+              <img src={capturedImage} alt="Processing" className="w-48 h-48 object-cover rounded-2xl opacity-60" />
+            )}
+            <div className="flex items-center gap-3 text-white">
+              <Loader className="animate-spin text-brand-blue" size={24} />
+              <p className="text-lg font-medium">Reading your notes...</p>
+            </div>
+            <p className="text-[#8B97B5] text-sm text-center max-w-xs">
+              AI is extracting and structuring the content from your image
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Fullscreen image preview */}
       <AnimatePresence>
         {previewImage && (
@@ -266,7 +342,7 @@ export default function NotesLibrary() {
             <video ref={videoRef} autoPlay playsInline className="w-full max-w-lg rounded-2xl" />
             <div className="flex gap-4">
               <button
-                onClick={capturePhoto}
+                onClick={() => capturePhoto(showCamera as 'attach' | 'generate')}
                 className="bg-brand-blue text-white px-8 py-3 rounded-xl font-medium hover:bg-brand-blue/90"
               >
                 📸 Capture
@@ -301,19 +377,46 @@ export default function NotesLibrary() {
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
+
           <div className="flex items-center justify-between">
             <div>
               <h1 className="font-sora font-bold text-4xl text-white mb-2">Notes Library</h1>
               <p className="text-[#8B97B5]">Save, organize, and access all your lecture notes.</p>
             </div>
             {!showForm && (
-              <button
-                onClick={() => setShowForm(true)}
-                className="bg-brand-blue text-white px-6 py-3 rounded-xl hover:bg-brand-blue/90 flex items-center gap-2 font-medium"
-              >
-                <Plus size={20} />
-                New Note
-              </button>
+              <div className="flex gap-3">
+                {/* AI Generate from image button */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => startCamera('generate')}
+                    className="flex items-center gap-2 bg-purple-500/20 text-purple-400 border border-purple-500/30 px-4 py-3 rounded-xl hover:bg-purple-500/30 font-medium text-sm transition-colors"
+                  >
+                    <Camera size={18} />
+                    Snap & Generate
+                  </button>
+                  <button
+                    onClick={() => generateInputRef.current?.click()}
+                    className="flex items-center gap-2 bg-purple-500/20 text-purple-400 border border-purple-500/30 px-4 py-3 rounded-xl hover:bg-purple-500/30 font-medium text-sm transition-colors"
+                  >
+                    <Sparkles size={18} />
+                    Upload & Generate
+                  </button>
+                  <input
+                    ref={generateInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleGenerateUpload}
+                  />
+                </div>
+                <button
+                  onClick={() => setShowForm(true)}
+                  className="bg-brand-blue text-white px-6 py-3 rounded-xl hover:bg-brand-blue/90 flex items-center gap-2 font-medium"
+                >
+                  <Plus size={20} />
+                  New Note
+                </button>
+              </div>
             )}
           </div>
 
@@ -355,11 +458,11 @@ export default function NotesLibrary() {
                 className="w-full h-48 bg-surface-base border border-white/10 rounded-xl p-3 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40 resize-none"
               />
 
-              {/* Image attach buttons */}
+              {/* Attach image buttons */}
               <div className="flex gap-3">
                 <button
                   type="button"
-                  onClick={startCamera}
+                  onClick={() => startCamera('attach')}
                   className="flex-1 flex items-center justify-center gap-2 bg-surface-base border border-white/10 text-white py-3 rounded-xl hover:border-brand-blue/40 text-sm font-medium transition-colors"
                 >
                   <Camera size={18} className="text-brand-blue" />
@@ -383,7 +486,7 @@ export default function NotesLibrary() {
                 />
               </div>
 
-              {/* Image previews in form */}
+              {/* Image previews */}
               {formImages.length > 0 && (
                 <div className="grid grid-cols-3 gap-3">
                   {formImages.map((img) => (
@@ -433,7 +536,6 @@ export default function NotesLibrary() {
                   transition={{ delay: i * 0.05 }}
                   className="bg-surface-elevated border border-white/5 rounded-2xl p-6 flex flex-col h-full hover:border-brand-blue/30 transition-all group"
                 >
-                  {/* Note images */}
                   {noteImages[note.id] && noteImages[note.id].length > 0 && (
                     <div className="grid grid-cols-3 gap-2 mb-4">
                       {noteImages[note.id].slice(0, 3).map((url, idx) => (
@@ -499,7 +601,9 @@ export default function NotesLibrary() {
                 {notes.length === 0 ? 'No notes yet' : 'No notes match your search'}
               </p>
               <p className="text-[#8B97B5]">
-                {notes.length === 0 ? 'Create your first note to get started!' : 'Try a different search term.'}
+                {notes.length === 0
+                  ? 'Create a note manually or snap a photo to generate notes with AI!'
+                  : 'Try a different search term.'}
               </p>
             </motion.div>
           )}
