@@ -155,3 +155,4 @@ export const supabase = {
   getCurrentUser,
   getUserProfile,
 }
+export { supabaseClient }
