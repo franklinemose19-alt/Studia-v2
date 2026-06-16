@@ -1,8 +1,8 @@
-import { getSupabase } from '../lib/supabase'
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, Square, Play, Pause, Trash2, Download, ArrowLeft, Plus } from 'lucide-react'
+import { Mic, Square, Play, Pause, Trash2, Download, ArrowLeft, Plus, Loader, FileText } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { getSupabase } from '../lib/supabase'
 
 interface Recording {
   id: string
@@ -12,6 +12,10 @@ interface Recording {
   blob?: Blob
   course?: string
   unit?: string
+  storageUrl?: string
+  transcript?: string
+  notes?: string
+  isProcessing?: boolean
 }
 
 interface Unit {
@@ -72,13 +76,7 @@ const deleteBlob = async (id: string) => {
 }
 
 const getSupportedMimeType = (): string => {
-  const types = [
-    'audio/webm;codecs=opus',
-    'audio/webm',
-    'audio/ogg;codecs=opus',
-    'audio/ogg',
-    'audio/mp4',
-  ]
+  const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg', 'audio/mp4']
   return types.find((t) => MediaRecorder.isTypeSupported(t)) || ''
 }
 
@@ -88,6 +86,8 @@ const formatTime = (seconds: number) => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
 }
 
+const selectClass = "w-full bg-surface-base border border-white/10 rounded-xl p-3 text-white outline-none focus:border-brand-blue/40 text-sm [&>option]:bg-[#0d1526] [&>option]:text-white"
+
 export default function RecordingPage() {
   const navigate = useNavigate()
 
@@ -95,6 +95,7 @@ export default function RecordingPage() {
   const [recordings, setRecordings] = useState<Recording[]>([])
   const [duration, setDuration] = useState(0)
   const [playingId, setPlayingId] = useState<string | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const [courses, setCourses] = useState<{ id: string; name: string; units: string[] }[]>([])
   const [units, setUnits] = useState<Unit[]>([])
@@ -105,9 +106,9 @@ export default function RecordingPage() {
   const [newCourse, setNewCourse] = useState({ name: '', unit: '' })
 
   const [showCoverageResult, setShowCoverageResult] = useState(false)
-  const [coverageData, setCoverageData] = useState<CoverageData>({
-    covered: 0, total: 0, topics: [], unitName: '',
-  })
+  const [coverageData, setCoverageData] = useState<CoverageData>({ covered: 0, total: 0, topics: [], unitName: '' })
+
+  const [uploadStatus, setUploadStatus] = useState<string>('')
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -143,16 +144,10 @@ export default function RecordingPage() {
     const existing = courses.find((c) => c.name === newCourse.name)
     if (existing) {
       if (newCourse.unit.trim() && !existing.units.includes(newCourse.unit)) {
-        setCourses(courses.map((c) =>
-          c.id === existing.id ? { ...c, units: [...c.units, newCourse.unit] } : c
-        ))
+        setCourses(courses.map((c) => c.id === existing.id ? { ...c, units: [...c.units, newCourse.unit] } : c))
       }
     } else {
-      setCourses([...courses, {
-        id: `course-${Date.now()}`,
-        name: newCourse.name,
-        units: newCourse.unit.trim() ? [newCourse.unit] : [],
-      }])
+      setCourses([...courses, { id: `course-${Date.now()}`, name: newCourse.name, units: newCourse.unit.trim() ? [newCourse.unit] : [] }])
     }
     setNewCourse({ name: '', unit: '' })
     setShowCourseForm(false)
@@ -189,6 +184,117 @@ export default function RecordingPage() {
     if (ctx) { ctx.fillStyle = '#080C18'; ctx.fillRect(0, 0, canvas.width, canvas.height) }
   }
 
+  // ── Upload to Supabase Storage ──────────────────────────────────────────
+
+  const uploadToSupabase = async (blob: Blob, recordingId: string, userId: string): Promise<string | null> => {
+    try {
+      setUploadStatus('☁️ Uploading to cloud...')
+      const client = await getSupabase()
+      const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('ogg') ? 'ogg' : 'webm'
+      const path = `${userId}/${recordingId}.${ext}`
+      const { error } = await client.storage.from('recordings').upload(path, blob, {
+        contentType: blob.type,
+        upsert: true,
+      })
+      if (error) { console.error('Upload error:', error); return null }
+      const { data } = client.storage.from('recordings').getPublicUrl(path)
+      setUploadStatus('✅ Uploaded!')
+      return data.publicUrl
+    } catch (err) {
+      console.error('Upload failed:', err)
+      setUploadStatus('⚠️ Upload failed')
+      return null
+    }
+  }
+
+  // ── Whisper transcription ───────────────────────────────────────────────
+
+  const transcribeAudio = async (blob: Blob): Promise<string | null> => {
+    try {
+      setUploadStatus('🎙️ Transcribing lecture...')
+      const formData = new FormData()
+      const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('ogg') ? 'ogg' : 'webm'
+      formData.append('file', blob, `recording.${ext}`)
+      formData.append('model', 'whisper-1')
+      formData.append('language', 'en')
+
+      const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${import.meta.env.VITE_OPENAI_API_KEY}`,
+        },
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const err = await response.json()
+        console.error('Whisper error:', err)
+        return null
+      }
+
+      const data = await response.json()
+      return data.text || null
+    } catch (err) {
+      console.error('Transcription failed:', err)
+      return null
+    }
+  }
+
+  // ── GPT-4o notes generation ─────────────────────────────────────────────
+
+  const generateNotes = async (transcript: string, courseName?: string, unitName?: string): Promise<string | null> => {
+    try {
+      setUploadStatus('📝 Generating smart notes...')
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${import.meta.env.VITE_OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o',
+          max_tokens: 1500,
+          messages: [
+            {
+              role: 'system',
+              content: `You are STUDIA, an AI academic assistant for Kenyan university students. 
+              Generate clear, structured lecture notes from transcripts.
+              Format your response with these sections:
+              ## 📌 Key Topics
+              ## 📝 Main Notes
+              ## 💡 Key Concepts
+              ## ❓ Possible Exam Questions
+              Keep it concise and student-friendly.`,
+            },
+            {
+              role: 'user',
+              content: `Generate lecture notes from this transcript.
+              ${courseName ? `Course: ${courseName}` : ''}
+              ${unitName ? `Unit: ${unitName}` : ''}
+              
+              Transcript:
+              ${transcript}`,
+            },
+          ],
+        }),
+      })
+
+      if (!response.ok) {
+        const err = await response.json()
+        console.error('GPT error:', err)
+        return null
+      }
+
+      const data = await response.json()
+      return data.choices?.[0]?.message?.content || null
+    } catch (err) {
+      console.error('Notes generation failed:', err)
+      return null
+    }
+  }
+
+  // ── Start recording ─────────────────────────────────────────────────────
+
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -219,12 +325,15 @@ export default function RecordingPage() {
       mediaRecorder.start(250)
       setIsRecording(true)
       setDuration(0)
+      setUploadStatus('')
       timerRef.current = setInterval(() => setDuration((d) => d + 1), 1000)
       visualize()
     } catch {
       alert('Microphone access denied. Please allow microphone access and try again.')
     }
   }
+
+  // ── Stop recording + process ────────────────────────────────────────────
 
   const stopRecording = () => {
     if (!mediaRecorderRef.current || !isRecording) return
@@ -233,18 +342,24 @@ export default function RecordingPage() {
       const blob = new Blob(audioChunksRef.current, { type: mimeType || 'audio/webm' })
       const now = new Date()
       const id = `rec-${Date.now()}`
+      const courseName = selectedCourse ? courses.find((c) => c.id === selectedCourse)?.name : undefined
+      const unitName = selectedUnit ? units.find((u) => u.id === selectedUnit)?.unitName : undefined
+
       const recording: Recording = {
         id,
         name: `Lecture ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`,
         duration,
         timestamp: now,
         blob,
-        course: selectedCourse ? courses.find((c) => c.id === selectedCourse)?.name : undefined,
-        unit: selectedUnit ? units.find((u) => u.id === selectedUnit)?.unitName : undefined,
+        course: courseName,
+        unit: unitName,
+        isProcessing: true,
       }
+
       await saveBlob(id, blob)
       setRecordings((prev) => [recording, ...prev])
 
+      // Coverage analysis
       if (selectedUnit) {
         const unit = units.find((u) => u.id === selectedUnit)
         if (unit && unit.topics.length > 0) {
@@ -262,8 +377,27 @@ export default function RecordingPage() {
           localStorage.setItem('units', JSON.stringify(updatedUnits))
         }
       }
+
+      // Get current user
+      const client = await getSupabase()
+      const { data: { user } } = await client.auth.getUser()
+      const userId = user?.id || 'anonymous'
+
+      // Upload → Transcribe → Generate Notes
+      const storageUrl = await uploadToSupabase(blob, id, userId)
+      const transcript = await transcribeAudio(blob)
+      const notes = transcript ? await generateNotes(transcript, courseName, unitName) : null
+
+      setUploadStatus(notes ? '✅ Notes ready!' : '⚠️ Could not generate notes')
+
+      // Update recording with results
+      setRecordings((prev) => prev.map((r) =>
+        r.id === id ? { ...r, storageUrl: storageUrl || undefined, transcript: transcript || undefined, notes: notes || undefined, isProcessing: false } : r
+      ))
+
       clearCanvas()
     }
+
     mediaRecorderRef.current.stop()
     mediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop())
     setIsRecording(false)
@@ -271,6 +405,8 @@ export default function RecordingPage() {
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
     if (audioContextRef.current) audioContextRef.current.close()
   }
+
+  // ── Playback ────────────────────────────────────────────────────────────
 
   const playRecording = async (recording: Recording) => {
     if (currentAudioRef.current) { currentAudioRef.current.pause(); currentAudioRef.current = null }
@@ -303,9 +439,6 @@ export default function RecordingPage() {
     if (playingId === id) { currentAudioRef.current?.pause(); setPlayingId(null) }
   }
 
-  // dropdown class reused on both selects
-  const selectClass = "w-full bg-surface-base border border-white/10 rounded-xl p-3 text-white outline-none focus:border-brand-blue/40 text-sm [&>option]:bg-[#0d1526] [&>option]:text-white"
-
   return (
     <div className="min-h-screen bg-surface-base">
       <nav className="border-b border-white/5 bg-surface-elevated/50 backdrop-blur-md sticky top-0 z-10">
@@ -326,21 +459,20 @@ export default function RecordingPage() {
 
           <div>
             <h1 className="font-sora font-bold text-4xl text-white mb-2">Smart Recording</h1>
-            <p className="text-[#8B97B5]">Auto-trim silence, track unit coverage, organise lectures.</p>
+            <p className="text-[#8B97B5]">Record lectures, get AI-generated notes automatically.</p>
           </div>
 
           <div className="grid md:grid-cols-2 gap-6">
             {/* Settings */}
             <div className="bg-surface-elevated border border-white/5 rounded-2xl p-6 space-y-4">
               <h2 className="font-sora font-bold text-xl text-white">Recording Settings</h2>
-
               <div className="bg-gradient-to-r from-indigo-500/10 to-purple-500/10 rounded-xl p-4 border border-indigo-500/20">
                 <p className="text-sm font-semibold text-white mb-2">🎙️ SmartCapture AI Active</p>
                 <div className="grid grid-cols-2 gap-1 text-xs text-gray-400">
                   <p>✓ Echo cancellation</p>
                   <p>✓ Noise suppression</p>
-                  <p>✓ Auto gain control</p>
-                  <p>✓ Classroom cleanup</p>
+                  <p>✓ Whisper transcription</p>
+                  <p>✓ GPT-4o notes</p>
                 </div>
               </div>
 
@@ -392,6 +524,9 @@ export default function RecordingPage() {
                 <p className="text-sm text-[#8B97B5]">
                   {isRecording ? '● Recording…' : recordings.length > 0 ? `${recordings.length} recording${recordings.length !== 1 ? 's' : ''} saved` : 'Ready to record'}
                 </p>
+                {uploadStatus && (
+                  <p className="text-xs text-brand-blue mt-2 animate-pulse">{uploadStatus}</p>
+                )}
               </div>
               <div className="flex justify-center">
                 {!isRecording ? (
@@ -461,27 +596,58 @@ export default function RecordingPage() {
               <div className="space-y-3">
                 {recordings.map((recording) => (
                   <motion.div key={recording.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                    className="bg-surface-elevated border border-white/5 rounded-2xl p-4 flex items-center justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white font-medium truncate">{recording.name}</p>
-                      <div className="flex items-center gap-3 mt-1 flex-wrap">
-                        <span className="text-xs text-[#8B97B5] font-mono">{formatTime(recording.duration)}</span>
-                        {recording.course && (
-                          <span className="text-xs text-brand-blue">{recording.course}{recording.unit && ` · ${recording.unit}`}</span>
+                    className="bg-surface-elevated border border-white/5 rounded-2xl overflow-hidden">
+                    <div className="p-4 flex items-center justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-medium truncate">{recording.name}</p>
+                        <div className="flex items-center gap-3 mt-1 flex-wrap">
+                          <span className="text-xs text-[#8B97B5] font-mono">{formatTime(recording.duration)}</span>
+                          {recording.course && (
+                            <span className="text-xs text-brand-blue">{recording.course}{recording.unit && ` · ${recording.unit}`}</span>
+                          )}
+                          {recording.isProcessing && (
+                            <span className="text-xs text-purple-400 flex items-center gap-1">
+                              <Loader size={10} className="animate-spin" /> Processing…
+                            </span>
+                          )}
+                          {recording.notes && !recording.isProcessing && (
+                            <span className="text-xs text-green-400">✓ Notes ready</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-2 shrink-0">
+                        {recording.notes && (
+                          <button onClick={() => setExpandedId(expandedId === recording.id ? null : recording.id)}
+                            className="p-2 rounded-lg bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 transition-colors" title="View Notes">
+                            <FileText size={18} />
+                          </button>
                         )}
+                        <button onClick={() => playRecording(recording)} className="p-2 rounded-lg bg-brand-blue/10 text-brand-blue hover:bg-brand-blue/20 transition-colors">
+                          {playingId === recording.id ? <Pause size={18} /> : <Play size={18} />}
+                        </button>
+                        <button onClick={() => downloadRecording(recording)} className="p-2 rounded-lg bg-brand-blue/10 text-brand-blue hover:bg-brand-blue/20 transition-colors">
+                          <Download size={18} />
+                        </button>
+                        <button onClick={() => deleteRecording(recording.id)} className="p-2 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors">
+                          <Trash2 size={18} />
+                        </button>
                       </div>
                     </div>
-                    <div className="flex gap-2 shrink-0">
-                      <button onClick={() => playRecording(recording)} className="p-2 rounded-lg bg-brand-blue/10 text-brand-blue hover:bg-brand-blue/20 transition-colors">
-                        {playingId === recording.id ? <Pause size={18} /> : <Play size={18} />}
-                      </button>
-                      <button onClick={() => downloadRecording(recording)} className="p-2 rounded-lg bg-brand-blue/10 text-brand-blue hover:bg-brand-blue/20 transition-colors">
-                        <Download size={18} />
-                      </button>
-                      <button onClick={() => deleteRecording(recording.id)} className="p-2 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors">
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
+
+                    {/* AI Notes expandable */}
+                    <AnimatePresence>
+                      {expandedId === recording.id && recording.notes && (
+                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                          className="border-t border-white/5 p-6 bg-surface-base overflow-hidden">
+                          <h4 className="font-sora font-bold text-white mb-4 flex items-center gap-2">
+                            <FileText size={16} className="text-purple-400" /> AI Generated Notes
+                          </h4>
+                          <div className="text-sm text-[#8B97B5] whitespace-pre-wrap leading-relaxed">
+                            {recording.notes}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </motion.div>
                 ))}
               </div>
