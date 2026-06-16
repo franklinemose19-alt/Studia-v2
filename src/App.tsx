@@ -1,4 +1,4 @@
-import AITools from './pages/AITools'
+import AITools from './page/AITools'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import ProtectedRoute from './lib/ProtectedRoute'
 
