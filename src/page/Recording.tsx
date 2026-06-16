@@ -1,3 +1,4 @@
+import { getSupabase } from '../lib/supabase'
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mic, Square, Play, Pause, Trash2, Download, ArrowLeft, Plus } from 'lucide-react'
