@@ -31,8 +31,6 @@ interface CoverageData {
   unitName: string
 }
 
-// ─── IndexedDB helpers ───────────────────────────────────────────────────────
-
 const openDB = (): Promise<IDBDatabase> =>
   new Promise((resolve, reject) => {
     const req = indexedDB.open('studia-recordings', 1)
@@ -72,8 +70,6 @@ const deleteBlob = async (id: string) => {
   }
 }
 
-// ─── MIME type detection ─────────────────────────────────────────────────────
-
 const getSupportedMimeType = (): string => {
   const types = [
     'audio/webm;codecs=opus',
@@ -90,8 +86,6 @@ const formatTime = (seconds: number) => {
   const secs = seconds % 60
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
 }
-
-// ─── Component ───────────────────────────────────────────────────────────────
 
 export default function RecordingPage() {
   const navigate = useNavigate()
@@ -139,7 +133,6 @@ export default function RecordingPage() {
   }, [courses])
 
   useEffect(() => {
-    // Save metadata only — blobs live in IndexedDB
     const metadata = recordings.map(({ blob, ...rest }) => rest)
     localStorage.setItem('recordingsMetadata', JSON.stringify(metadata))
   }, [recordings])
@@ -309,6 +302,9 @@ export default function RecordingPage() {
     if (playingId === id) { currentAudioRef.current?.pause(); setPlayingId(null) }
   }
 
+  // dropdown class reused on both selects
+  const selectClass = "w-full bg-surface-base border border-white/10 rounded-xl p-3 text-white outline-none focus:border-brand-blue/40 text-sm [&>option]:bg-[#0d1526] [&>option]:text-white"
+
   return (
     <div className="min-h-screen bg-surface-base">
       <nav className="border-b border-white/5 bg-surface-elevated/50 backdrop-blur-md sticky top-0 z-10">
@@ -336,6 +332,7 @@ export default function RecordingPage() {
             {/* Settings */}
             <div className="bg-surface-elevated border border-white/5 rounded-2xl p-6 space-y-4">
               <h2 className="font-sora font-bold text-xl text-white">Recording Settings</h2>
+
               <div className="bg-gradient-to-r from-indigo-500/10 to-purple-500/10 rounded-xl p-4 border border-indigo-500/20">
                 <p className="text-sm font-semibold text-white mb-2">🎙️ SmartCapture AI Active</p>
                 <div className="grid grid-cols-2 gap-1 text-xs text-gray-400">
@@ -348,8 +345,7 @@ export default function RecordingPage() {
 
               <div>
                 <label className="block text-sm text-white mb-2">Select Course</label>
-                <select value={selectedCourse} onChange={(e) => { setSelectedCourse(e.target.value); setSelectedUnit('') }}
-                  className="w-full bg-surface-base border border-white/10 rounded-xl p-3 text-white outline-none focus:border-brand-blue/40 text-sm">
+                <select value={selectedCourse} onChange={(e) => { setSelectedCourse(e.target.value); setSelectedUnit('') }} className={selectClass}>
                   <option value="">Choose a course…</option>
                   {courses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
@@ -357,8 +353,7 @@ export default function RecordingPage() {
 
               <div>
                 <label className="block text-sm text-white mb-2">Select Unit <span className="text-[#8B97B5]">(for coverage tracking)</span></label>
-                <select value={selectedUnit} onChange={(e) => setSelectedUnit(e.target.value)}
-                  className="w-full bg-surface-base border border-white/10 rounded-xl p-3 text-white outline-none focus:border-brand-blue/40 text-sm">
+                <select value={selectedUnit} onChange={(e) => setSelectedUnit(e.target.value)} className={selectClass}>
                   <option value="">Choose a unit…</option>
                   {units.map((u) => <option key={u.id} value={u.id}>{u.course} — {u.unitName}</option>)}
                 </select>
