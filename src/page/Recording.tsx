@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mic, Square, Play, Pause, Trash2, Download, ArrowLeft, Plus, Loader, FileText } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { getSupabase } from '../lib/supabase'
+import { getSupabase } from '../../lib/supabase'
 
 interface Recording {
   id: string
