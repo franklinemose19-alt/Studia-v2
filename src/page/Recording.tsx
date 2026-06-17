@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, Square, Play, Pause, Trash2, Download, ArrowLeft, Plus, Loader, FileText } from 'lucide-react'
+import { Mic, Square, Play, Pause, Trash2, Download, ArrowLeft, Loader, FileText, BookOpen } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getSupabase } from '../lib/supabaseClient'
 
@@ -45,12 +45,8 @@ const openDB = (): Promise<IDBDatabase> =>
   })
 
 const saveBlob = async (id: string, blob: Blob) => {
-  try {
-    const db = await openDB()
-    db.transaction('blobs', 'readwrite').objectStore('blobs').put(blob, id)
-  } catch (err) {
-    console.error('Failed to save blob:', err)
-  }
+  try { const db = await openDB(); db.transaction('blobs', 'readwrite').objectStore('blobs').put(blob, id) }
+  catch (err) { console.error('Failed to save blob:', err) }
 }
 
 const getBlob = async (id: string): Promise<Blob | null> => {
@@ -61,18 +57,12 @@ const getBlob = async (id: string): Promise<Blob | null> => {
       req.onsuccess = () => resolve(req.result || null)
       req.onerror = () => resolve(null)
     })
-  } catch {
-    return null
-  }
+  } catch { return null }
 }
 
 const deleteBlob = async (id: string) => {
-  try {
-    const db = await openDB()
-    db.transaction('blobs', 'readwrite').objectStore('blobs').delete(id)
-  } catch (err) {
-    console.error('Failed to delete blob:', err)
-  }
+  try { const db = await openDB(); db.transaction('blobs', 'readwrite').objectStore('blobs').delete(id) }
+  catch (err) { console.error('Failed to delete blob:', err) }
 }
 
 const getSupportedMimeType = (): string => {
@@ -97,13 +87,9 @@ export default function RecordingPage() {
   const [playingId, setPlayingId] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
-  const [courses, setCourses] = useState<{ id: string; name: string; units: string[] }[]>([])
   const [units, setUnits] = useState<Unit[]>([])
   const [selectedCourse, setSelectedCourse] = useState('')
   const [selectedUnit, setSelectedUnit] = useState('')
-
-  const [showCourseForm, setShowCourseForm] = useState(false)
-  const [newCourse, setNewCourse] = useState({ name: '', unit: '' })
 
   const [showCoverageResult, setShowCoverageResult] = useState(false)
   const [coverageData, setCoverageData] = useState<CoverageData>({ covered: 0, total: 0, topics: [], unitName: '' })
@@ -120,7 +106,6 @@ export default function RecordingPage() {
   const currentAudioRef = useRef<HTMLAudioElement | null>(null)
 
   useEffect(() => {
-    try { setCourses(JSON.parse(localStorage.getItem('courses') || '[]')) } catch { setCourses([]) }
     try { setUnits(JSON.parse(localStorage.getItem('units') || '[]')) } catch { setUnits([]) }
     try { setRecordings(JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')) } catch { setRecordings([]) }
     return () => {
@@ -131,27 +116,13 @@ export default function RecordingPage() {
   }, [])
 
   useEffect(() => {
-    localStorage.setItem('courses', JSON.stringify(courses))
-  }, [courses])
-
-  useEffect(() => {
     const metadata = recordings.map(({ blob, ...rest }) => rest)
     localStorage.setItem('recordingsMetadata', JSON.stringify(metadata))
   }, [recordings])
 
-  const addCourse = () => {
-    if (!newCourse.name.trim()) return
-    const existing = courses.find((c) => c.name === newCourse.name)
-    if (existing) {
-      if (newCourse.unit.trim() && !existing.units.includes(newCourse.unit)) {
-        setCourses(courses.map((c) => c.id === existing.id ? { ...c, units: [...c.units, newCourse.unit] } : c))
-      }
-    } else {
-      setCourses([...courses, { id: `course-${Date.now()}`, name: newCourse.name, units: newCourse.unit.trim() ? [newCourse.unit] : [] }])
-    }
-    setNewCourse({ name: '', unit: '' })
-    setShowCourseForm(false)
-  }
+  // Derive unique course names directly from units (single source of truth)
+  const courseNames = Array.from(new Set(units.map((u) => u.course))).filter(Boolean)
+  const filteredUnits = units.filter((u) => u.course === selectedCourse)
 
   const visualize = () => {
     if (!analyserRef.current || !canvasRef.current) return
@@ -184,18 +155,13 @@ export default function RecordingPage() {
     if (ctx) { ctx.fillStyle = '#080C18'; ctx.fillRect(0, 0, canvas.width, canvas.height) }
   }
 
-  // ── Upload to Supabase Storage ──────────────────────────────────────────
-
   const uploadToSupabase = async (blob: Blob, recordingId: string, userId: string): Promise<string | null> => {
     try {
       setUploadStatus('☁️ Uploading to cloud...')
       const client = await getSupabase()
       const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('ogg') ? 'ogg' : 'webm'
       const path = `${userId}/${recordingId}.${ext}`
-      const { error } = await client.storage.from('recordings').upload(path, blob, {
-        contentType: blob.type,
-        upsert: true,
-      })
+      const { error } = await client.storage.from('recordings').upload(path, blob, { contentType: blob.type, upsert: true })
       if (error) { console.error('Upload error:', error); return null }
       const { data } = client.storage.from('recordings').getPublicUrl(path)
       setUploadStatus('✅ Uploaded!')
@@ -207,8 +173,6 @@ export default function RecordingPage() {
     }
   }
 
-  // ── Whisper transcription ───────────────────────────────────────────────
-
   const transcribeAudio = async (blob: Blob): Promise<string | null> => {
     try {
       setUploadStatus('🎙️ Transcribing lecture...')
@@ -217,83 +181,47 @@ export default function RecordingPage() {
       formData.append('file', blob, `recording.${ext}`)
       formData.append('model', 'whisper-1')
       formData.append('language', 'en')
-
       const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${import.meta.env.VITE_OPENAI_API_KEY}`,
-        },
+        headers: { Authorization: `Bearer ${import.meta.env.VITE_OPENAI_API_KEY}` },
         body: formData,
       })
-
-      if (!response.ok) {
-        const err = await response.json()
-        console.error('Whisper error:', err)
-        return null
-      }
-
+      if (!response.ok) { const err = await response.json(); console.error('Whisper error:', err); return null }
       const data = await response.json()
       return data.text || null
-    } catch (err) {
-      console.error('Transcription failed:', err)
-      return null
-    }
+    } catch (err) { console.error('Transcription failed:', err); return null }
   }
-
-  // ── GPT-4o notes generation ─────────────────────────────────────────────
 
   const generateNotes = async (transcript: string, courseName?: string, unitName?: string): Promise<string | null> => {
     try {
       setUploadStatus('📝 Generating smart notes...')
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${import.meta.env.VITE_OPENAI_API_KEY}`,
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${import.meta.env.VITE_OPENAI_API_KEY}` },
         body: JSON.stringify({
           model: 'gpt-4o',
           max_tokens: 1500,
           messages: [
-            {
-              role: 'system',
-              content: `You are STUDIA, an AI academic assistant for Kenyan university students. 
-              Generate clear, structured lecture notes from transcripts.
-              Format your response with these sections:
-              ## 📌 Key Topics
-              ## 📝 Main Notes
-              ## 💡 Key Concepts
-              ## ❓ Possible Exam Questions
-              Keep it concise and student-friendly.`,
-            },
-            {
-              role: 'user',
-              content: `Generate lecture notes from this transcript.
-              ${courseName ? `Course: ${courseName}` : ''}
-              ${unitName ? `Unit: ${unitName}` : ''}
-              
-              Transcript:
-              ${transcript}`,
-            },
+            { role: 'system', content: `You are STUDIA, an AI academic assistant for Kenyan university students. Generate clear, structured lecture notes from transcripts. Format your response with these sections:
+## 📌 Key Topics
+## 📝 Main Notes
+## 💡 Key Concepts
+## ❓ Possible Exam Questions
+Keep it concise and student-friendly.` },
+            { role: 'user', content: `Generate lecture notes from this transcript.
+${courseName ? `Course: ${courseName}` : ''}
+${unitName ? `Unit: ${unitName}` : ''}
+
+Transcript:
+${transcript}` },
           ],
         }),
       })
-
-      if (!response.ok) {
-        const err = await response.json()
-        console.error('GPT error:', err)
-        return null
-      }
-
+      if (!response.ok) { const err = await response.json(); console.error('GPT error:', err); return null }
       const data = await response.json()
       return data.choices?.[0]?.message?.content || null
-    } catch (err) {
-      console.error('Notes generation failed:', err)
-      return null
-    }
+    } catch (err) { console.error('Notes generation failed:', err); return null }
   }
-
-  // ── Start recording ─────────────────────────────────────────────────────
 
   const startRecording = async () => {
     try {
@@ -333,8 +261,6 @@ export default function RecordingPage() {
     }
   }
 
-  // ── Stop recording + process ────────────────────────────────────────────
-
   const stopRecording = () => {
     if (!mediaRecorderRef.current || !isRecording) return
     mediaRecorderRef.current.onstop = async () => {
@@ -342,24 +268,17 @@ export default function RecordingPage() {
       const blob = new Blob(audioChunksRef.current, { type: mimeType || 'audio/webm' })
       const now = new Date()
       const id = `rec-${Date.now()}`
-      const courseName = selectedCourse ? courses.find((c) => c.id === selectedCourse)?.name : undefined
+      const courseName = selectedCourse || undefined
       const unitName = selectedUnit ? units.find((u) => u.id === selectedUnit)?.unitName : undefined
 
       const recording: Recording = {
-        id,
-        name: `Lecture ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`,
-        duration,
-        timestamp: now,
-        blob,
-        course: courseName,
-        unit: unitName,
-        isProcessing: true,
+        id, name: `Lecture ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`, duration, timestamp: now,
+        blob, course: courseName, unit: unitName, isProcessing: true,
       }
 
       await saveBlob(id, blob)
       setRecordings((prev) => [recording, ...prev])
 
-      // Coverage analysis
       if (selectedUnit) {
         const unit = units.find((u) => u.id === selectedUnit)
         if (unit && unit.topics.length > 0) {
@@ -378,26 +297,22 @@ export default function RecordingPage() {
         }
       }
 
-      // Get current user
       const client = await getSupabase()
       const { data: { user } } = await client.auth.getUser()
       const userId = user?.id || 'anonymous'
 
-      // Upload → Transcribe → Generate Notes
       const storageUrl = await uploadToSupabase(blob, id, userId)
       const transcript = await transcribeAudio(blob)
       const notes = transcript ? await generateNotes(transcript, courseName, unitName) : null
 
       setUploadStatus(notes ? '✅ Notes ready!' : '⚠️ Could not generate notes')
 
-      // Update recording with results
       setRecordings((prev) => prev.map((r) =>
         r.id === id ? { ...r, storageUrl: storageUrl || undefined, transcript: transcript || undefined, notes: notes || undefined, isProcessing: false } : r
       ))
 
       clearCanvas()
     }
-
     mediaRecorderRef.current.stop()
     mediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop())
     setIsRecording(false)
@@ -405,8 +320,6 @@ export default function RecordingPage() {
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
     if (audioContextRef.current) audioContextRef.current.close()
   }
-
-  // ── Playback ────────────────────────────────────────────────────────────
 
   const playRecording = async (recording: Recording) => {
     if (currentAudioRef.current) { currentAudioRef.current.pause(); currentAudioRef.current = null }
@@ -463,7 +376,6 @@ export default function RecordingPage() {
           </div>
 
           <div className="grid md:grid-cols-2 gap-6">
-            {/* Settings */}
             <div className="bg-surface-elevated border border-white/5 rounded-2xl p-6 space-y-4">
               <h2 className="font-sora font-bold text-xl text-white">Recording Settings</h2>
               <div className="bg-gradient-to-r from-indigo-500/10 to-purple-500/10 rounded-xl p-4 border border-indigo-500/20">
@@ -476,47 +388,35 @@ export default function RecordingPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm text-white mb-2">Select Course</label>
-                <select value={selectedCourse} onChange={(e) => { setSelectedCourse(e.target.value); setSelectedUnit('') }} className={selectClass}>
-                  <option value="">Choose a course…</option>
-                  {courses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
+              {units.length === 0 ? (
+                <div className="bg-surface-base rounded-xl p-5 text-center space-y-3">
+                  <BookOpen size={32} className="mx-auto text-[#4A5568]" />
+                  <p className="text-sm text-[#8B97B5]">No units yet. Add your courses and units in Unit Management first.</p>
+                  <button onClick={() => navigate('/units')} className="bg-brand-blue text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-blue/90">
+                    Go to Unit Management
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-sm text-white mb-2">Select Course</label>
+                    <select value={selectedCourse} onChange={(e) => { setSelectedCourse(e.target.value); setSelectedUnit('') }} className={selectClass}>
+                      <option value="">Choose a course…</option>
+                      {courseNames.map((name) => <option key={name} value={name}>{name}</option>)}
+                    </select>
+                  </div>
 
-              <div>
-                <label className="block text-sm text-white mb-2">Select Unit <span className="text-[#8B97B5]">(for coverage tracking)</span></label>
-                <select value={selectedUnit} onChange={(e) => setSelectedUnit(e.target.value)} className={selectClass}>
-                  <option value="">Choose a unit…</option>
-                  {units.map((u) => <option key={u.id} value={u.id}>{u.course} — {u.unitName}</option>)}
-                </select>
-              </div>
-
-              <button onClick={() => setShowCourseForm(!showCourseForm)}
-                className="w-full bg-surface-base text-brand-blue border border-brand-blue/30 py-2 rounded-xl hover:bg-surface-base/80 text-sm font-medium flex items-center justify-center gap-2 transition-colors">
-                <Plus size={16} />
-                {showCourseForm ? 'Cancel' : 'Add New Course'}
-              </button>
-
-              <AnimatePresence>
-                {showCourseForm && (
-                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                    className="space-y-3 p-4 bg-surface-base rounded-xl overflow-hidden">
-                    <input type="text" placeholder="Course name" value={newCourse.name}
-                      onChange={(e) => setNewCourse({ ...newCourse, name: e.target.value })}
-                      className="w-full bg-surface-elevated border border-white/10 rounded-lg p-2 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40 text-sm" />
-                    <input type="text" placeholder="Unit (optional)" value={newCourse.unit}
-                      onChange={(e) => setNewCourse({ ...newCourse, unit: e.target.value })}
-                      className="w-full bg-surface-elevated border border-white/10 rounded-lg p-2 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40 text-sm" />
-                    <button onClick={addCourse} className="w-full bg-brand-blue text-white py-2 rounded-lg hover:bg-brand-blue/90 text-sm font-medium transition-colors">
-                      Add Course
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                  <div>
+                    <label className="block text-sm text-white mb-2">Select Unit <span className="text-[#8B97B5]">(for coverage tracking)</span></label>
+                    <select value={selectedUnit} onChange={(e) => setSelectedUnit(e.target.value)} className={selectClass} disabled={!selectedCourse}>
+                      <option value="">Choose a unit…</option>
+                      {filteredUnits.map((u) => <option key={u.id} value={u.id}>{u.unitName}</option>)}
+                    </select>
+                  </div>
+                </>
+              )}
             </div>
 
-            {/* Recorder */}
             <div className="bg-surface-elevated border border-white/5 rounded-2xl p-6 space-y-6 flex flex-col">
               <canvas ref={canvasRef} width={500} height={200} className="w-full h-48 bg-surface-base rounded-xl" />
               <div className="text-center flex-1 flex flex-col items-center justify-center">
@@ -524,9 +424,7 @@ export default function RecordingPage() {
                 <p className="text-sm text-[#8B97B5]">
                   {isRecording ? '● Recording…' : recordings.length > 0 ? `${recordings.length} recording${recordings.length !== 1 ? 's' : ''} saved` : 'Ready to record'}
                 </p>
-                {uploadStatus && (
-                  <p className="text-xs text-brand-blue mt-2 animate-pulse">{uploadStatus}</p>
-                )}
+                {uploadStatus && <p className="text-xs text-brand-blue mt-2 animate-pulse">{uploadStatus}</p>}
               </div>
               <div className="flex justify-center">
                 {!isRecording ? (
@@ -542,7 +440,6 @@ export default function RecordingPage() {
             </div>
           </div>
 
-          {/* Coverage result */}
           <AnimatePresence>
             {showCoverageResult && (
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
@@ -589,7 +486,6 @@ export default function RecordingPage() {
             )}
           </AnimatePresence>
 
-          {/* Recordings list */}
           {recordings.length > 0 && (
             <div className="space-y-4">
               <h2 className="font-sora font-bold text-2xl text-white">Your Recordings</h2>
@@ -634,7 +530,6 @@ export default function RecordingPage() {
                       </div>
                     </div>
 
-                    {/* AI Notes expandable */}
                     <AnimatePresence>
                       {expandedId === recording.id && recording.notes && (
                         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
@@ -642,9 +537,7 @@ export default function RecordingPage() {
                           <h4 className="font-sora font-bold text-white mb-4 flex items-center gap-2">
                             <FileText size={16} className="text-purple-400" /> AI Generated Notes
                           </h4>
-                          <div className="text-sm text-[#8B97B5] whitespace-pre-wrap leading-relaxed">
-                            {recording.notes}
-                          </div>
+                          <div className="text-sm text-[#8B97B5] whitespace-pre-wrap leading-relaxed">{recording.notes}</div>
                         </motion.div>
                       )}
                     </AnimatePresence>
