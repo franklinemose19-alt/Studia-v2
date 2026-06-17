@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Loader, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Loader, RotateCcw, Save, Check } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 interface Question {
@@ -16,13 +16,13 @@ export default function Quiz() {
   const [answers, setAnswers] = useState<number[]>([])
   const [loading, setLoading] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [savedToVault, setSavedToVault] = useState(false)
 
   const generateQuiz = async () => {
     if (!notes.trim()) {
       alert('Please paste your lecture notes')
       return
     }
-
     setLoading(true)
     try {
       const res = await fetch('/api/quiz', {
@@ -30,13 +30,12 @@ export default function Quiz() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: notes }),
       })
-
       const data = await res.json()
-
       if (data.quizzes && data.quizzes.length > 0) {
         setQuizzes(data.quizzes)
         setAnswers(new Array(data.quizzes.length).fill(-1))
         setSubmitted(false)
+        setSavedToVault(false)
       } else {
         alert('Error: ' + (data.error || 'Failed to generate quiz'))
       }
@@ -57,9 +56,7 @@ export default function Quiz() {
 
   const calculateScore = () => {
     let correct = 0
-    quizzes.forEach((q, i) => {
-      if (answers[i] === q.correct) correct++
-    })
+    quizzes.forEach((q, i) => { if (answers[i] === q.correct) correct++ })
     return { correct, total: quizzes.length, percentage: Math.round((correct / quizzes.length) * 100) }
   }
 
@@ -68,6 +65,23 @@ export default function Quiz() {
     setAnswers([])
     setSubmitted(false)
     setNotes('')
+    setSavedToVault(false)
+  }
+
+  const saveQuizToVault = () => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('savedQuizzes') || '[]')
+      const newQuiz = {
+        id: `quiz-${Date.now()}`,
+        title: `Quiz - ${new Date().toLocaleDateString()}`,
+        questions: quizzes,
+        date: new Date().toLocaleDateString(),
+      }
+      localStorage.setItem('savedQuizzes', JSON.stringify([newQuiz, ...saved]))
+      setSavedToVault(true)
+    } catch (err) {
+      alert('Could not save quiz.')
+    }
   }
 
   const score = submitted ? calculateScore() : null
@@ -76,12 +90,8 @@ export default function Quiz() {
     <div className="min-h-screen bg-surface-base">
       <nav className="border-b border-white/5 bg-surface-elevated/50 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="flex items-center gap-2 text-sm text-[#8B97B5] hover:text-white"
-          >
-            <ArrowLeft size={16} />
-            Back
+          <button onClick={() => navigate('/dashboard')} className="flex items-center gap-2 text-sm text-[#8B97B5] hover:text-white">
+            <ArrowLeft size={16} /> Back
           </button>
           <div className="flex items-center gap-1">
             <span className="font-sora font-bold text-xl text-white">STUDIA</span>
@@ -112,14 +122,7 @@ export default function Quiz() {
                 disabled={loading || !notes.trim()}
                 className="w-full bg-brand-blue text-white font-medium py-3 rounded-xl hover:bg-brand-blue/90 disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {loading ? (
-                  <>
-                    <Loader className="w-4 h-4 animate-spin" />
-                    Generating Quiz...
-                  </>
-                ) : (
-                  'Generate 5 Questions'
-                )}
+                {loading ? (<><Loader className="w-4 h-4 animate-spin" /> Generating Quiz...</>) : 'Generate 5 Questions'}
               </button>
             </div>
           ) : (
@@ -127,30 +130,15 @@ export default function Quiz() {
               {!submitted ? (
                 <>
                   {quizzes.map((q, i) => (
-                    <motion.div
-                      key={i}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.1 }}
-                      className="bg-surface-elevated border border-white/5 rounded-2xl p-6"
-                    >
-                      <p className="text-white font-medium mb-4">
-                        Q{i + 1}. {q.question}
-                      </p>
+                    <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}
+                      className="bg-surface-elevated border border-white/5 rounded-2xl p-6">
+                      <p className="text-white font-medium mb-4">Q{i + 1}. {q.question}</p>
                       <div className="space-y-2">
                         {q.options.map((option, j) => (
                           <label key={j} className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-surface-base transition-all">
-                            <input
-                              type="radio"
-                              name={`q${i}`}
-                              checked={answers[i] === j}
-                              onChange={() => {
-                                const newAnswers = [...answers]
-                                newAnswers[i] = j
-                                setAnswers(newAnswers)
-                              }}
-                              className="w-4 h-4 accent-brand-blue cursor-pointer"
-                            />
+                            <input type="radio" name={`q${i}`} checked={answers[i] === j}
+                              onChange={() => { const a = [...answers]; a[i] = j; setAnswers(a) }}
+                              className="w-4 h-4 accent-brand-blue cursor-pointer" />
                             <span className="text-[#8B97B5] text-sm">{option}</span>
                           </label>
                         ))}
@@ -158,48 +146,35 @@ export default function Quiz() {
                     </motion.div>
                   ))}
 
-                  <button
-                    onClick={submitQuiz}
-                    className="w-full bg-brand-blue text-white font-medium py-3 rounded-xl hover:bg-brand-blue/90"
-                  >
-                    Submit Quiz
-                  </button>
+                  <div className="flex gap-3">
+                    <button onClick={submitQuiz} className="flex-1 bg-brand-blue text-white font-medium py-3 rounded-xl hover:bg-brand-blue/90">
+                      Submit Quiz
+                    </button>
+                    <button onClick={saveQuizToVault} disabled={savedToVault}
+                      className="flex items-center gap-2 bg-surface-elevated border border-white/10 text-white px-5 py-3 rounded-xl hover:border-brand-blue/40 disabled:opacity-60 text-sm font-medium">
+                      {savedToVault ? (<><Check size={16} className="text-green-400" /> Saved</>) : (<><Save size={16} /> Save to Vault</>)}
+                    </button>
+                  </div>
                 </>
               ) : (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="space-y-6"
-                >
+                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="space-y-6">
                   <div className="bg-gradient-to-r from-brand-blue/10 to-brand-blue/5 border border-brand-blue/20 rounded-2xl p-8 text-center">
                     <p className="text-6xl font-bold text-brand-blue mb-2">{score?.percentage}%</p>
-                    <p className="text-xl text-white font-sora font-bold mb-1">
-                      {score?.correct} out of {score?.total} correct
-                    </p>
+                    <p className="text-xl text-white font-sora font-bold mb-1">{score?.correct} out of {score?.total} correct</p>
                     <p className="text-[#8B97B5]">Great effort! Keep studying to improve your score.</p>
                   </div>
 
                   {quizzes.map((q, i) => (
-                    <motion.div
-                      key={i}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.1 }}
-                      className={`rounded-2xl p-6 border ${answers[i] === q.correct ? 'bg-brand-green/10 border-brand-green/30' : 'bg-red-500/10 border-red-500/30'}`}
-                    >
+                    <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}
+                      className={`rounded-2xl p-6 border ${answers[i] === q.correct ? 'bg-brand-green/10 border-brand-green/30' : 'bg-red-500/10 border-red-500/30'}`}>
                       <p className="text-white font-medium mb-3">Q{i + 1}. {q.question}</p>
                       <div className="space-y-2">
                         {q.options.map((option, j) => (
-                          <div
-                            key={j}
-                            className={`p-3 rounded-lg text-sm ${
-                              j === q.correct
-                                ? 'bg-brand-green/20 text-brand-green border border-brand-green/30'
-                                : j === answers[i]
-                                ? 'bg-red-500/20 text-red-500 border border-red-500/30'
-                                : 'bg-surface-base text-[#8B97B5]'
-                            }`}
-                          >
+                          <div key={j} className={`p-3 rounded-lg text-sm ${
+                            j === q.correct ? 'bg-brand-green/20 text-brand-green border border-brand-green/30'
+                            : j === answers[i] ? 'bg-red-500/20 text-red-500 border border-red-500/30'
+                            : 'bg-surface-base text-[#8B97B5]'
+                          }`}>
                             {option}
                           </div>
                         ))}
@@ -207,13 +182,15 @@ export default function Quiz() {
                     </motion.div>
                   ))}
 
-                  <button
-                    onClick={resetQuiz}
-                    className="w-full bg-brand-blue text-white font-medium py-3 rounded-xl hover:bg-brand-blue/90 flex items-center justify-center gap-2"
-                  >
-                    <RotateCcw size={16} />
-                    Try Another Quiz
-                  </button>
+                  <div className="flex gap-3">
+                    <button onClick={resetQuiz} className="flex-1 bg-brand-blue text-white font-medium py-3 rounded-xl hover:bg-brand-blue/90 flex items-center justify-center gap-2">
+                      <RotateCcw size={16} /> Try Another Quiz
+                    </button>
+                    <button onClick={saveQuizToVault} disabled={savedToVault}
+                      className="flex items-center gap-2 bg-surface-elevated border border-white/10 text-white px-5 py-3 rounded-xl hover:border-brand-blue/40 disabled:opacity-60 text-sm font-medium">
+                      {savedToVault ? (<><Check size={16} className="text-green-400" /> Saved</>) : (<><Save size={16} /> Save to Vault</>)}
+                    </button>
+                  </div>
                 </motion.div>
               )}
             </div>
