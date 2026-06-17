@@ -4,7 +4,9 @@ import { useNavigate } from 'react-router-dom'
 
 export default function Landing() {
   const navigate = useNavigate()
-
+const scrollToFeatures = () => {
+  document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })
+}
   return (
     <div className="min-h-screen bg-white overflow-hidden">
       {/* NAVBAR */}
@@ -75,7 +77,7 @@ export default function Landing() {
       </section>
 
       {/* FEATURES */}
-      <section className="py-20 px-4 sm:px-6 bg-surface-light">
+      <section id="features" className="py-20 px-4 sm:px-6 bg-surface-light">
         <div className="max-w-7xl mx-auto">
           <h2 className="font-sora font-bold text-4xl text-navy text-center mb-12">Powerful Features</h2>
           <div className="grid md:grid-cols-3 gap-8">
