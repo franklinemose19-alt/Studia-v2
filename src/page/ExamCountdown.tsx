@@ -66,8 +66,22 @@ export default function ExamCountdown() {
   // ── PDF upload + auto-match ──────────────────────────────────────────
 
   const getSavedCourses = (): SavedCourse[] => {
-    try { return JSON.parse(localStorage.getItem('courses') || '[]') } catch { return [] }
+  try {
+    const units = JSON.parse(localStorage.getItem('units') || '[]')
+    const grouped: { [key: string]: Set<string> } = {}
+    units.forEach((u: any) => {
+      if (!grouped[u.course]) grouped[u.course] = new Set()
+      grouped[u.course].add(u.unitName)
+    })
+    return Object.entries(grouped).map(([name, unitSet], i) => ({
+      id: `course-${i}`,
+      name,
+      units: Array.from(unitSet),
+    }))
+  } catch {
+    return []
   }
+}
 
   const matchesSavedCourses = (exam: any, courses: SavedCourse[]) => {
     if (!courses.length) return true
