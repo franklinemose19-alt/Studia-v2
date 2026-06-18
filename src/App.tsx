@@ -31,9 +31,17 @@ export default function App() {
         <Route path="/signup" element={<Signup />} />
         <Route path="/pricing" element={<Pricing />} />
        <Route path="/ai-tools" element={<ProtectedRoute><AITools /></ProtectedRoute>} />
-      <Route path="/checkout" element={<Checkout />} />
+    
 
         {/* Protected Routes */}
+        <Route
+  path="/checkout"
+  element={
+    <ProtectedRoute>
+      <Checkout />
+    </ProtectedRoute>
+  }
+/>
         <Route
           path="/dashboard"
           element={
