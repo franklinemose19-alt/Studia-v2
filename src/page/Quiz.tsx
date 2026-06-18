@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Loader, RotateCcw, Save, Check, BookOpen } from 'lucide-react'
+import { ArrowLeft, Loader, RotateCcw, Save, Check, BookOpen, Upload, FileText } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 interface Question {
@@ -51,6 +51,9 @@ export default function Quiz() {
   const [loading, setLoading] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [savedToVault, setSavedToVault] = useState(false)
+  const [isPdfLoading, setIsPdfLoading] = useState(false)
+
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     try { setUnits(JSON.parse(localStorage.getItem('units') || '[]')) } catch { setUnits([]) }
@@ -120,6 +123,51 @@ export default function Quiz() {
     runGenerateQuiz(manualNotes)
   }
 
+  const uploadPastPaper = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.type !== 'application/pdf') {
+      alert('Please upload a PDF file.')
+      return
+    }
+
+    setIsPdfLoading(true)
+    const reader = new FileReader()
+    reader.onload = async () => {
+      const base64 = (reader.result as string).split(',')[1]
+      const courseContext = selectedUnitData ? `${selectedCourse} — ${selectedUnitData.unitName}` : undefined
+
+      setLoading(true)
+      try {
+        const res = await fetch('/api/quiz', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pdfBase64: base64, courseContext }),
+        })
+        const data = await res.json()
+        if (data.quizzes && data.quizzes.length > 0) {
+          setQuizzes(data.quizzes)
+          setAnswers(new Array(data.quizzes.length).fill(-1))
+          setSubmitted(false)
+          setSavedToVault(false)
+        } else {
+          alert('Error: ' + (data.error || 'Could not extract questions from this paper'))
+        }
+      } catch (err) {
+        alert('Error: ' + (err instanceof Error ? err.message : 'Unknown error'))
+      } finally {
+        setLoading(false)
+        setIsPdfLoading(false)
+      }
+    }
+    reader.onerror = () => {
+      setIsPdfLoading(false)
+      alert('Failed to read PDF file.')
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
+
   const submitQuiz = () => {
     if (answers.some((a) => a === -1)) { alert('Please answer all questions'); return }
     setSubmitted(true)
@@ -176,7 +224,7 @@ export default function Quiz() {
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
           <div>
             <h1 className="font-sora font-bold text-4xl text-white mb-2">Generate Quiz</h1>
-            <p className="text-[#8B97B5]">Pick a unit — STUDIA pulls your lecture notes automatically to test you.</p>
+            <p className="text-[#8B97B5]">Pick a unit, upload a past paper, or paste notes — STUDIA builds your quiz.</p>
           </div>
 
           {quizzes.length === 0 ? (
@@ -229,6 +277,23 @@ export default function Quiz() {
                     </button>
                   </>
                 )}
+              </div>
+
+              {/* Past paper upload */}
+              <div className="bg-gradient-to-r from-purple-500/10 to-indigo-500/10 border border-purple-500/20 rounded-2xl p-6 space-y-4">
+                <h2 className="font-sora font-bold text-lg text-white flex items-center gap-2">
+                  <FileText size={20} className="text-purple-400" /> Generate From a Past Paper
+                </h2>
+                <p className="text-sm text-[#8B97B5]">Upload a real past exam paper PDF — STUDIA extracts the actual questions and converts them into a practice quiz matching the real exam style.</p>
+
+                <input ref={fileInputRef} type="file" accept="application/pdf" onChange={uploadPastPaper} className="hidden" />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={loading || isPdfLoading}
+                  className="w-full bg-purple-500/20 text-purple-300 border border-purple-500/30 font-medium py-3 rounded-xl hover:bg-purple-500/30 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isPdfLoading ? (<><Loader className="w-4 h-4 animate-spin" /> Analyzing past paper...</>) : (<><Upload size={18} /> Upload Past Paper (PDF)</>)}
+                </button>
               </div>
 
               {/* Manual fallback */}
