@@ -4,9 +4,11 @@ import { useNavigate } from 'react-router-dom'
 
 export default function Landing() {
   const navigate = useNavigate()
-const scrollToFeatures = () => {
-  document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })
-}
+
+  const scrollToFeatures = () => {
+    document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })
+  }
+
   return (
     <div className="min-h-screen bg-white overflow-hidden">
       {/* NAVBAR */}
@@ -19,7 +21,7 @@ const scrollToFeatures = () => {
             <span className="font-sora font-bold text-navy text-lg">STUDIA</span>
           </div>
           <div className="hidden md:flex items-center gap-8">
-            <button onClick={() => navigate('/pricing')} className="text-navy hover:text-indigo-premium transition">Features</button>
+            <button onClick={scrollToFeatures} className="text-navy hover:text-indigo-premium transition">Features</button>
             <button onClick={() => navigate('/pricing')} className="text-navy hover:text-indigo-premium transition">Pricing</button>
             <button onClick={() => navigate('/login')} className="text-navy hover:text-indigo-premium transition">Sign In</button>
             <button
