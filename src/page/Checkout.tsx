@@ -72,7 +72,7 @@ export default function Checkout() {
     pollRef.current = setInterval(async () => {
       attempts++
       try {
-        const res = await fetch(`/api/payment-status?transactionId=${transactionId}`)
+        const res = await fetch(`/api/mpesa-stk?transactionId=${transactionId}`)
         const data = await res.json()
 
         if (data.status === 'completed') {
