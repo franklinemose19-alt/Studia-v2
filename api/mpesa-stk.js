@@ -5,7 +5,7 @@ export default async function handler(req, res) {
 
   try {
     const { phoneNumber, amount, planId, planName } = req.body
-
+  const { userId } = req.body
     if (!phoneNumber || !amount) {
       return res.status(400).json({ error: 'Phone number and amount required' })
     }
@@ -125,15 +125,16 @@ export default async function handler(req, res) {
           'Prefer': 'return=minimal',
         },
         body: JSON.stringify({
-          transaction_id: stkData.CheckoutRequestID,
-          phone_number: formattedPhone,
-          amount: Math.ceil(amount),
-          plan_id: planId,
-          plan_name: planName,
-          status: 'pending',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }),
+  transaction_id: stkData.CheckoutRequestID,
+  phone_number: formattedPhone,
+  amount: Math.ceil(amount),
+  plan_id: planId,
+  plan_name: planName,
+  status: 'pending',
+  created_by: userId || null,
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+}),
       })
 
       if (!supabaseRes.ok) {
