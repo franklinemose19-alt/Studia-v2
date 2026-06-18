@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Loader, RotateCcw, Save, Check } from 'lucide-react'
+import { ArrowLeft, Loader, RotateCcw, Save, Check, BookOpen } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 interface Question {
@@ -9,26 +9,85 @@ interface Question {
   correct: number
 }
 
+interface Unit {
+  id: string
+  course: string
+  unitName: string
+  topics: string[]
+}
+
+interface NoteItem {
+  id: string
+  title: string
+  content: string
+  course?: string
+  date: string
+}
+
+interface RecordingItem {
+  id: string
+  name: string
+  course?: string
+  unit?: string
+  notes?: string
+  transcript?: string
+}
+
+const selectClass = "w-full bg-surface-base border border-white/10 rounded-xl p-3 text-white outline-none focus:border-brand-blue/40 text-sm [&>option]:bg-[#0d1526] [&>option]:text-white"
+
 export default function Quiz() {
   const navigate = useNavigate()
-  const [notes, setNotes] = useState('')
+
+  const [units, setUnits] = useState<Unit[]>([])
+  const [notes, setNotes] = useState<NoteItem[]>([])
+  const [recordings, setRecordings] = useState<RecordingItem[]>([])
+
+  const [selectedCourse, setSelectedCourse] = useState('')
+  const [selectedUnit, setSelectedUnit] = useState('')
+
+  const [manualNotes, setManualNotes] = useState('')
   const [quizzes, setQuizzes] = useState<Question[]>([])
   const [answers, setAnswers] = useState<number[]>([])
   const [loading, setLoading] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [savedToVault, setSavedToVault] = useState(false)
 
-  const generateQuiz = async () => {
-    if (!notes.trim()) {
-      alert('Please paste your lecture notes')
-      return
+  useEffect(() => {
+    try { setUnits(JSON.parse(localStorage.getItem('units') || '[]')) } catch { setUnits([]) }
+    try { setNotes(JSON.parse(localStorage.getItem('notes') || '[]')) } catch { setNotes([]) }
+    try { setRecordings(JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')) } catch { setRecordings([]) }
+  }, [])
+
+  const courseNames = Array.from(new Set(units.map((u) => u.course))).filter(Boolean)
+  const filteredUnits = units.filter((u) => u.course === selectedCourse)
+  const selectedUnitData = units.find((u) => u.id === selectedUnit)
+
+  const relevantNotes = selectedCourse ? notes.filter((n) => n.course === selectedCourse) : []
+  const relevantRecordings = selectedUnitData
+    ? recordings.filter((r) => r.course === selectedCourse && r.unit === selectedUnitData.unitName && (r.notes || r.transcript))
+    : []
+
+  const buildUnitContent = (): string => {
+    if (!selectedUnitData) return ''
+    let content = `Course: ${selectedCourse}\nUnit: ${selectedUnitData.unitName}\nSyllabus Topics: ${selectedUnitData.topics.join(', ')}\n\n`
+    if (relevantNotes.length > 0) {
+      content += '--- Saved Notes ---\n'
+      relevantNotes.forEach((n) => { content += `${n.title}\n${n.content}\n\n` })
     }
+    if (relevantRecordings.length > 0) {
+      content += '--- Lecture Notes ---\n'
+      relevantRecordings.forEach((r) => { content += `${r.name}\n${r.notes || r.transcript || ''}\n\n` })
+    }
+    return content.slice(0, 10000)
+  }
+
+  const runGenerateQuiz = async (text: string) => {
     setLoading(true)
     try {
       const res = await fetch('/api/quiz', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: notes }),
+        body: JSON.stringify({ text }),
       })
       const data = await res.json()
       if (data.quizzes && data.quizzes.length > 0) {
@@ -46,11 +105,23 @@ export default function Quiz() {
     }
   }
 
-  const submitQuiz = () => {
-    if (answers.some((a) => a === -1)) {
-      alert('Please answer all questions')
+  const generateFromUnit = () => {
+    if (!selectedUnit) { alert('Please select a unit first'); return }
+    const content = buildUnitContent()
+    if (!content.trim() || (relevantNotes.length === 0 && relevantRecordings.length === 0)) {
+      alert('No notes or recordings found for this unit yet. Try pasting notes manually below, or record/save notes first.')
       return
     }
+    runGenerateQuiz(content)
+  }
+
+  const generateFromManual = () => {
+    if (!manualNotes.trim()) { alert('Please paste your lecture notes'); return }
+    runGenerateQuiz(manualNotes)
+  }
+
+  const submitQuiz = () => {
+    if (answers.some((a) => a === -1)) { alert('Please answer all questions'); return }
     setSubmitted(true)
   }
 
@@ -64,7 +135,7 @@ export default function Quiz() {
     setQuizzes([])
     setAnswers([])
     setSubmitted(false)
-    setNotes('')
+    setManualNotes('')
     setSavedToVault(false)
   }
 
@@ -73,13 +144,13 @@ export default function Quiz() {
       const saved = JSON.parse(localStorage.getItem('savedQuizzes') || '[]')
       const newQuiz = {
         id: `quiz-${Date.now()}`,
-        title: `Quiz - ${new Date().toLocaleDateString()}`,
+        title: selectedUnitData ? `${selectedUnitData.unitName} Quiz` : `Quiz - ${new Date().toLocaleDateString()}`,
         questions: quizzes,
         date: new Date().toLocaleDateString(),
       }
       localStorage.setItem('savedQuizzes', JSON.stringify([newQuiz, ...saved]))
       setSavedToVault(true)
-    } catch (err) {
+    } catch {
       alert('Could not save quiz.')
     }
   }
@@ -105,25 +176,78 @@ export default function Quiz() {
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
           <div>
             <h1 className="font-sora font-bold text-4xl text-white mb-2">Generate Quiz</h1>
-            <p className="text-[#8B97B5]">Paste lecture notes and we'll create MCQs to test your knowledge.</p>
+            <p className="text-[#8B97B5]">Pick a unit — STUDIA pulls your lecture notes automatically to test you.</p>
           </div>
 
           {quizzes.length === 0 ? (
-            <div className="bg-surface-elevated border border-white/5 rounded-2xl p-6 space-y-4">
-              <label className="block text-sm font-medium text-white">Paste your lecture notes:</label>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Paste lecture notes here..."
-                className="w-full h-64 bg-surface-base border border-white/10 rounded-xl p-4 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40 resize-none"
-              />
-              <button
-                onClick={generateQuiz}
-                disabled={loading || !notes.trim()}
-                className="w-full bg-brand-blue text-white font-medium py-3 rounded-xl hover:bg-brand-blue/90 disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {loading ? (<><Loader className="w-4 h-4 animate-spin" /> Generating Quiz...</>) : 'Generate 5 Questions'}
-              </button>
+            <div className="space-y-6">
+              {/* Unit-based generation */}
+              <div className="bg-surface-elevated border border-white/5 rounded-2xl p-6 space-y-4">
+                <h2 className="font-sora font-bold text-xl text-white flex items-center gap-2">
+                  <BookOpen size={20} className="text-brand-blue" /> Generate From Your Units
+                </h2>
+
+                {units.length === 0 ? (
+                  <div className="bg-surface-base rounded-xl p-5 text-center space-y-3">
+                    <p className="text-sm text-[#8B97B5]">No units yet. Add your courses and units in Unit Management first.</p>
+                    <button onClick={() => navigate('/units')} className="bg-brand-blue text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-blue/90">
+                      Go to Unit Management
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-sm text-white mb-2">Select Course</label>
+                      <select value={selectedCourse} onChange={(e) => { setSelectedCourse(e.target.value); setSelectedUnit('') }} className={selectClass}>
+                        <option value="">Choose a course…</option>
+                        {courseNames.map((name) => <option key={name} value={name}>{name}</option>)}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm text-white mb-2">Select Unit</label>
+                      <select value={selectedUnit} onChange={(e) => setSelectedUnit(e.target.value)} className={selectClass} disabled={!selectedCourse}>
+                        <option value="">Choose a unit…</option>
+                        {filteredUnits.map((u) => <option key={u.id} value={u.id}>{u.unitName}</option>)}
+                      </select>
+                    </div>
+
+                    {selectedUnitData && (
+                      <div className="bg-surface-base rounded-xl p-4 text-sm text-[#8B97B5] space-y-1">
+                        <p>📝 {relevantNotes.length} saved note{relevantNotes.length !== 1 ? 's' : ''} for {selectedCourse}</p>
+                        <p>🎙️ {relevantRecordings.length} lecture recording{relevantRecordings.length !== 1 ? 's' : ''} for {selectedUnitData.unitName}</p>
+                        <p className="text-xs pt-1 border-t border-white/5 mt-2">Syllabus topics: {selectedUnitData.topics.join(', ')}</p>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={generateFromUnit}
+                      disabled={loading || !selectedUnit}
+                      className="w-full bg-brand-blue text-white font-medium py-3 rounded-xl hover:bg-brand-blue/90 disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {loading ? (<><Loader className="w-4 h-4 animate-spin" /> Generating Quiz...</>) : 'Generate Quiz From This Unit'}
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* Manual fallback */}
+              <div className="bg-surface-elevated border border-white/5 rounded-2xl p-6 space-y-4">
+                <h2 className="font-sora font-bold text-lg text-white">Or Paste Notes Manually</h2>
+                <textarea
+                  value={manualNotes}
+                  onChange={(e) => setManualNotes(e.target.value)}
+                  placeholder="Paste lecture notes here..."
+                  className="w-full h-48 bg-surface-base border border-white/10 rounded-xl p-4 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40 resize-none"
+                />
+                <button
+                  onClick={generateFromManual}
+                  disabled={loading || !manualNotes.trim()}
+                  className="w-full bg-surface-base border border-brand-blue/30 text-brand-blue font-medium py-3 rounded-xl hover:bg-surface-base/80 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {loading ? (<><Loader className="w-4 h-4 animate-spin" /> Generating...</>) : 'Generate From Pasted Notes'}
+                </button>
+              </div>
             </div>
           ) : (
             <div className="space-y-6">
