@@ -152,12 +152,35 @@ export default function OfflineVault() {
     downloadText(`${note.title}.txt`, text)
   }
 
-  const downloadQuiz = (quiz: QuizItem) => {
-    const text = quiz.questions
-      .map((q, i) => `Q${i + 1}. ${q.question}\n${q.options.map((o, j) => `${j === q.correct ? '✓' : ' '} ${o}`).join('\n')}`)
-      .join('\n\n')
-    downloadText(`${quiz.title}.txt`, text)
-  }
+  import jsPDF from 'jspdf'
+
+const downloadQuizPDF = (quiz: QuizItem) => {
+  const doc = new jsPDF()
+  doc.setFontSize(16)
+  doc.text(quiz.title, 14, 20)
+  doc.setFontSize(11)
+
+  let y = 32
+  quiz.questions.forEach((q, i) => {
+    if (y > 270) { doc.addPage(); y = 20 }
+    doc.setFont('helvetica', 'bold')
+    const questionLines = doc.splitTextToSize(`Q${i + 1}. ${q.question}`, 180)
+    doc.text(questionLines, 14, y)
+    y += questionLines.length * 6 + 2
+
+    doc.setFont('helvetica', 'normal')
+    q.options.forEach((opt, j) => {
+      const marker = j === q.correct ? '✓' : ' '
+      const optLines = doc.splitTextToSize(`${marker} ${opt}`, 170)
+      if (y > 270) { doc.addPage(); y = 20 }
+      doc.text(optLines, 18, y)
+      y += optLines.length * 6
+    })
+    y += 6
+  })
+
+  doc.save(`${quiz.title}.pdf`)
+}
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-white via-surface-light to-white">
