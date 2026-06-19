@@ -1,4 +1,4 @@
-import jsPDF from 'jspdf'
+import { jsPDF } from 'jspdf'
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Download, Trash2, Lock, Wifi, WifiOff, Mic, BookOpen, BarChart3, Loader } from 'lucide-react'
