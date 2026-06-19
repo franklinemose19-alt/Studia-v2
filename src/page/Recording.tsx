@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, Square, Play, Pause, Trash2, Download, ArrowLeft, Loader, FileText, BookOpen } from 'lucide-react'
+import { Mic, Square, Play, Pause, Trash2, Download, ArrowLeft, Loader, FileText, BookOpen, Phone, Lock } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getSupabase } from '../lib/supabaseClient'
 
@@ -76,7 +76,16 @@ const formatTime = (seconds: number) => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
 }
 
+const formatPhone = (phone: string) => {
+  let cleaned = phone.replace(/\D/g, '')
+  if (cleaned.startsWith('0')) cleaned = '254' + cleaned.substring(1)
+  else if (!cleaned.startsWith('254')) cleaned = '254' + cleaned
+  return cleaned
+}
+
 const selectClass = "w-full bg-surface-base border border-white/10 rounded-xl p-3 text-white outline-none focus:border-brand-blue/40 text-sm [&>option]:bg-[#0d1526] [&>option]:text-white"
+
+const FREE_LECTURE_LIMIT = 3
 
 export default function RecordingPage() {
   const navigate = useNavigate()
@@ -96,6 +105,19 @@ export default function RecordingPage() {
 
   const [uploadStatus, setUploadStatus] = useState<string>('')
 
+  // ── Access control ──────────────────────────────────────────────────────
+  const [currentPlan, setCurrentPlan] = useState<string | null>(null)
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null)
+  const [freeLecturesUsed, setFreeLecturesUsed] = useState(0)
+  const [accessLoaded, setAccessLoaded] = useState(false)
+  const [showPaywall, setShowPaywall] = useState(false)
+  const [isFreeLectureSession, setIsFreeLectureSession] = useState(false)
+  const [liteDurationCap, setLiteDurationCap] = useState<number | null>(null)
+
+  const [litePhone, setLitePhone] = useState('')
+  const [litePaying, setLitePaying] = useState(false)
+  const [liteError, setLiteError] = useState('')
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
@@ -104,14 +126,42 @@ export default function RecordingPage() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const animFrameRef = useRef<number | null>(null)
   const currentAudioRef = useRef<HTMLAudioElement | null>(null)
+  const litePollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const liteCapRef = useRef<number | null>(null)
 
   useEffect(() => {
     try { setUnits(JSON.parse(localStorage.getItem('units') || '[]')) } catch { setUnits([]) }
     try { setRecordings(JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')) } catch { setRecordings([]) }
+
+    const loadAccess = async () => {
+      try {
+        const client = await getSupabase()
+        const { data: { user } } = await client.auth.getUser()
+        if (user) {
+          const { data } = await client
+            .from('users')
+            .select('current_plan, subscription_status, free_lectures_used')
+            .eq('auth_id', user.id)
+            .single()
+          if (data) {
+            setCurrentPlan(data.current_plan)
+            setSubscriptionStatus(data.subscription_status)
+            setFreeLecturesUsed(data.free_lectures_used || 0)
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load access info:', err)
+      } finally {
+        setAccessLoaded(true)
+      }
+    }
+    loadAccess()
+
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
       if (audioContextRef.current) audioContextRef.current.close()
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
+      if (litePollRef.current) clearInterval(litePollRef.current)
     }
   }, [])
 
@@ -120,7 +170,9 @@ export default function RecordingPage() {
     localStorage.setItem('recordingsMetadata', JSON.stringify(metadata))
   }, [recordings])
 
-  // Derive unique course names directly from units (single source of truth)
+  const hasUnlimitedAccess = ['plus', 'pro', 'semester'].includes(currentPlan || '') && subscriptionStatus === 'active'
+  const freeRemaining = Math.max(0, FREE_LECTURE_LIMIT - freeLecturesUsed)
+
   const courseNames = Array.from(new Set(units.map((u) => u.course))).filter(Boolean)
   const filteredUnits = units.filter((u) => u.course === selectedCourse)
 
@@ -154,6 +206,8 @@ export default function RecordingPage() {
     const ctx = canvas.getContext('2d')
     if (ctx) { ctx.fillStyle = '#080C18'; ctx.fillRect(0, 0, canvas.width, canvas.height) }
   }
+
+  // ── AI helpers (unchanged) ──────────────────────────────────────────────
 
   const uploadToSupabase = async (blob: Blob, recordingId: string, userId: string): Promise<string | null> => {
     try {
@@ -223,6 +277,92 @@ ${transcript}` },
     } catch (err) { console.error('Notes generation failed:', err); return null }
   }
 
+  // ── Access control logic ────────────────────────────────────────────────
+
+  const handleStartClick = () => {
+    if (hasUnlimitedAccess) {
+      setIsFreeLectureSession(false)
+      liteCapRef.current = null
+      setLiteDurationCap(null)
+      startRecording()
+      return
+    }
+    if (freeRemaining > 0) {
+      setIsFreeLectureSession(true)
+      liteCapRef.current = null
+      setLiteDurationCap(null)
+      startRecording()
+      return
+    }
+    setLiteError('')
+    setShowPaywall(true)
+  }
+
+  const payForLecture = async (tier: '1hr' | '2hr') => {
+    if (!litePhone.trim()) { setLiteError('Enter your M-Pesa number'); return }
+    setLiteError('')
+    setLitePaying(true)
+    try {
+      const client = await getSupabase()
+      const { data: { user } } = await client.auth.getUser()
+      const amount = tier === '1hr' ? 25 : 45
+      const res = await fetch('/api/mpesa-stk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phoneNumber: formatPhone(litePhone),
+          amount,
+          planId: `lite-${tier}`,
+          planName: `Lite (${tier === '1hr' ? 'up to 1 hour' : 'up to 2 hours'})`,
+          userId: user?.id,
+        }),
+      })
+      const data = await res.json()
+      if (!data.success) {
+        setLiteError(data.error || 'Payment failed. Please try again.')
+        setLitePaying(false)
+        return
+      }
+      pollLitePayment(data.transactionId, tier)
+    } catch {
+      setLiteError('Connection error. Please try again.')
+      setLitePaying(false)
+    }
+  }
+
+  const pollLitePayment = (transactionId: string, tier: '1hr' | '2hr') => {
+    let attempts = 0
+    litePollRef.current = setInterval(async () => {
+      attempts++
+      try {
+        const res = await fetch(`/api/mpesa-stk?transactionId=${transactionId}`)
+        const data = await res.json()
+        if (data.status === 'completed') {
+          clearInterval(litePollRef.current!)
+          setLitePaying(false)
+          setShowPaywall(false)
+          setIsFreeLectureSession(false)
+          const cap = tier === '1hr' ? 3600 : 7200
+          liteCapRef.current = cap
+          setLiteDurationCap(cap)
+          startRecording()
+        } else if (data.status === 'failed') {
+          clearInterval(litePollRef.current!)
+          setLitePaying(false)
+          setLiteError('Payment was not completed. Please try again.')
+        } else if (attempts >= 20) {
+          clearInterval(litePollRef.current!)
+          setLitePaying(false)
+          setLiteError('Still waiting for confirmation. If you completed the M-Pesa prompt, try recording again shortly.')
+        }
+      } catch {
+        // keep polling on transient errors
+      }
+    }, 3000)
+  }
+
+  // ── Recording ────────────────────────────────────────────────────────────
+
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -254,7 +394,15 @@ ${transcript}` },
       setIsRecording(true)
       setDuration(0)
       setUploadStatus('')
-      timerRef.current = setInterval(() => setDuration((d) => d + 1), 1000)
+      timerRef.current = setInterval(() => {
+        setDuration((d) => {
+          const next = d + 1
+          if (liteCapRef.current && next >= liteCapRef.current) {
+            setTimeout(() => stopRecording(), 0)
+          }
+          return next
+        })
+      }, 1000)
       visualize()
     } catch {
       alert('Microphone access denied. Please allow microphone access and try again.')
@@ -301,6 +449,19 @@ ${transcript}` },
       const { data: { user } } = await client.auth.getUser()
       const userId = user?.id || 'anonymous'
 
+      // Consume a free credit if this session used one
+      if (isFreeLectureSession && user) {
+        try {
+          await client.from('users').update({ free_lectures_used: freeLecturesUsed + 1 }).eq('auth_id', user.id)
+          setFreeLecturesUsed((prev) => prev + 1)
+        } catch (err) {
+          console.error('Failed to update free lecture count:', err)
+        }
+      }
+      setIsFreeLectureSession(false)
+      liteCapRef.current = null
+      setLiteDurationCap(null)
+
       const storageUrl = await uploadToSupabase(blob, id, userId)
       const transcript = await transcribeAudio(blob)
       const notes = transcript ? await generateNotes(transcript, courseName, unitName) : null
@@ -320,6 +481,8 @@ ${transcript}` },
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
     if (audioContextRef.current) audioContextRef.current.close()
   }
+
+  // ── Playback / download / delete (unchanged) ─────────────────────────────
 
   const playRecording = async (recording: Recording) => {
     if (currentAudioRef.current) { currentAudioRef.current.pause(); currentAudioRef.current = null }
@@ -373,6 +536,17 @@ ${transcript}` },
           <div>
             <h1 className="font-sora font-bold text-4xl text-white mb-2">Smart Recording</h1>
             <p className="text-[#8B97B5]">Record lectures, get AI-generated notes automatically.</p>
+            {accessLoaded && (
+              <p className="text-sm mt-2">
+                {hasUnlimitedAccess ? (
+                  <span className="text-green-400">✨ Unlimited recordings — {currentPlan} plan</span>
+                ) : (
+                  <span className="text-brand-blue">
+                    {freeRemaining > 0 ? `🎓 ${freeRemaining} free lecture${freeRemaining !== 1 ? 's' : ''} remaining` : '💳 Free lectures used — pay per lecture or subscribe'}
+                  </span>
+                )}
+              </p>
+            )}
           </div>
 
           <div className="grid md:grid-cols-2 gap-6">
@@ -418,25 +592,71 @@ ${transcript}` },
             </div>
 
             <div className="bg-surface-elevated border border-white/5 rounded-2xl p-6 space-y-6 flex flex-col">
-              <canvas ref={canvasRef} width={500} height={200} className="w-full h-48 bg-surface-base rounded-xl" />
-              <div className="text-center flex-1 flex flex-col items-center justify-center">
-                <p className="text-5xl font-mono font-bold text-brand-blue mb-2">{formatTime(duration)}</p>
-                <p className="text-sm text-[#8B97B5]">
-                  {isRecording ? '● Recording…' : recordings.length > 0 ? `${recordings.length} recording${recordings.length !== 1 ? 's' : ''} saved` : 'Ready to record'}
-                </p>
-                {uploadStatus && <p className="text-xs text-brand-blue mt-2 animate-pulse">{uploadStatus}</p>}
-              </div>
-              <div className="flex justify-center">
-                {!isRecording ? (
-                  <button onClick={startRecording} className="inline-flex items-center gap-3 bg-brand-blue text-white font-semibold px-8 py-4 rounded-2xl hover:bg-brand-blue/90 transition-colors">
-                    <Mic size={22} /> Start Recording
-                  </button>
-                ) : (
-                  <button onClick={stopRecording} className="inline-flex items-center gap-3 bg-red-500 text-white font-semibold px-8 py-4 rounded-2xl animate-pulse">
-                    <Square size={22} /> Stop Recording
-                  </button>
-                )}
-              </div>
+              {showPaywall && !isRecording ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-center space-y-4 py-4">
+                  <Lock size={32} className="text-brand-blue" />
+                  <div>
+                    <p className="text-white font-semibold mb-1">Free lectures used up</p>
+                    <p className="text-sm text-[#8B97B5]">Pay per lecture, or subscribe for unlimited recordings.</p>
+                  </div>
+
+                  <div className="w-full space-y-3">
+                    <div className="relative">
+                      <Phone className="absolute left-3 top-3 text-[#4A5568]" size={18} />
+                      <input
+                        type="tel"
+                        placeholder="M-Pesa number (07XX...)"
+                        value={litePhone}
+                        onChange={(e) => setLitePhone(e.target.value)}
+                        disabled={litePaying}
+                        className="w-full bg-surface-base border border-white/10 rounded-xl pl-10 pr-3 py-2.5 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40 text-sm disabled:opacity-50"
+                      />
+                    </div>
+
+                    {liteError && <p className="text-xs text-red-400">{liteError}</p>}
+
+                    <div className="flex gap-2">
+                      <button onClick={() => payForLecture('1hr')} disabled={litePaying}
+                        className="flex-1 bg-brand-blue text-white text-sm font-medium py-2.5 rounded-xl hover:bg-brand-blue/90 disabled:opacity-50 flex items-center justify-center gap-2">
+                        {litePaying ? <Loader size={14} className="animate-spin" /> : null} KSh 25 · up to 1hr
+                      </button>
+                      <button onClick={() => payForLecture('2hr')} disabled={litePaying}
+                        className="flex-1 bg-brand-blue text-white text-sm font-medium py-2.5 rounded-xl hover:bg-brand-blue/90 disabled:opacity-50 flex items-center justify-center gap-2">
+                        {litePaying ? <Loader size={14} className="animate-spin" /> : null} KSh 45 · up to 2hr
+                      </button>
+                    </div>
+
+                    <button onClick={() => navigate('/pricing')} className="w-full text-xs text-[#8B97B5] hover:text-white underline pt-1">
+                      Or subscribe for unlimited recordings →
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <canvas ref={canvasRef} width={500} height={200} className="w-full h-48 bg-surface-base rounded-xl" />
+                  <div className="text-center flex-1 flex flex-col items-center justify-center">
+                    <p className="text-5xl font-mono font-bold text-brand-blue mb-2">{formatTime(duration)}</p>
+                    <p className="text-sm text-[#8B97B5]">
+                      {isRecording ? '● Recording…' : recordings.length > 0 ? `${recordings.length} recording${recordings.length !== 1 ? 's' : ''} saved` : 'Ready to record'}
+                    </p>
+                    {liteDurationCap && isRecording && (
+                      <p className="text-xs text-amber-400 mt-1">Capped at {formatTime(liteDurationCap)} for this paid lecture</p>
+                    )}
+                    {uploadStatus && <p className="text-xs text-brand-blue mt-2 animate-pulse">{uploadStatus}</p>}
+                  </div>
+                  <div className="flex justify-center">
+                    {!isRecording ? (
+                      <button onClick={handleStartClick} disabled={!accessLoaded} className="inline-flex items-center gap-3 bg-brand-blue text-white font-semibold px-8 py-4 rounded-2xl hover:bg-brand-blue/90 transition-colors disabled:opacity-50">
+                        <Mic size={22} /> Start Recording
+                      </button>
+                    ) : (
+                      <button onClick={stopRecording} className="inline-flex items-center gap-3 bg-red-500 text-white font-semibold px-8 py-4 rounded-2xl animate-pulse">
+                        <Square size={22} /> Stop Recording
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
