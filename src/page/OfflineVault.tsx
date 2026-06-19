@@ -1,3 +1,4 @@
+import jsPDF from 'jspdf'
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Download, Trash2, Lock, Wifi, WifiOff, Mic, BookOpen, BarChart3, Loader } from 'lucide-react'
@@ -151,8 +152,6 @@ export default function OfflineVault() {
     const text = `${note.title}\n${note.course ? `Course: ${note.course}\n` : ''}\n${note.content}`
     downloadText(`${note.title}.txt`, text)
   }
-
-  import jsPDF from 'jspdf'
 
 const downloadQuizPDF = (quiz: QuizItem) => {
   const doc = new jsPDF()
