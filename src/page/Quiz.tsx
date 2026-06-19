@@ -7,6 +7,7 @@ interface Question {
   question: string
   options: string[]
   correct: number
+  topic?: string
 }
 
 interface Unit {
@@ -168,9 +169,33 @@ export default function Quiz() {
     e.target.value = ''
   }
 
+  const saveQuizResult = () => {
+    try {
+      let correct = 0
+      quizzes.forEach((q, i) => { if (answers[i] === q.correct) correct++ })
+      const results = JSON.parse(localStorage.getItem('quizResults') || '[]')
+      const subject = selectedUnitData ? `${selectedCourse} — ${selectedUnitData.unitName}` : (selectedCourse || 'General')
+      const attempt = {
+        id: `attempt-${Date.now()}`,
+        subject,
+        score: correct,
+        total: quizzes.length,
+        date: new Date().toISOString(),
+        questions: quizzes.map((q, i) => ({
+          topic: q.topic || subject,
+          correct: answers[i] === q.correct,
+        })),
+      }
+      localStorage.setItem('quizResults', JSON.stringify([attempt, ...results]))
+    } catch (err) {
+      console.error('Failed to save quiz result', err)
+    }
+  }
+
   const submitQuiz = () => {
     if (answers.some((a) => a === -1)) { alert('Please answer all questions'); return }
     setSubmitted(true)
+    saveQuizResult()
   }
 
   const calculateScore = () => {
