@@ -67,12 +67,19 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true })
       }
 
-      const userId = payment.created_by
+    const userId = payment.created_by
       const planId = payment.plan_id
       const planName = payment.plan_name
 
       if (!userId) {
         console.warn('Payment has no linked user — cannot activate plan')
+        return res.status(200).json({ success: true })
+      }
+
+      // Lite is pay-per-lecture, not a recurring plan — Recording.tsx unlocks
+      // access itself via polling. Don't touch subscriptions/users for it.
+      if (planId && planId.startsWith('lite')) {
+        console.log(`✅ Lite lecture payment confirmed for user ${userId}`)
         return res.status(200).json({ success: true })
       }
 
