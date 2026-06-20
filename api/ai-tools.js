@@ -4,7 +4,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { mode, image, text, subject } = req.body
+    const { mode, image, text } = req.body
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY
 
     if (!OPENAI_API_KEY) {
@@ -12,13 +12,12 @@ export default async function handler(req, res) {
     }
 
     let messages
+    const model = image ? 'gpt-4o' : 'gpt-4o-mini'
 
     if (mode === 'snapsolve') {
-      if (!image) return res.status(400).json({ error: 'No image provided' })
-      messages = [
-        {
-          role: 'user',
-          content: [
+      if (!image && !text) return res.status(400).json({ error: 'No image or text provided' })
+      const content = image
+        ? [
             { type: 'image_url', image_url: { url: image } },
             {
               type: 'text',
@@ -38,9 +37,22 @@ Respond with a JSON object in this exact format:
 
 Only respond with the JSON object, nothing else.`,
             },
-          ],
-        },
-      ]
+          ]
+        : `You are an expert academic tutor. The student has typed this question or topic:\n\n${text}\n\nRespond with a JSON object in this exact format:
+{
+  "question": "The question or topic, restated clearly",
+  "answer": "A detailed, step-by-step answer or solution",
+  "explanation": "A clear explanation of the key concepts involved",
+  "revision_notes": "Quick bullet-point revision notes on this topic",
+  "quiz": [
+    { "question": "Related MCQ question", "options": ["A", "B", "C", "D"], "answer": "A" },
+    { "question": "Related MCQ question", "options": ["A", "B", "C", "D"], "answer": "B" }
+  ]
+}
+
+Only respond with the JSON object, nothing else.`
+
+      messages = [{ role: 'user', content }]
     } else if (mode === 'pastpapers') {
       if (!image && !text) return res.status(400).json({ error: 'No content provided' })
       const content = image
@@ -152,9 +164,9 @@ Only respond with the JSON object, nothing else.`
         Authorization: `Bearer ${OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4o',
+        model,
         messages,
-        max_tokens: 2000,
+        max_tokens: 3000,
       }),
     })
 
@@ -166,7 +178,14 @@ Only respond with the JSON object, nothing else.`
     }
 
     const raw = data.choices[0].message.content.replace(/```json|```/g, '').trim()
-    const parsed = JSON.parse(raw)
+
+    let parsed
+    try {
+      parsed = JSON.parse(raw)
+    } catch (parseErr) {
+      console.error('JSON parse error:', parseErr, 'Raw:', raw)
+      return res.status(500).json({ error: 'AI response could not be parsed. Please try again.' })
+    }
 
     return res.status(200).json({ result: parsed })
   } catch (err) {
