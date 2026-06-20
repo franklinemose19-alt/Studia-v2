@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Mic, Square, Play, Pause, Trash2, Download, ArrowLeft, Loader, FileText, BookOpen, Phone, Lock } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getSupabase } from '../lib/supabaseClient'
+import { loadAccess, checkAccess, consumeCredit, grantLiteBonusCredit, freeCreditsRemaining, isUnlimitedPlan, type AccessInfo, emptyAccess } from '../lib/access'
 
 interface Recording {
   id: string
@@ -85,8 +86,6 @@ const formatPhone = (phone: string) => {
 
 const selectClass = "w-full bg-surface-base border border-white/10 rounded-xl p-3 text-white outline-none focus:border-brand-blue/40 text-sm [&>option]:bg-[#0d1526] [&>option]:text-white"
 
-const FREE_LECTURE_LIMIT = 3
-
 export default function RecordingPage() {
   const navigate = useNavigate()
 
@@ -106,12 +105,10 @@ export default function RecordingPage() {
   const [uploadStatus, setUploadStatus] = useState<string>('')
 
   // ── Access control ──────────────────────────────────────────────────────
-  const [currentPlan, setCurrentPlan] = useState<string | null>(null)
-  const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null)
-  const [freeLecturesUsed, setFreeLecturesUsed] = useState(0)
+  const [access, setAccess] = useState<AccessInfo>(emptyAccess)
   const [accessLoaded, setAccessLoaded] = useState(false)
   const [showPaywall, setShowPaywall] = useState(false)
-  const [isFreeLectureSession, setIsFreeLectureSession] = useState(false)
+  const [sessionAccessSource, setSessionAccessSource] = useState<'unlimited' | 'free' | 'lite' | null>(null)
   const [liteDurationCap, setLiteDurationCap] = useState<number | null>(null)
 
   const [litePhone, setLitePhone] = useState('')
@@ -128,34 +125,18 @@ export default function RecordingPage() {
   const currentAudioRef = useRef<HTMLAudioElement | null>(null)
   const litePollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const liteCapRef = useRef<number | null>(null)
+  const sessionSourceRef = useRef<'unlimited' | 'free' | 'lite' | null>(null)
 
   useEffect(() => {
     try { setUnits(JSON.parse(localStorage.getItem('units') || '[]')) } catch { setUnits([]) }
     try { setRecordings(JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')) } catch { setRecordings([]) }
 
-    const loadAccess = async () => {
-      try {
-        const client = await getSupabase()
-        const { data: { user } } = await client.auth.getUser()
-        if (user) {
-          const { data } = await client
-            .from('users')
-            .select('current_plan, subscription_status, free_lectures_used')
-            .eq('auth_id', user.id)
-            .single()
-          if (data) {
-            setCurrentPlan(data.current_plan)
-            setSubscriptionStatus(data.subscription_status)
-            setFreeLecturesUsed(data.free_lectures_used || 0)
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load access info:', err)
-      } finally {
-        setAccessLoaded(true)
-      }
+    const init = async () => {
+      const a = await loadAccess()
+      setAccess(a)
+      setAccessLoaded(true)
     }
-    loadAccess()
+    init()
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
@@ -169,9 +150,6 @@ export default function RecordingPage() {
     const metadata = recordings.map(({ blob, ...rest }) => rest)
     localStorage.setItem('recordingsMetadata', JSON.stringify(metadata))
   }, [recordings])
-
-  const hasUnlimitedAccess = ['plus', 'pro', 'semester'].includes(currentPlan || '') && subscriptionStatus === 'active'
-  const freeRemaining = Math.max(0, FREE_LECTURE_LIMIT - freeLecturesUsed)
 
   const courseNames = Array.from(new Set(units.map((u) => u.course))).filter(Boolean)
   const filteredUnits = units.filter((u) => u.course === selectedCourse)
@@ -207,7 +185,7 @@ export default function RecordingPage() {
     if (ctx) { ctx.fillStyle = '#080C18'; ctx.fillRect(0, 0, canvas.width, canvas.height) }
   }
 
-  // ── AI helpers (unchanged) ──────────────────────────────────────────────
+  // ── AI helpers ───────────────────────────────────────────────────────────
 
   const uploadToSupabase = async (blob: Blob, recordingId: string, userId: string): Promise<string | null> => {
     try {
@@ -280,15 +258,10 @@ ${transcript}` },
   // ── Access control logic ────────────────────────────────────────────────
 
   const handleStartClick = () => {
-    if (hasUnlimitedAccess) {
-      setIsFreeLectureSession(false)
-      liteCapRef.current = null
-      setLiteDurationCap(null)
-      startRecording()
-      return
-    }
-    if (freeRemaining > 0) {
-      setIsFreeLectureSession(true)
+    const result = checkAccess(access, 'core')
+    if (result.allowed) {
+      sessionSourceRef.current = result.source
+      setSessionAccessSource(result.source)
       liteCapRef.current = null
       setLiteDurationCap(null)
       startRecording()
@@ -303,8 +276,6 @@ ${transcript}` },
     setLiteError('')
     setLitePaying(true)
     try {
-      const client = await getSupabase()
-      const { data: { user } } = await client.auth.getUser()
       const amount = tier === '1hr' ? 25 : 45
       const res = await fetch('/api/mpesa-stk', {
         method: 'POST',
@@ -314,7 +285,7 @@ ${transcript}` },
           amount,
           planId: `lite-${tier}`,
           planName: `Lite (${tier === '1hr' ? 'up to 1 hour' : 'up to 2 hours'})`,
-          userId: user?.id,
+          userId: access.userId,
         }),
       })
       const data = await res.json()
@@ -341,10 +312,16 @@ ${transcript}` },
           clearInterval(litePollRef.current!)
           setLitePaying(false)
           setShowPaywall(false)
-          setIsFreeLectureSession(false)
           const cap = tier === '1hr' ? 3600 : 7200
           liteCapRef.current = cap
           setLiteDurationCap(cap)
+          sessionSourceRef.current = null // directly paid for, doesn't touch the credit pool
+          setSessionAccessSource(null)
+
+          if (access.userId) {
+            await grantLiteBonusCredit(access.userId, access.liteBonusCredits)
+            setAccess((prev) => ({ ...prev, liteBonusCredits: prev.liteBonusCredits + 1 }))
+          }
           startRecording()
         } else if (data.status === 'failed') {
           clearInterval(litePollRef.current!)
@@ -449,16 +426,18 @@ ${transcript}` },
       const { data: { user } } = await client.auth.getUser()
       const userId = user?.id || 'anonymous'
 
-      // Consume a free credit if this session used one
-      if (isFreeLectureSession && user) {
-        try {
-          await client.from('users').update({ free_lectures_used: freeLecturesUsed + 1 }).eq('auth_id', user.id)
-          setFreeLecturesUsed((prev) => prev + 1)
-        } catch (err) {
-          console.error('Failed to update free lecture count:', err)
-        }
+      // Consume a credit if this session used one (lite-paid sessions consume nothing here)
+      const usedSource = sessionSourceRef.current
+      if (usedSource === 'free' || usedSource === 'lite') {
+        await consumeCredit(access, usedSource)
+        setAccess((prev) => ({
+          ...prev,
+          freeCreditsUsed: usedSource === 'free' ? prev.freeCreditsUsed + 1 : prev.freeCreditsUsed,
+          liteBonusCredits: usedSource === 'lite' ? Math.max(0, prev.liteBonusCredits - 1) : prev.liteBonusCredits,
+        }))
       }
-      setIsFreeLectureSession(false)
+      sessionSourceRef.current = null
+      setSessionAccessSource(null)
       liteCapRef.current = null
       setLiteDurationCap(null)
 
@@ -482,7 +461,7 @@ ${transcript}` },
     if (audioContextRef.current) audioContextRef.current.close()
   }
 
-  // ── Playback / download / delete (unchanged) ─────────────────────────────
+  // ── Playback / download / delete ─────────────────────────────────────────
 
   const playRecording = async (recording: Recording) => {
     if (currentAudioRef.current) { currentAudioRef.current.pause(); currentAudioRef.current = null }
@@ -515,6 +494,8 @@ ${transcript}` },
     if (playingId === id) { currentAudioRef.current?.pause(); setPlayingId(null) }
   }
 
+  const remaining = freeCreditsRemaining(access)
+
   return (
     <div className="min-h-screen bg-surface-base">
       <nav className="border-b border-white/5 bg-surface-elevated/50 backdrop-blur-md sticky top-0 z-10">
@@ -538,12 +519,14 @@ ${transcript}` },
             <p className="text-[#8B97B5]">Record lectures, get AI-generated notes automatically.</p>
             {accessLoaded && (
               <p className="text-sm mt-2">
-                {hasUnlimitedAccess ? (
-                  <span className="text-green-400">✨ Unlimited recordings — {currentPlan} plan</span>
+                {isUnlimitedPlan(access) ? (
+                  <span className="text-green-400">✨ Unlimited — {access.currentPlan} plan</span>
+                ) : remaining > 0 ? (
+                  <span className="text-brand-blue">🎓 {remaining} free AI credit{remaining !== 1 ? 's' : ''} left (shared across Quiz, Summarize, AI Tools & Recording)</span>
+                ) : access.liteBonusCredits > 0 ? (
+                  <span className="text-brand-blue">💳 {access.liteBonusCredits} bonus credit{access.liteBonusCredits !== 1 ? 's' : ''} from a past Lite payment</span>
                 ) : (
-                  <span className="text-brand-blue">
-                    {freeRemaining > 0 ? `🎓 ${freeRemaining} free lecture${freeRemaining !== 1 ? 's' : ''} remaining` : '💳 Free lectures used — pay per lecture or subscribe'}
-                  </span>
+                  <span className="text-brand-blue">💳 Free credits used — pay per lecture or subscribe</span>
                 )}
               </p>
             )}
@@ -596,7 +579,7 @@ ${transcript}` },
                 <div className="flex-1 flex flex-col items-center justify-center text-center space-y-4 py-4">
                   <Lock size={32} className="text-brand-blue" />
                   <div>
-                    <p className="text-white font-semibold mb-1">Free lectures used up</p>
+                    <p className="text-white font-semibold mb-1">Free credits used up</p>
                     <p className="text-sm text-[#8B97B5]">Pay per lecture, or subscribe for unlimited recordings.</p>
                   </div>
 
@@ -625,6 +608,7 @@ ${transcript}` },
                         {litePaying ? <Loader size={14} className="animate-spin" /> : null} KSh 45 · up to 2hr
                       </button>
                     </div>
+                    <p className="text-[10px] text-[#8B97B5]">Includes a bonus AI credit for a quiz, summary, or AI Tools use afterward.</p>
 
                     <button onClick={() => navigate('/pricing')} className="w-full text-xs text-[#8B97B5] hover:text-white underline pt-1">
                       Or subscribe for unlimited recordings →
