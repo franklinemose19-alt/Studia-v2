@@ -12,7 +12,6 @@ import Summarize from './page/Summarize'
 import Quiz from './page/Quiz'
 import NotesLibrary from './page/NotesLibrary'
 import ExamCountdown from './page/ExamCountdown'
-import ExamTimetable from './page/ExamTimetable'
 import StudyPlanner from './page/StudyPlanner'
 import AdaptiveLearning from './page/AdaptiveLearning'
 import OfflineVault from './page/OfflineVault'
@@ -90,14 +89,7 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/exam-timetable"
-          element={
-            <ProtectedRoute>
-              <ExamTimetable />
-            </ProtectedRoute>
-          }
-        />
+        
         <Route
           path="/study-planner"
           element={
