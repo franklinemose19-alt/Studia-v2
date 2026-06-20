@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, Trash2, Plus, Search, Edit2, X, Save, Camera, Image, Eye, Loader, Sparkles } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { loadAccess, checkAccess, consumeCredit, freeCreditsRemaining, isUnlimitedPlan, type AccessInfo, emptyAccess } from '../lib/access'
 
 interface Note {
   id: string
@@ -11,8 +12,6 @@ interface Note {
   course?: string
   images?: string[]
 }
-
-// ─── IndexedDB helpers ───────────────────────────────────────────────────────
 
 const openDB = (): Promise<IDBDatabase> =>
   new Promise((resolve, reject) => {
@@ -67,6 +66,9 @@ export default function NotesLibrary() {
   const [generating, setGenerating] = useState(false)
   const [capturedImage, setCapturedImage] = useState<string | null>(null)
 
+  const [access, setAccess] = useState<AccessInfo>(emptyAccess)
+  const [accessLoaded, setAccessLoaded] = useState(false)
+
   const fileInputRef = useRef<HTMLInputElement>(null)
   const generateInputRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -92,6 +94,13 @@ export default function NotesLibrary() {
         setNotes([])
       }
     }
+
+    const initAccess = async () => {
+      const a = await loadAccess()
+      setAccess(a)
+      setAccessLoaded(true)
+    }
+    initAccess()
   }, [])
 
   useEffect(() => {
@@ -99,8 +108,6 @@ export default function NotesLibrary() {
       localStorage.setItem('notes', JSON.stringify(notes))
     }
   }, [notes])
-
-  // ─── Camera ───────────────────────────────────────────────────────────────
 
   const startCamera = async (mode: 'attach' | 'generate') => {
     try {
@@ -141,8 +148,6 @@ export default function NotesLibrary() {
     }
   }
 
-  // ─── Gallery upload ────────────────────────────────────────────────────────
-
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
     files.forEach((file) => {
@@ -175,9 +180,17 @@ export default function NotesLibrary() {
     setFormImages((prev) => prev.filter((img) => img.id !== imgId))
   }
 
-  // ─── AI Generate Notes from Image ─────────────────────────────────────────
-
   const generateNotesFromImage = async (dataUrl: string) => {
+    const result = checkAccess(access, 'core')
+    if (!result.allowed) {
+      alert(
+        result.reason === 'needs_pro'
+          ? 'This feature needs a Pro or Semester plan.'
+          : "You've used your free AI credits. Subscribe to continue, or earn a bonus credit by paying for a Lite lecture in Recording."
+      )
+      return
+    }
+
     setGenerating(true)
     setCapturedImage(dataUrl)
     try {
@@ -193,11 +206,17 @@ export default function NotesLibrary() {
           course: data.course || '',
           content: data.content || '',
         })
-        // Also attach the image to the note
         const imgId = `img-${Date.now()}`
         await saveImage(imgId, dataUrl)
         setFormImages((prev) => [...prev, { id: imgId, url: dataUrl }])
         setShowForm(true)
+
+        await consumeCredit(access, result.source)
+        setAccess((prev) => ({
+          ...prev,
+          freeCreditsUsed: result.source === 'free' ? prev.freeCreditsUsed + 1 : prev.freeCreditsUsed,
+          liteBonusCredits: result.source === 'lite' ? Math.max(0, prev.liteBonusCredits - 1) : prev.liteBonusCredits,
+        }))
       } else {
         alert('Could not extract notes from image. Try a clearer photo.')
       }
@@ -208,8 +227,6 @@ export default function NotesLibrary() {
       setCapturedImage(null)
     }
   }
-
-  // ─── Notes CRUD ───────────────────────────────────────────────────────────
 
   const addNote = () => {
     if (!formData.title.trim() || !formData.content.trim()) {
@@ -286,10 +303,11 @@ export default function NotesLibrary() {
       (n.course && n.course.toLowerCase().includes(searchQuery.toLowerCase()))
   )
 
+  const remaining = freeCreditsRemaining(access)
+
   return (
     <div className="min-h-screen bg-surface-base">
 
-      {/* AI Generating overlay */}
       <AnimatePresence>
         {generating && (
           <motion.div
@@ -312,7 +330,6 @@ export default function NotesLibrary() {
         )}
       </AnimatePresence>
 
-      {/* Fullscreen image preview */}
       <AnimatePresence>
         {previewImage && (
           <motion.div
@@ -330,7 +347,6 @@ export default function NotesLibrary() {
         )}
       </AnimatePresence>
 
-      {/* Camera modal */}
       <AnimatePresence>
         {showCamera && (
           <motion.div
@@ -378,14 +394,26 @@ export default function NotesLibrary() {
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
 
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
               <h1 className="font-sora font-bold text-4xl text-white mb-2">Notes Library</h1>
               <p className="text-[#8B97B5]">Save, organize, and access all your lecture notes.</p>
+              {accessLoaded && (
+                <p className="text-sm mt-2">
+                  {isUnlimitedPlan(access) ? (
+                    <span className="text-green-400">✨ Unlimited AI generation — {access.currentPlan} plan</span>
+                  ) : remaining > 0 ? (
+                    <span className="text-brand-blue">🎓 {remaining} free AI credit{remaining !== 1 ? 's' : ''} left for AI-generated notes</span>
+                  ) : access.liteBonusCredits > 0 ? (
+                    <span className="text-brand-blue">💳 {access.liteBonusCredits} bonus credit{access.liteBonusCredits !== 1 ? 's' : ''} available</span>
+                  ) : (
+                    <span className="text-brand-blue">💳 Free credits used — manual notes still free, AI generation needs a plan</span>
+                  )}
+                </p>
+              )}
             </div>
             {!showForm && (
-              <div className="flex gap-3">
-                {/* AI Generate from image button */}
+              <div className="flex gap-3 flex-wrap">
                 <div className="flex gap-2">
                   <button
                     onClick={() => startCamera('generate')}
@@ -458,7 +486,6 @@ export default function NotesLibrary() {
                 className="w-full h-48 bg-surface-base border border-white/10 rounded-xl p-3 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40 resize-none"
               />
 
-              {/* Attach image buttons */}
               <div className="flex gap-3">
                 <button
                   type="button"
@@ -486,7 +513,6 @@ export default function NotesLibrary() {
                 />
               </div>
 
-              {/* Image previews */}
               {formImages.length > 0 && (
                 <div className="grid grid-cols-3 gap-3">
                   {formImages.map((img) => (
