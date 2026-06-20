@@ -1,10 +1,11 @@
-import { CreditCard } from 'lucide-react'
-import { LogOut, Mic, BookOpen, BarChart3, Calendar, Settings, Zap, Award, Clock, ChevronRight, Search, Bell, User, TrendingUp, Lock } from 'lucide-react'
-import { LogOut, Mic, BookOpen, BarChart3, Calendar, Settings, Zap, Award, Clock, ChevronRight, Search, Bell, User, TrendingUp } from 'lucide-react'
-import { motion } from 'framer-motion'
-import { LogOut, Mic, BookOpen, BarChart3, Calendar, Settings, Zap, Award, Clock, ChevronRight, Search, Bell, User } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
+import { motion } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
+import {
+  LogOut, Mic, BookOpen, BarChart3, Calendar, Zap, Award, Clock,
+  ChevronRight, Search, Bell, TrendingUp, Lock, CreditCard, Sparkles, FileText,
+} from 'lucide-react'
+import { signOut } from '../lib/supabaseClient'
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -16,28 +17,69 @@ export default function Dashboard() {
   })
 
   useEffect(() => {
-    const lectureCount = parseInt(localStorage.getItem('lectureCount') || '0')
-    const quizCount = parseInt(localStorage.getItem('quizCount') || '0')
-    const avgScore = parseInt(localStorage.getItem('avgScore') || '0')
-    
-    setStats({
-      lectures: lectureCount,
-      quizzes: quizCount,
-      avgScore: avgScore,
-      streak: Math.max(1, lectureCount),
+    let lectures = 0
+    let quizzes = 0
+    let avgScore = 0
+
+    try {
+      const recordings = JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')
+      lectures = recordings.length
+    } catch { lectures = 0 }
+
+    let quizResults: any[] = []
+    try {
+      quizResults = JSON.parse(localStorage.getItem('quizResults') || '[]')
+      quizzes = quizResults.length
+      if (quizzes > 0) {
+        const totalPct = quizResults.reduce((sum, q) => sum + (q.total > 0 ? (q.score / q.total) * 100 : 0), 0)
+        avgScore = Math.round(totalPct / quizzes)
+      }
+    } catch { quizzes = 0 }
+
+    // Real streak: consecutive days (including today/yesterday) with a recording or quiz
+    const activeDates = new Set<string>()
+    try {
+      const recordings = JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')
+      recordings.forEach((r: any) => {
+        const d = new Date(r.timestamp || r.date)
+        if (!isNaN(d.getTime())) activeDates.add(d.toISOString().slice(0, 10))
+      })
+    } catch {}
+    quizResults.forEach((q: any) => {
+      const d = new Date(q.date)
+      if (!isNaN(d.getTime())) activeDates.add(d.toISOString().slice(0, 10))
     })
+
+    let streak = 0
+    const cursor = new Date()
+    if (!activeDates.has(cursor.toISOString().slice(0, 10))) {
+      cursor.setDate(cursor.getDate() - 1)
+    }
+    while (activeDates.has(cursor.toISOString().slice(0, 10))) {
+      streak++
+      cursor.setDate(cursor.getDate() - 1)
+    }
+
+    setStats({ lectures, quizzes, avgScore, streak })
   }, [])
+
+  const handleSignOut = async () => {
+    try { await signOut() } catch (err) { console.error('Sign out error:', err) }
+    navigate('/')
+  }
 
   const cards = [
     { icon: Mic, title: 'Record Lecture', desc: 'Smart recording with auto-tagging', path: '/recording', color: 'from-indigo-premium' },
     { icon: BookOpen, title: 'My Notes', desc: 'Save & organize notes', path: '/notes', color: 'from-purple-premium' },
+    { icon: FileText, title: 'Summarize', desc: 'Turn notes into quick summaries', path: '/summarize', color: 'from-purple-premium' },
     { icon: BarChart3, title: 'Quiz Practice', desc: 'Test your knowledge', path: '/quiz', color: 'from-mint' },
+    { icon: Sparkles, title: 'AI Tools', desc: 'SnapSolve, past papers & deep notes', path: '/ai-tools', color: 'from-indigo-premium' },
     { icon: Calendar, title: 'Exam Countdown', desc: 'Track your exams', path: '/exam-countdown', color: 'from-warning' },
     { icon: TrendingUp, title: 'Adaptive Learning', desc: 'See your weak topics', path: '/adaptive-learning', color: 'from-mint' },
     { icon: Lock, title: 'Offline Vault', desc: 'Download for offline study', path: '/offline-vault', color: 'from-light-blue' },
     { icon: BookOpen, title: 'Unit Management', desc: 'Define syllabi & topics', path: '/units', color: 'from-warning' },
-   { icon: CreditCard, title: 'Payments', desc: 'Track escrow & transactions', path: '/payments', color: 'from-mint' },
-   { icon: Calendar, title: 'Study Planner', desc: 'Plan your weekly schedule', path: '/study-planner', color: 'from-light-blue' },
+    { icon: CreditCard, title: 'Payments', desc: 'Track escrow & transactions', path: '/payments', color: 'from-mint' },
+    { icon: Calendar, title: 'Study Planner', desc: 'Plan your weekly schedule', path: '/study-planner', color: 'from-light-blue' },
   ]
 
   const statCards = [
@@ -49,7 +91,6 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-white via-surface-light to-white">
-      {/* TOP BAR */}
       <nav className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -74,7 +115,7 @@ export default function Dashboard() {
             </button>
 
             <button
-              onClick={() => navigate('/')}
+              onClick={handleSignOut}
               className="flex items-center gap-2 text-navy hover:text-indigo-premium transition ml-4 pl-4 border-l border-gray-200"
             >
               <LogOut size={18} />
@@ -84,18 +125,19 @@ export default function Dashboard() {
         </div>
       </nav>
 
-      {/* MAIN CONTENT */}
       <div className="max-w-7xl mx-auto px-6 py-12">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-12">
-          {/* HEADER */}
           <div>
             <h1 className="font-sora font-bold text-5xl text-navy mb-2">Welcome back! 👋</h1>
             <p className="text-gray-600">
-              You're on a <span className="font-bold text-indigo-premium">{stats.streak}-day streak</span> 🔥 Keep it up!
+              {stats.streak > 0 ? (
+                <>You're on a <span className="font-bold text-indigo-premium">{stats.streak}-day streak</span> 🔥 Keep it up!</>
+              ) : (
+                'Record a lecture or take a quiz today to start your streak!'
+              )}
             </p>
           </div>
 
-          {/* STATS GRID */}
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
             {statCards.map((stat, i) => (
               <motion.div
@@ -114,7 +156,6 @@ export default function Dashboard() {
             ))}
           </div>
 
-          {/* QUICK ACTIONS */}
           <div>
             <h2 className="font-sora font-bold text-2xl text-navy mb-6">Quick Actions</h2>
             <div className="grid md:grid-cols-2 lg:grid-cols-6 gap-4">
@@ -124,7 +165,7 @@ export default function Dashboard() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.05 }}
-                  onClick={() => card.path !== '#' && navigate(card.path)}
+                  onClick={() => navigate(card.path)}
                   className="group text-left"
                 >
                   <div className={`bg-gradient-to-br ${card.color} to-transparent rounded-2xl p-6 border border-gray-200 hover:border-indigo-premium/50 hover:shadow-lg transition h-full`}>
@@ -142,7 +183,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* MOTIVATIONAL CARD */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -155,8 +195,8 @@ export default function Dashboard() {
               <p className="text-white/90 mb-6 max-w-2xl">
                 The most successful students record their lectures, summarize key concepts, and take quizzes regularly. STUDIA automates all of this for you.
               </p>
-              <button className="bg-white text-indigo-premium px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition">
-                Learn More
+              <button onClick={() => navigate('/pricing')} className="bg-white text-indigo-premium px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition">
+                See Plans
               </button>
             </div>
           </motion.div>
