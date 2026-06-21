@@ -24,7 +24,7 @@ export const getSupabase = async () => {
   return initializeSupabase()
 }
 
-export const signUp = async (email: string, password: string, name: string) => {
+export const signUp = async (email: string, password: string, name: string, phone?: string) => {
   console.log('Starting signup for:', email)
   
   try {
@@ -51,7 +51,7 @@ export const signUp = async (email: string, password: string, name: string) => {
         auth_id: data.user.id,
         email,
         name,
-        phone_number: null,
+        phone_number: phone?.trim() || null,
       })
 
       if (profileError) {
