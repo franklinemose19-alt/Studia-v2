@@ -1,3 +1,4 @@
+import { useAuth } from '../lib/AuthContext'
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mic, Square, Play, Pause, Trash2, Download, ArrowLeft, Loader, FileText, BookOpen, Phone, Lock } from 'lucide-react'
@@ -88,7 +89,7 @@ const selectClass = "w-full bg-surface-base border border-white/10 rounded-xl p-
 
 export default function RecordingPage() {
   const navigate = useNavigate()
-
+const { userId } = useAuth()
   const [isRecording, setIsRecording] = useState(false)
   const [recordings, setRecordings] = useState<Recording[]>([])
   const [duration, setDuration] = useState(0)
@@ -132,7 +133,7 @@ export default function RecordingPage() {
     try { setRecordings(JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')) } catch { setRecordings([]) }
 
     const init = async () => {
-      const a = await loadAccess()
+      const a = await loadAccess(userId)
       setAccess(a)
       setAccessLoaded(true)
     }
