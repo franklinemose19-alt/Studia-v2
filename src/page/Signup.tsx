@@ -69,13 +69,13 @@ export default function Signup() {
     try {
       console.log('Starting signup process...')
       await supabase.signUp(email, password, name, phone)
-      console.log('Signup successful')
+console.log('Signup successful')
 
-      setSuccess(true)
+setSuccess(true)
 
-      setTimeout(() => {
-        navigate('/login')
-      }, 2000)
+setTimeout(() => {
+  navigate('/dashboard')
+}, 2000)
     } catch (err: any) {
       console.error('Signup error:', err)
       setError(err.message || 'Signup failed')
@@ -98,7 +98,7 @@ export default function Signup() {
           <p className="text-gray-600 mb-8">
             Welcome to STUDIA. Your account has been created successfully.
           </p>
-          <p className="text-sm text-gray-500">Redirecting to login...</p>
+          <p className="text-sm text-gray-500">Redirecting to your dashboard...</p>
         </motion.div>
       </div>
     )
