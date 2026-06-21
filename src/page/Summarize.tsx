@@ -1,3 +1,4 @@
+import { useAuth } from '../lib/AuthContext'
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, Loader, Copy, Download, Camera, Image, X, Lock } from 'lucide-react'
@@ -6,6 +7,7 @@ import { loadAccess, checkAccess, consumeCredit, freeCreditsRemaining, isUnlimit
 
 export default function Summarize() {
   const navigate = useNavigate()
+  const { userId } = useAuth()
   const [notes, setNotes] = useState('')
   const [summary, setSummary] = useState('')
   const [loading, setLoading] = useState(false)
@@ -24,7 +26,7 @@ export default function Summarize() {
 
   useEffect(() => {
     const init = async () => {
-      const a = await loadAccess()
+      const a = await loadAccess(userId)
       setAccess(a)
       setAccessLoaded(true)
     }
