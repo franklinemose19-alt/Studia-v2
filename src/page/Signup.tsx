@@ -68,7 +68,7 @@ export default function Signup() {
 
     try {
       console.log('Starting signup process...')
-      await supabase.signUp(email, password, name)
+      await supabase.signUp(email, password, name, phone)
       console.log('Signup successful')
 
       setSuccess(true)
