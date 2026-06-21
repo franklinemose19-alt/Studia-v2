@@ -1,30 +1,12 @@
-import { useEffect, useState } from 'react'
-import { Navigate, useLocation } from 'react-router-dom'
-import { getCurrentUser } from './supabaseClient'
+import { Navigate } from 'react-router-dom'
+import { useAuth } from './AuthContext'
 
 interface ProtectedRouteProps {
   children: React.ReactNode
 }
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
-  const [loading, setLoading] = useState(true)
-  const location = useLocation()
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const user = await getCurrentUser()
-        setIsAuthenticated(!!user)
-      } catch (err) {
-        setIsAuthenticated(false)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    checkAuth()
-  }, [])
+  const { userId, loading } = useAuth()
 
   if (loading) {
     return (
@@ -34,7 +16,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     )
   }
 
-  if (!isAuthenticated) {
+  if (!userId) {
     return <Navigate to="/login" replace />
   }
 
