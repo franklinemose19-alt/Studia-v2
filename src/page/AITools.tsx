@@ -1,3 +1,4 @@
+import { useAuth } from '../lib/AuthContext'
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -37,6 +38,7 @@ interface DeepNotesResult {
 
 export default function AITools() {
   const navigate = useNavigate()
+  const { userId } = useAuth()
   const [tab, setTab] = useState<Tab>('snapsolve')
   const [image, setImage] = useState<string | null>(null)
   const [text, setText] = useState('')
@@ -58,7 +60,7 @@ export default function AITools() {
 
   useEffect(() => {
     const init = async () => {
-      const a = await loadAccess()
+      const a = await loadAccess(userId)
       setAccess(a)
       setAccessLoaded(true)
     }
