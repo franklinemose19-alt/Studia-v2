@@ -423,9 +423,7 @@ ${transcript}` },
         }
       }
 
-      const client = await getSupabase()
-      const { data: { user } } = await client.auth.getUser()
-      const userId = user?.id || 'anonymous'
+      
 
       // Consume a credit if this session used one (lite-paid sessions consume nothing here)
       const usedSource = sessionSourceRef.current
@@ -442,7 +440,7 @@ ${transcript}` },
       liteCapRef.current = null
       setLiteDurationCap(null)
 
-      const storageUrl = await uploadToSupabase(blob, id, userId)
+      const storageUrl = await uploadToSupabase(blob, id, userId || 'anonymous')
       const transcript = await transcribeAudio(blob)
       const notes = transcript ? await generateNotes(transcript, courseName, unitName) : null
 
