@@ -1,3 +1,4 @@
+import { useAuth } from '../lib/AuthContext'
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, Trash2, Plus, Search, Edit2, X, Save, Camera, Image, Eye, Loader, Sparkles } from 'lucide-react'
@@ -96,7 +97,7 @@ export default function NotesLibrary() {
     }
 
     const initAccess = async () => {
-      const a = await loadAccess()
+      const a = await loadAccess(userId)
       setAccess(a)
       setAccessLoaded(true)
     }
