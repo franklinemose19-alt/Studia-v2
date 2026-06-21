@@ -18,7 +18,7 @@ export default function Landing() {
             <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-premium to-purple-premium flex items-center justify-center">
               <span className="text-white font-bold text-xl">S</span>
             </div>
-            <span className="font-sora font-bold text-navy text-lg">STUDIA</span>
+            <span className="font-sora font-bold text-navy text-lg">STUDIA AI</span>
           </div>
           <div className="hidden md:flex items-center gap-8">
             <button onClick={scrollToFeatures} className="text-navy hover:text-indigo-premium transition">Features</button>
@@ -198,7 +198,7 @@ export default function Landing() {
       {/* FOOTER */}
       <footer className="bg-navy text-white/60 py-8 px-4 sm:px-6 text-center text-sm">
         <div className="max-w-7xl mx-auto">
-          <p>© 2024 STUDIA. Built for students. By students.</p>
+          <p>© 2024 STUDIA AI. Built for students. By students.</p>
         </div>
       </footer>
     </div>
