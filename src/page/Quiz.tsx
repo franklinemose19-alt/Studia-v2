@@ -1,3 +1,4 @@
+import { useAuth } from '../lib/AuthContext'
 import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Loader, RotateCcw, Save, Check, BookOpen, Upload, FileText, Lock } from 'lucide-react'
@@ -39,7 +40,7 @@ const selectClass = "w-full bg-surface-base border border-white/10 rounded-xl p-
 
 export default function Quiz() {
   const navigate = useNavigate()
-
+const { userId } = useAuth()
   const [units, setUnits] = useState<Unit[]>([])
   const [notes, setNotes] = useState<NoteItem[]>([])
   const [recordings, setRecordings] = useState<RecordingItem[]>([])
@@ -67,7 +68,7 @@ export default function Quiz() {
     try { setRecordings(JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')) } catch { setRecordings([]) }
 
     const init = async () => {
-      const a = await loadAccess()
+      const a = await loadAccess(userId)
       setAccess(a)
       setAccessLoaded(true)
     }
