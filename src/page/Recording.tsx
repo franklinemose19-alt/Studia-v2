@@ -1,9 +1,9 @@
-import { useAuth } from '../lib/AuthContext'
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mic, Square, Play, Pause, Trash2, Download, ArrowLeft, Loader, FileText, BookOpen, Phone, Lock } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getSupabase } from '../lib/supabaseClient'
+import { useAuth } from '../lib/AuthContext'
 import { loadAccess, checkAccess, consumeCredit, grantLiteBonusCredit, freeCreditsRemaining, isUnlimitedPlan, type AccessInfo, emptyAccess } from '../lib/access'
 
 interface Recording {
@@ -85,11 +85,20 @@ const formatPhone = (phone: string) => {
   return cleaned
 }
 
+const blobToBase64 = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve((reader.result as string).split(',')[1])
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
+
 const selectClass = "w-full bg-surface-base border border-white/10 rounded-xl p-3 text-white outline-none focus:border-brand-blue/40 text-sm [&>option]:bg-[#0d1526] [&>option]:text-white"
 
 export default function RecordingPage() {
   const navigate = useNavigate()
-const { userId } = useAuth()
+  const { userId } = useAuth()
+
   const [isRecording, setIsRecording] = useState(false)
   const [recordings, setRecordings] = useState<Recording[]>([])
   const [duration, setDuration] = useState(0)
@@ -186,14 +195,14 @@ const { userId } = useAuth()
     if (ctx) { ctx.fillStyle = '#080C18'; ctx.fillRect(0, 0, canvas.width, canvas.height) }
   }
 
-  // ── AI helpers ───────────────────────────────────────────────────────────
+  // ── AI helpers (now routed through secure server-side functions) ────────
 
-  const uploadToSupabase = async (blob: Blob, recordingId: string, userId: string): Promise<string | null> => {
+  const uploadToSupabase = async (blob: Blob, recordingId: string, uid: string): Promise<string | null> => {
     try {
       setUploadStatus('☁️ Uploading to cloud...')
       const client = await getSupabase()
       const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('ogg') ? 'ogg' : 'webm'
-      const path = `${userId}/${recordingId}.${ext}`
+      const path = `${uid}/${recordingId}.${ext}`
       const { error } = await client.storage.from('recordings').upload(path, blob, { contentType: blob.type, upsert: true })
       if (error) { console.error('Upload error:', error); return null }
       const { data } = client.storage.from('recordings').getPublicUrl(path)
@@ -209,51 +218,44 @@ const { userId } = useAuth()
   const transcribeAudio = async (blob: Blob): Promise<string | null> => {
     try {
       setUploadStatus('🎙️ Transcribing lecture...')
-      const formData = new FormData()
-      const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('ogg') ? 'ogg' : 'webm'
-      formData.append('file', blob, `recording.${ext}`)
-      formData.append('model', 'whisper-1')
-      formData.append('language', 'en')
-      const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      const base64 = await blobToBase64(blob)
+      const response = await fetch('/api/transcribe', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${import.meta.env.VITE_OPENAI_API_KEY}` },
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audio: base64, mimeType: blob.type }),
       })
-      if (!response.ok) { const err = await response.json(); console.error('Whisper error:', err); return null }
+      if (!response.ok) {
+        const err = await response.json()
+        console.error('Whisper error:', err)
+        return null
+      }
       const data = await response.json()
       return data.text || null
-    } catch (err) { console.error('Transcription failed:', err); return null }
+    } catch (err) {
+      console.error('Transcription failed:', err)
+      return null
+    }
   }
 
   const generateNotes = async (transcript: string, courseName?: string, unitName?: string): Promise<string | null> => {
     try {
       setUploadStatus('📝 Generating smart notes...')
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      const response = await fetch('/api/generate-lecture-notes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${import.meta.env.VITE_OPENAI_API_KEY}` },
-        body: JSON.stringify({
-          model: 'gpt-4o',
-          max_tokens: 1500,
-          messages: [
-            { role: 'system', content: `You are STUDIA, an AI academic assistant for Kenyan university students. Generate clear, structured lecture notes from transcripts. Format your response with these sections:
-## 📌 Key Topics
-## 📝 Main Notes
-## 💡 Key Concepts
-## ❓ Possible Exam Questions
-Keep it concise and student-friendly.` },
-            { role: 'user', content: `Generate lecture notes from this transcript.
-${courseName ? `Course: ${courseName}` : ''}
-${unitName ? `Unit: ${unitName}` : ''}
-
-Transcript:
-${transcript}` },
-          ],
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript, courseName, unitName }),
       })
-      if (!response.ok) { const err = await response.json(); console.error('GPT error:', err); return null }
+      if (!response.ok) {
+        const err = await response.json()
+        console.error('GPT error:', err)
+        return null
+      }
       const data = await response.json()
-      return data.choices?.[0]?.message?.content || null
-    } catch (err) { console.error('Notes generation failed:', err); return null }
+      return data.notes || null
+    } catch (err) {
+      console.error('Notes generation failed:', err)
+      return null
+    }
   }
 
   // ── Access control logic ────────────────────────────────────────────────
@@ -422,8 +424,6 @@ ${transcript}` },
           localStorage.setItem('units', JSON.stringify(updatedUnits))
         }
       }
-
-      
 
       // Consume a credit if this session used one (lite-paid sessions consume nothing here)
       const usedSource = sessionSourceRef.current
