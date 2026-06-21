@@ -1,3 +1,4 @@
+import { AuthProvider } from './lib/AuthContext'
 import AITools from './page/AITools'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import ProtectedRoute from './lib/ProtectedRoute'
@@ -22,8 +23,9 @@ import PaymentDashboard from './page/PaymentDashboard'
 
 export default function App() {
   return (
-    <Router>
-      <Routes>
+    <AuthProvider>
+      <Router>
+        <Routes>
         {/* Public Routes */}
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
@@ -142,6 +144,7 @@ export default function App() {
         {/* Catch all - redirect to home */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </Router>
+      </Router>
+    </AuthProvider>
   )
 }
