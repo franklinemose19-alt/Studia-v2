@@ -20,20 +20,26 @@ export const emptyAccess: AccessInfo = {
   liteBonusCredits: 0,
 }
 
-export const loadAccess = async (): Promise<AccessInfo> => {
+export const loadAccess = async (cachedUserId?: string | null): Promise<AccessInfo> => {
   try {
     const client = await getSupabase()
-    const { data: { user } } = await client.auth.getUser()
-    if (!user) return emptyAccess
+    let uid = cachedUserId
+
+    if (!uid) {
+      const { data: { user } } = await client.auth.getUser()
+      uid = user?.id
+    }
+
+    if (!uid) return emptyAccess
 
     const { data } = await client
       .from('users')
       .select('current_plan, subscription_status, free_ai_credits_used, lite_bonus_credits')
-      .eq('auth_id', user.id)
+      .eq('auth_id', uid)
       .single()
 
     return {
-      userId: user.id,
+      userId: uid,
       currentPlan: data?.current_plan || null,
       subscriptionStatus: data?.subscription_status || null,
       freeCreditsUsed: data?.free_ai_credits_used || 0,
@@ -61,7 +67,6 @@ export type AccessResult =
 export const checkAccess = (access: AccessInfo, feature: FeatureType): AccessResult => {
   if (isUnlimitedPlan(access)) {
     if (feature === 'premium' && !isPremiumPlan(access)) {
-      // On Plus, trying to use a Pro-only feature
       if (freeCreditsRemaining(access) > 0) return { allowed: true, source: 'free' }
       if (access.liteBonusCredits > 0) return { allowed: true, source: 'lite' }
       return { allowed: false, reason: 'needs_pro' }
