@@ -44,7 +44,7 @@ export default function Pricing() {
     {
       id: 'lite',
       name: 'Lite',
-      price: '25-45',
+      price: '60-110',
       period: 'per lecture',
       description: 'Pay as you study',
       icon: <Zap size={32} />,
@@ -63,28 +63,6 @@ export default function Pricing() {
       color: 'from-light-blue to-indigo-premium',
     },
     {
-      id: 'plus',
-      name: 'Plus',
-      price: '250',
-      period: '/month',
-      description: 'For serious students',
-      icon: <Crown size={32} />,
-      features: [
-        'Unlimited lecture recordings',
-        'SmartCapture AI',
-        'Unlimited transcripts',
-        'Unlimited summaries',
-        'Unlimited quizzes',
-        'Semester planner',
-        'Adaptive learning engine',
-        'Weak topic detection',
-        'Priority storage',
-      ],
-      highlighted: false,
-      cta: 'Choose Plus',
-      color: 'from-purple-premium to-indigo-premium',
-    },
-    {
       id: 'pro',
       name: 'Pro',
       price: '450',
@@ -92,14 +70,16 @@ export default function Pricing() {
       description: 'Complete exam prep',
       icon: <Sparkles size={32} />,
       features: [
-        'Everything in Plus',
+        'Unlimited lecture recordings',
+        'SmartCapture AI',
+        'Unlimited transcripts & summaries',
+        'Unlimited quizzes',
+        'Semester planner',
+        'Adaptive learning engine',
         'Unlimited SnapSolve',
         'Unlimited past paper analysis',
-        'AI model answers',
-        'Exam prediction engine',
-        'Answer structuring by marks',
-        'Exam strategy coaching',
-        'Advanced revision packs',
+        'AI model answers & exam prediction',
+        'Priority storage',
       ],
       highlighted: false,
       cta: 'Choose Pro',
@@ -113,11 +93,10 @@ export default function Pricing() {
       description: 'Complete STUDIA experience',
       icon: <Crown size={40} />,
       features: [
+        'Everything in Pro',
         'Unlimited lecture recording',
         'Unlimited AI processing',
-        'Unlimited SnapSolve',
-        'Unlimited past papers',
-        'Unlimited model answers',
+        'Unlimited SnapSolve & past papers',
         'Smart semester planner',
         'Adaptive learning',
         'SmartCapture AI',
@@ -153,7 +132,6 @@ export default function Pricing() {
 
       <div className="max-w-7xl mx-auto px-6 py-16">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-16">
-          {/* HEADER */}
           <div className="text-center max-w-3xl mx-auto">
             <h1 className="font-sora font-bold text-5xl text-navy mb-4">Simple, Transparent Pricing</h1>
             <p className="text-xl text-gray-600 mb-8">
@@ -164,8 +142,7 @@ export default function Pricing() {
             </div>
           </div>
 
-          {/* PRICING CARDS */}
-          <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-6">
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
             {plans.map((plan, i) => (
               <motion.div
                 key={plan.id}
@@ -174,7 +151,7 @@ export default function Pricing() {
                 transition={{ delay: i * 0.1 }}
                 className={`relative rounded-2xl p-8 border transition-all ${
                   plan.highlighted
-                    ? 'bg-gradient-to-br from-warning/20 to-red-500/20 border-warning/40 shadow-2xl scale-105 lg:col-span-1'
+                    ? 'bg-gradient-to-br from-warning/20 to-red-500/20 border-warning/40 shadow-2xl scale-105'
                     : 'bg-white border-gray-200 hover:border-indigo-premium/50 hover:shadow-lg'
                 }`}
               >
@@ -222,7 +199,6 @@ export default function Pricing() {
             ))}
           </div>
 
-          {/* COMPARISON TABLE */}
           <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -231,21 +207,20 @@ export default function Pricing() {
                     <th className="px-6 py-4 text-left font-sora font-bold text-navy">Feature</th>
                     <th className="px-6 py-4 text-center font-semibold text-gray-600">Free</th>
                     <th className="px-6 py-4 text-center font-semibold text-gray-600">Lite</th>
-                    <th className="px-6 py-4 text-center font-semibold text-gray-600">Plus</th>
                     <th className="px-6 py-4 text-center font-semibold text-gray-600">Pro</th>
                     <th className="px-6 py-4 text-center font-semibold text-warning">Semester</th>
                   </tr>
                 </thead>
                 <tbody>
                   {[
-                    { feature: 'AI Lecture Processing', values: ['✓', '✓', '✓', '✓', '✓'] },
-                    { feature: 'Lectures Recorded', values: ['3', 'Pay', '∞', '∞', '∞'] },
-                    { feature: 'AI Summaries', values: ['✓', '✓', '✓', '✓', '✓'] },
-                    { feature: 'Quiz Generation', values: ['✓', '✓', '✓', '✓', '✓'] },
-                    { feature: 'SnapSolve', values: ['Limited', 'Limited', 'Limited', '✓', '✓'] },
-                    { feature: 'Past Paper AI', values: ['Limited', 'Limited', 'Limited', '✓', '✓'] },
-                    { feature: 'Offline Vault', values: ['✓', '✓', '✓', '✓', '✓'] },
-                    { feature: 'Priority Processing', values: ['✗', '✗', '✗', '✓', '✓'] },
+                    { feature: 'AI Lecture Processing', values: ['✓', '✓', '✓', '✓'] },
+                    { feature: 'Lectures Recorded', values: ['3', 'Pay', '∞', '∞'] },
+                    { feature: 'AI Summaries', values: ['✓', '✓', '✓', '✓'] },
+                    { feature: 'Quiz Generation', values: ['✓', '✓', '✓', '✓'] },
+                    { feature: 'SnapSolve', values: ['Limited', 'Limited', '✓', '✓'] },
+                    { feature: 'Past Paper AI', values: ['Limited', 'Limited', '✓', '✓'] },
+                    { feature: 'Offline Vault', values: ['✓', '✓', '✓', '✓'] },
+                    { feature: 'Priority Processing', values: ['✗', '✗', '✓', '✓'] },
                   ].map((row, i) => (
                     <tr key={i} className="border-b border-gray-200 hover:bg-gray-50">
                       <td className="px-6 py-4 font-medium text-gray-700">{row.feature}</td>
@@ -267,7 +242,6 @@ export default function Pricing() {
             </div>
           </div>
 
-          {/* FAQ */}
           <div className="max-w-3xl mx-auto">
             <h2 className="font-sora font-bold text-3xl text-navy mb-8 text-center">Frequently Asked Questions</h2>
             <div className="space-y-4">
@@ -302,7 +276,6 @@ export default function Pricing() {
             </div>
           </div>
 
-          {/* CTA */}
           <div className="bg-gradient-to-r from-indigo-premium to-purple-premium rounded-3xl p-12 text-center text-white">
             <h2 className="font-sora font-bold text-4xl mb-4">Start Your STUDIA Journey</h2>
             <p className="text-lg text-white/90 mb-8">Join thousands of students acing exams with smarter study tools.</p>
