@@ -114,7 +114,6 @@ export default function RecordingPage() {
 
   const [uploadStatus, setUploadStatus] = useState<string>('')
 
-  // ── Access control ──────────────────────────────────────────────────────
   const [access, setAccess] = useState<AccessInfo>(emptyAccess)
   const [accessLoaded, setAccessLoaded] = useState(false)
   const [showPaywall, setShowPaywall] = useState(false)
@@ -195,8 +194,6 @@ export default function RecordingPage() {
     if (ctx) { ctx.fillStyle = '#080C18'; ctx.fillRect(0, 0, canvas.width, canvas.height) }
   }
 
-  // ── AI helpers (now routed through secure server-side functions) ────────
-
   const uploadToSupabase = async (blob: Blob, recordingId: string, uid: string): Promise<string | null> => {
     try {
       setUploadStatus('☁️ Uploading to cloud...')
@@ -258,8 +255,6 @@ export default function RecordingPage() {
     }
   }
 
-  // ── Access control logic ────────────────────────────────────────────────
-
   const handleStartClick = () => {
     const result = checkAccess(access, 'core')
     if (result.allowed) {
@@ -279,7 +274,7 @@ export default function RecordingPage() {
     setLiteError('')
     setLitePaying(true)
     try {
-      const amount = tier === '1hr' ? 25 : 45
+      const amount = tier === '1hr' ? 60 : 110
       const res = await fetch('/api/mpesa-stk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -318,7 +313,7 @@ export default function RecordingPage() {
           const cap = tier === '1hr' ? 3600 : 7200
           liteCapRef.current = cap
           setLiteDurationCap(cap)
-          sessionSourceRef.current = null // directly paid for, doesn't touch the credit pool
+          sessionSourceRef.current = null
           setSessionAccessSource(null)
 
           if (access.userId) {
@@ -340,8 +335,6 @@ export default function RecordingPage() {
       }
     }, 3000)
   }
-
-  // ── Recording ────────────────────────────────────────────────────────────
 
   const startRecording = async () => {
     try {
@@ -425,7 +418,6 @@ export default function RecordingPage() {
         }
       }
 
-      // Consume a credit if this session used one (lite-paid sessions consume nothing here)
       const usedSource = sessionSourceRef.current
       if (usedSource === 'free' || usedSource === 'lite') {
         await consumeCredit(access, usedSource)
@@ -459,8 +451,6 @@ export default function RecordingPage() {
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
     if (audioContextRef.current) audioContextRef.current.close()
   }
-
-  // ── Playback / download / delete ─────────────────────────────────────────
 
   const playRecording = async (recording: Recording) => {
     if (currentAudioRef.current) { currentAudioRef.current.pause(); currentAudioRef.current = null }
@@ -600,11 +590,11 @@ export default function RecordingPage() {
                     <div className="flex gap-2">
                       <button onClick={() => payForLecture('1hr')} disabled={litePaying}
                         className="flex-1 bg-brand-blue text-white text-sm font-medium py-2.5 rounded-xl hover:bg-brand-blue/90 disabled:opacity-50 flex items-center justify-center gap-2">
-                        {litePaying ? <Loader size={14} className="animate-spin" /> : null} KSh 25 · up to 1hr
+                        {litePaying ? <Loader size={14} className="animate-spin" /> : null} KSh 60 · up to 1hr
                       </button>
                       <button onClick={() => payForLecture('2hr')} disabled={litePaying}
                         className="flex-1 bg-brand-blue text-white text-sm font-medium py-2.5 rounded-xl hover:bg-brand-blue/90 disabled:opacity-50 flex items-center justify-center gap-2">
-                        {litePaying ? <Loader size={14} className="animate-spin" /> : null} KSh 45 · up to 2hr
+                        {litePaying ? <Loader size={14} className="animate-spin" /> : null} KSh 110 · up to 2hr
                       </button>
                     </div>
                     <p className="text-[10px] text-[#8B97B5]">Includes a bonus AI credit for a quiz, summary, or AI Tools use afterward.</p>
