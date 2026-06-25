@@ -11,14 +11,13 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen bg-white overflow-hidden">
-      {/* NAVBAR */}
       <nav className="fixed w-full top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-premium to-purple-premium flex items-center justify-center">
               <span className="text-white font-bold text-xl">S</span>
             </div>
-            <span className="font-sora font-bold text-navy text-lg">STUDIA AI</span>
+            <span className="font-sora font-bold text-navy text-lg">STUDIA</span>
           </div>
           <div className="hidden md:flex items-center gap-8">
             <button onClick={scrollToFeatures} className="text-navy hover:text-indigo-premium transition">Features</button>
@@ -34,7 +33,6 @@ export default function Landing() {
         </div>
       </nav>
 
-      {/* HERO */}
       <section className="pt-32 pb-20 px-4 sm:px-6 relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-indigo-premium/5 via-purple-premium/5 to-transparent" />
         <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-12 items-center relative z-10">
@@ -78,7 +76,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* FEATURES */}
       <section id="features" className="py-20 px-4 sm:px-6 bg-surface-light">
         <div className="max-w-7xl mx-auto">
           <h2 className="font-sora font-bold text-4xl text-navy text-center mb-12">Powerful Features</h2>
@@ -109,7 +106,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* PRICING */}
       <section className="py-20 px-4 sm:px-6">
         <div className="max-w-7xl mx-auto">
           <h2 className="font-sora font-bold text-4xl text-navy text-center mb-12">Simple Pricing</h2>
@@ -117,8 +113,8 @@ export default function Landing() {
             {[
               { plan: 'Free', price: '0', features: ['3 lectures', 'Basic notes'] },
               {
-                plan: 'Plus',
-                price: '250',
+                plan: 'Pro',
+                price: '450',
                 features: ['Unlimited lectures', 'AI summaries', 'Quiz generation'],
                 highlighted: true,
               },
@@ -173,7 +169,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* CTA */}
       <section className="py-20 px-4 sm:px-6 bg-gradient-to-r from-indigo-premium to-purple-premium text-white">
         <div className="max-w-4xl mx-auto text-center">
           <h2 className="font-sora font-bold text-5xl mb-8">Start Your STUDIA Journey</h2>
@@ -195,10 +190,9 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* FOOTER */}
       <footer className="bg-navy text-white/60 py-8 px-4 sm:px-6 text-center text-sm">
         <div className="max-w-7xl mx-auto">
-          <p>© 2024 STUDIA AI. Built for students. By students.</p>
+          <p>© 2024 STUDIA. Built for students. By students.</p>
         </div>
       </footer>
     </div>
