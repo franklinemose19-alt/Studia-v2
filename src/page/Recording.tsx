@@ -255,8 +255,12 @@ export default function RecordingPage() {
     }
   }
 
-  const handleStartClick = () => {
-    const result = checkAccess(access, 'core')
+const handleStartClick = () => {
+  if (!selectedUnit) {
+    alert('Please select a course and unit before recording.')
+    return
+  }
+  const result = checkAccess(access, 'core')
     if (result.allowed) {
       sessionSourceRef.current = result.source
       setSessionAccessSource(result.source)
@@ -619,7 +623,7 @@ export default function RecordingPage() {
                   </div>
                   <div className="flex justify-center">
                     {!isRecording ? (
-                      <button onClick={handleStartClick} disabled={!accessLoaded} className="inline-flex items-center gap-3 bg-brand-blue text-white font-semibold px-8 py-4 rounded-2xl hover:bg-brand-blue/90 transition-colors disabled:opacity-50">
+                      <button onClick={handleStartClick} disabled={!accessLoaded || !selectedUnit} className="inline-flex items-center gap-3 bg-brand-blue text-white font-semibold px-8 py-4 rounded-2xl hover:bg-brand-blue/90 transition-colors disabled:opacity-50">
                         <Mic size={22} /> Start Recording
                       </button>
                     ) : (
