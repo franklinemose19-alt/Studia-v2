@@ -20,7 +20,7 @@ export default async function handler(req, res) {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4o',
+        model: 'gpt-4.1-mini',
         max_tokens: 1500,
         messages: [
           {
