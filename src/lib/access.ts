@@ -52,7 +52,7 @@ export const loadAccess = async (cachedUserId?: string | null): Promise<AccessIn
 }
 
 export const isUnlimitedPlan = (access: AccessInfo) =>
-  ['plus', 'pro', 'semester'].includes(access.currentPlan || '') && access.subscriptionStatus === 'active'
+  ['pro', 'semester'].includes(access.currentPlan || '')
 
 export const isPremiumPlan = (access: AccessInfo) =>
   ['pro', 'semester'].includes(access.currentPlan || '') && access.subscriptionStatus === 'active'
