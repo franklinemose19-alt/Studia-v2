@@ -3,7 +3,7 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 function getEndDate(planId) {
   const now = new Date()
-  if (planId === 'plus' || planId === 'pro') {
+  if (planId === 'pro') { {
     now.setDate(now.getDate() + 30)
     return now.toISOString()
   }
