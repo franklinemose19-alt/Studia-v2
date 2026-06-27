@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, Square, Play, Pause, Trash2, Download, ArrowLeft, Loader, FileText, BookOpen, Phone, Lock } from 'lucide-react'
+import { Mic, Square, Play, Pause, Trash2, Download, ArrowLeft, Loader, FileText, Phone, Lock } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getSupabase } from '../lib/supabaseClient'
 import { useAuth } from '../lib/AuthContext'
@@ -99,6 +99,8 @@ export default function RecordingPage() {
   const navigate = useNavigate()
   const { userId } = useAuth()
 
+  const [checkingUnits, setCheckingUnits] = useState(true)
+
   const [isRecording, setIsRecording] = useState(false)
   const [recordings, setRecordings] = useState<Recording[]>([])
   const [duration, setDuration] = useState(0)
@@ -137,7 +139,17 @@ export default function RecordingPage() {
   const sessionSourceRef = useRef<'unlimited' | 'free' | 'lite' | null>(null)
 
   useEffect(() => {
-    try { setUnits(JSON.parse(localStorage.getItem('units') || '[]')) } catch { setUnits([]) }
+    let loadedUnits: Unit[] = []
+    try { loadedUnits = JSON.parse(localStorage.getItem('units') || '[]') } catch { loadedUnits = [] }
+
+    if (loadedUnits.length === 0) {
+      navigate('/units?returnTo=recording')
+      return
+    }
+
+    setUnits(loadedUnits)
+    setCheckingUnits(false)
+
     try { setRecordings(JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')) } catch { setRecordings([]) }
 
     const init = async () => {
@@ -255,12 +267,12 @@ export default function RecordingPage() {
     }
   }
 
-const handleStartClick = () => {
-  if (!selectedUnit) {
-    alert('Please select a course and unit before recording.')
-    return
-  }
-  const result = checkAccess(access, 'core')
+  const handleStartClick = () => {
+    if (!selectedUnit) {
+      alert('Please select a course and unit before recording.')
+      return
+    }
+    const result = checkAccess(access, 'core')
     if (result.allowed) {
       sessionSourceRef.current = result.source
       setSessionAccessSource(result.source)
@@ -487,6 +499,14 @@ const handleStartClick = () => {
     if (playingId === id) { currentAudioRef.current?.pause(); setPlayingId(null) }
   }
 
+  if (checkingUnits) {
+    return (
+      <div className="min-h-screen bg-surface-base flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-brand-blue" />
+      </div>
+    )
+  }
+
   const remaining = freeCreditsRemaining(access)
 
   return (
@@ -538,33 +558,25 @@ const handleStartClick = () => {
                 </div>
               </div>
 
-              {units.length === 0 ? (
-                <div className="bg-surface-base rounded-xl p-5 text-center space-y-3">
-                  <BookOpen size={32} className="mx-auto text-[#4A5568]" />
-                  <p className="text-sm text-[#8B97B5]">No units yet. Add your courses and units in Unit Management first.</p>
-                  <button onClick={() => navigate('/units')} className="bg-brand-blue text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-blue/90">
-                    Go to Unit Management
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div>
-                    <label className="block text-sm text-white mb-2">Select Course</label>
-                    <select value={selectedCourse} onChange={(e) => { setSelectedCourse(e.target.value); setSelectedUnit('') }} className={selectClass}>
-                      <option value="">Choose a course…</option>
-                      {courseNames.map((name) => <option key={name} value={name}>{name}</option>)}
-                    </select>
-                  </div>
+              <div>
+                <label className="block text-sm text-white mb-2">Select Course</label>
+                <select value={selectedCourse} onChange={(e) => { setSelectedCourse(e.target.value); setSelectedUnit('') }} className={selectClass}>
+                  <option value="">Choose a course…</option>
+                  {courseNames.map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
+              </div>
 
-                  <div>
-                    <label className="block text-sm text-white mb-2">Select Unit <span className="text-[#8B97B5]">(for coverage tracking)</span></label>
-                    <select value={selectedUnit} onChange={(e) => setSelectedUnit(e.target.value)} className={selectClass} disabled={!selectedCourse}>
-                      <option value="">Choose a unit…</option>
-                      {filteredUnits.map((u) => <option key={u.id} value={u.id}>{u.unitName}</option>)}
-                    </select>
-                  </div>
-                </>
-              )}
+              <div>
+                <label className="block text-sm text-white mb-2">Select Unit <span className="text-[#8B97B5]">(for coverage tracking)</span></label>
+                <select value={selectedUnit} onChange={(e) => setSelectedUnit(e.target.value)} className={selectClass} disabled={!selectedCourse}>
+                  <option value="">Choose a unit…</option>
+                  {filteredUnits.map((u) => <option key={u.id} value={u.id}>{u.unitName}</option>)}
+                </select>
+              </div>
+
+              <button onClick={() => navigate('/units')} className="w-full text-xs text-[#8B97B5] hover:text-white underline">
+                Need to add a new course or unit?
+              </button>
             </div>
 
             <div className="bg-surface-elevated border border-white/5 rounded-2xl p-6 space-y-6 flex flex-col">
