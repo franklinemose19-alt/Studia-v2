@@ -33,10 +33,10 @@ export const loadAccess = async (cachedUserId?: string | null): Promise<AccessIn
     if (!uid) return emptyAccess
 
     const { data } = await client
-      .from('users')
-      .select('current_plan, subscription_status, free_ai_credits_used, lite_bonus_credits')
-      .eq('auth_id', uid)
-      .single()
+  .from('users')
+  .select('current_plan, subscription_status, free_ai_credits_used, lite_bonus_credits')
+  .eq('auth_id', uid)
+  .maybeSingle()
 
     return {
       userId: uid,
