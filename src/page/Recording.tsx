@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, Square, Play, Pause, Trash2, Download, ArrowLeft, Loader, FileText, Phone, Lock } from 'lucide-react'
+import { Mic, Square, Play, Pause, Trash2, Download, ArrowLeft, Loader, FileText, BookOpen, Phone, Lock } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getSupabase } from '../lib/supabaseClient'
 import { useAuth } from '../lib/AuthContext'
@@ -99,8 +99,6 @@ export default function RecordingPage() {
   const navigate = useNavigate()
   const { userId } = useAuth()
 
-  const [checkingUnits, setCheckingUnits] = useState(true)
-
   const [isRecording, setIsRecording] = useState(false)
   const [recordings, setRecordings] = useState<Recording[]>([])
   const [duration, setDuration] = useState(0)
@@ -139,17 +137,7 @@ export default function RecordingPage() {
   const sessionSourceRef = useRef<'unlimited' | 'free' | 'lite' | null>(null)
 
   useEffect(() => {
-    let loadedUnits: Unit[] = []
-    try { loadedUnits = JSON.parse(localStorage.getItem('units') || '[]') } catch { loadedUnits = [] }
-
-    if (loadedUnits.length === 0) {
-      navigate('/units?returnTo=recording')
-      return
-    }
-
-    setUnits(loadedUnits)
-    setCheckingUnits(false)
-
+    try { setUnits(JSON.parse(localStorage.getItem('units') || '[]')) } catch { setUnits([]) }
     try { setRecordings(JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')) } catch { setRecordings([]) }
 
     const init = async () => {
@@ -268,6 +256,11 @@ export default function RecordingPage() {
   }
 
   const handleStartClick = () => {
+    if (units.length === 0) {
+      alert('Please add a course and unit first — taking you there now.')
+      navigate('/units?returnTo=recording')
+      return
+    }
     if (!selectedUnit) {
       alert('Please select a course and unit before recording.')
       return
@@ -499,14 +492,6 @@ export default function RecordingPage() {
     if (playingId === id) { currentAudioRef.current?.pause(); setPlayingId(null) }
   }
 
-  if (checkingUnits) {
-    return (
-      <div className="min-h-screen bg-surface-base flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-brand-blue" />
-      </div>
-    )
-  }
-
   const remaining = freeCreditsRemaining(access)
 
   return (
@@ -558,25 +543,34 @@ export default function RecordingPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm text-white mb-2">Select Course</label>
-                <select value={selectedCourse} onChange={(e) => { setSelectedCourse(e.target.value); setSelectedUnit('') }} className={selectClass}>
-                  <option value="">Choose a course…</option>
-                  {courseNames.map((name) => <option key={name} value={name}>{name}</option>)}
-                </select>
-              </div>
+              {units.length === 0 ? (
+                <div className="bg-surface-base rounded-xl p-5 text-center space-y-3">
+                  <BookOpen size={32} className="mx-auto text-[#4A5568]" />
+                  <p className="text-sm text-[#8B97B5]">No units yet. You'll need to add a course and unit before recording — just hit "Start Recording" and we'll take you there.</p>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-sm text-white mb-2">Select Course</label>
+                    <select value={selectedCourse} onChange={(e) => { setSelectedCourse(e.target.value); setSelectedUnit('') }} className={selectClass}>
+                      <option value="">Choose a course…</option>
+                      {courseNames.map((name) => <option key={name} value={name}>{name}</option>)}
+                    </select>
+                  </div>
 
-              <div>
-                <label className="block text-sm text-white mb-2">Select Unit <span className="text-[#8B97B5]">(for coverage tracking)</span></label>
-                <select value={selectedUnit} onChange={(e) => setSelectedUnit(e.target.value)} className={selectClass} disabled={!selectedCourse}>
-                  <option value="">Choose a unit…</option>
-                  {filteredUnits.map((u) => <option key={u.id} value={u.id}>{u.unitName}</option>)}
-                </select>
-              </div>
+                  <div>
+                    <label className="block text-sm text-white mb-2">Select Unit <span className="text-[#8B97B5]">(for coverage tracking)</span></label>
+                    <select value={selectedUnit} onChange={(e) => setSelectedUnit(e.target.value)} className={selectClass} disabled={!selectedCourse}>
+                      <option value="">Choose a unit…</option>
+                      {filteredUnits.map((u) => <option key={u.id} value={u.id}>{u.unitName}</option>)}
+                    </select>
+                  </div>
 
-              <button onClick={() => navigate('/units')} className="w-full text-xs text-[#8B97B5] hover:text-white underline">
-                Need to add a new course or unit?
-              </button>
+                  <button onClick={() => navigate('/units')} className="w-full text-xs text-[#8B97B5] hover:text-white underline">
+                    Need to add a new course or unit?
+                  </button>
+                </>
+              )}
             </div>
 
             <div className="bg-surface-elevated border border-white/5 rounded-2xl p-6 space-y-6 flex flex-col">
@@ -635,7 +629,7 @@ export default function RecordingPage() {
                   </div>
                   <div className="flex justify-center">
                     {!isRecording ? (
-                      <button onClick={handleStartClick} disabled={!accessLoaded || !selectedUnit} className="inline-flex items-center gap-3 bg-brand-blue text-white font-semibold px-8 py-4 rounded-2xl hover:bg-brand-blue/90 transition-colors disabled:opacity-50">
+                      <button onClick={handleStartClick} disabled={!accessLoaded} className="inline-flex items-center gap-3 bg-brand-blue text-white font-semibold px-8 py-4 rounded-2xl hover:bg-brand-blue/90 transition-colors disabled:opacity-50">
                         <Mic size={22} /> Start Recording
                       </button>
                     ) : (
