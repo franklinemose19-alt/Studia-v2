@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import {
   LogOut, Mic, BookOpen, BarChart3, Calendar, Zap, Award, Clock,
-  ChevronRight, Search, Bell, TrendingUp, Lock, CreditCard, Sparkles, FileText,
+  ChevronRight, Search, Bell, TrendingUp, Lock, CreditCard, Sparkles, FileText, X,
 } from 'lucide-react'
 import { signOut } from '../lib/supabaseClient'
+
+const REFERRAL_SNOOZE_KEY = 'referralReminderSnoozedUntil'
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -15,6 +17,7 @@ export default function Dashboard() {
     avgScore: 0,
     streak: 0,
   })
+  const [showReferralReminder, setShowReferralReminder] = useState(false)
 
   useEffect(() => {
     let lectures = 0
@@ -36,7 +39,6 @@ export default function Dashboard() {
       }
     } catch { quizzes = 0 }
 
-    // Real streak: consecutive days (including today/yesterday) with a recording or quiz
     const activeDates = new Set<string>()
     try {
       const recordings = JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')
@@ -61,7 +63,23 @@ export default function Dashboard() {
     }
 
     setStats({ lectures, quizzes, avgScore, streak })
+
+    const snoozedUntil = parseInt(localStorage.getItem(REFERRAL_SNOOZE_KEY) || '0', 10)
+    if (Date.now() > snoozedUntil) {
+      setShowReferralReminder(true)
+    }
   }, [])
+
+  const dismissReferralReminder = () => {
+    const sevenDays = 7 * 24 * 60 * 60 * 1000
+    localStorage.setItem(REFERRAL_SNOOZE_KEY, String(Date.now() + sevenDays))
+    setShowReferralReminder(false)
+  }
+
+  const goInviteFriends = () => {
+    dismissReferralReminder()
+    navigate('/payments?tab=invite')
+  }
 
   const handleSignOut = async () => {
     try { await signOut() } catch (err) { console.error('Sign out error:', err) }
@@ -137,6 +155,34 @@ export default function Dashboard() {
               )}
             </p>
           </div>
+
+          <AnimatePresence>
+            {showReferralReminder && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl p-6 text-white relative overflow-hidden"
+              >
+                <button onClick={dismissReferralReminder} className="absolute top-4 right-4 text-white/70 hover:text-white transition">
+                  <X size={18} />
+                </button>
+                <div className="flex items-center gap-4 pr-8 flex-wrap">
+                  <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center text-2xl shrink-0">🎁</div>
+                  <div className="flex-1 min-w-[200px]">
+                    <p className="font-sora font-bold text-lg">Earn bonus AI credits — invite your friends!</p>
+                    <p className="text-white/80 text-sm">Get up to 150+ bonus credits by referring classmates to STUDIA.</p>
+                  </div>
+                  <button
+                    onClick={goInviteFriends}
+                    className="bg-white text-purple-600 px-5 py-2.5 rounded-xl font-semibold text-sm whitespace-nowrap hover:bg-gray-100 transition shrink-0"
+                  >
+                    Invite Now
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
             {statCards.map((stat, i) => (
