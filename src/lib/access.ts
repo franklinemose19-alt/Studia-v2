@@ -78,9 +78,17 @@ export const checkAccess = (access: AccessInfo, feature: FeatureType): AccessRes
   if (access.liteBonusCredits > 0) return { allowed: true, source: 'lite' }
   return { allowed: false, reason: 'no_credits' }
 }
-
 export const consumeCredit = async (access: AccessInfo, source: 'free' | 'lite' | 'unlimited'): Promise<void> => {
-  if (!access.userId || source === 'unlimited') return
+  if (!access.userId) return
+
+  // Fire-and-forget: verify any pending referral the first time this user takes any AI action
+  fetch('/api/referral', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'verify', userId: access.userId }),
+  }).catch(() => {})
+
+  if (source === 'unlimited') return
   try {
     const client = await getSupabase()
     if (source === 'free') {
