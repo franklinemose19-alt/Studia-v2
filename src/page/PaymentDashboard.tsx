@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { ArrowLeft, RefreshCw, CheckCircle, Clock, AlertCircle, Gift, Copy, Share2, Trophy, Users } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { getSupabase } from '../lib/supabaseClient'
 
 interface Payment {
@@ -31,12 +31,11 @@ const MILESTONES = [
   { threshold: 25, total: 30 },
   { threshold: 50, total: 70 },
   { threshold: 100, total: 150 },
-]
-
+  }
 export default function PaymentDashboard() {
   const navigate = useNavigate()
-  const [tab, setTab] = useState<'payments' | 'invite'>('payments')
-
+  const [searchParams] = useSearchParams()
+  const [tab, setTab] = useState<'payments' | 'invite'>(searchParams.get('tab') === 'invite' ? 'invite' : 'payments')
   const [payments, setPayments] = useState<Payment[]>([])
   const [loading, setLoading] = useState(true)
   const userIdRef = useRef<string | null>(null)
@@ -212,9 +211,14 @@ export default function PaymentDashboard() {
             </button>
             <button
               onClick={() => setTab('invite')}
-              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${tab === 'invite' ? 'bg-brand-blue text-white' : 'text-[#8B97B5] hover:text-white'}`}
+              className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5 ${
+                tab === 'invite'
+                  ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg shadow-purple-500/30'
+                  : 'bg-gradient-to-r from-purple-500/15 to-pink-500/15 text-purple-300 hover:from-purple-500/25 hover:to-pink-500/25'
+              }`}
             >
-              <Gift size={15} /> Invite & Earn
+              <motion.span animate={{ rotate: [0, -10, 10, -10, 0] }} transition={{ duration: 1.5, repeat: Infinity, repeatDelay: 3 }}>🎁</motion.span>
+              Refer and Earn
             </button>
           </div>
 
