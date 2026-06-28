@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowLeft, RefreshCw, CheckCircle, Clock, AlertCircle } from 'lucide-react'
+import { ArrowLeft, RefreshCw, CheckCircle, Clock, AlertCircle, Gift, Copy, Share2, Trophy, Users } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getSupabase } from '../lib/supabaseClient'
 
@@ -12,20 +12,41 @@ interface Payment {
   status: 'pending' | 'processing' | 'completed' | 'failed' | 'refunded'
   createdAt: string
   updatedAt: string
-  mpesaConfirmation?: {
-    resultCode: number
-    resultDesc: string
-    transactionId: string
-  }
+  mpesaConfirmation?: { resultCode: number; resultDesc: string; transactionId: string }
   completedAt?: string
   refundReason?: string
 }
 
+interface ReferralRecord {
+  id: number
+  referred_user_id: string
+  status: string
+  created_at: string
+}
+
+const MILESTONES = [
+  { threshold: 1, total: 2 },
+  { threshold: 5, total: 5 },
+  { threshold: 10, total: 12 },
+  { threshold: 25, total: 30 },
+  { threshold: 50, total: 70 },
+  { threshold: 100, total: 150 },
+]
+
 export default function PaymentDashboard() {
   const navigate = useNavigate()
+  const [tab, setTab] = useState<'payments' | 'invite'>('payments')
+
   const [payments, setPayments] = useState<Payment[]>([])
   const [loading, setLoading] = useState(true)
   const userIdRef = useRef<string | null>(null)
+
+  const [referralCode, setReferralCode] = useState<string | null>(null)
+  const [verifiedCount, setVerifiedCount] = useState(0)
+  const [isAmbassador, setIsAmbassador] = useState(false)
+  const [referralHistory, setReferralHistory] = useState<ReferralRecord[]>([])
+  const [referralLoading, setReferralLoading] = useState(true)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     const init = async () => {
@@ -35,12 +56,15 @@ export default function PaymentDashboard() {
         if (user) {
           userIdRef.current = user.id
           await fetchPayments()
+          await loadReferralData(user.id)
         } else {
           setLoading(false)
+          setReferralLoading(false)
         }
       } catch (err) {
         console.error('Failed to load user:', err)
         setLoading(false)
+        setReferralLoading(false)
       }
     }
     init()
@@ -78,6 +102,66 @@ export default function PaymentDashboard() {
     }
   }
 
+  const loadReferralData = async (userId: string) => {
+    setReferralLoading(true)
+    try {
+      const genRes = await fetch('/api/referral', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'generate', userId }),
+      })
+      const genData = await genRes.json()
+      setReferralCode(genData.code || null)
+      setVerifiedCount(genData.verifiedCount || 0)
+      setIsAmbassador(genData.isAmbassador || false)
+
+      const client = await getSupabase()
+      const { data } = await client
+        .from('referrals')
+        .select('id, referred_user_id, status, created_at')
+        .eq('referrer_user_id', userId)
+        .order('created_at', { ascending: false })
+
+      if (data) setReferralHistory(data as ReferralRecord[])
+    } catch (err) {
+      console.error('Failed to load referral data:', err)
+    } finally {
+      setReferralLoading(false)
+    }
+  }
+
+  const referralLink = referralCode ? `${window.location.origin}/signup?ref=${referralCode}` : ''
+
+  const copyLink = () => {
+    if (!referralLink) return
+    navigator.clipboard.writeText(referralLink)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const shareLink = async () => {
+    if (!referralLink) return
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Join me on STUDIA',
+          text: 'I\'m using STUDIA to ace my exams — record lectures, get AI notes & quizzes instantly. Sign up with my link and we both get bonus credits!',
+          url: referralLink,
+        })
+      } catch {
+        // user cancelled share, no-op
+      }
+    } else {
+      copyLink()
+    }
+  }
+
+  const nextMilestone = MILESTONES.find((m) => m.threshold > verifiedCount)
+  const currentMilestoneTotal = [...MILESTONES].reverse().find((m) => verifiedCount >= m.threshold)?.total || 0
+  const progressToNext = nextMilestone
+    ? Math.round((verifiedCount / nextMilestone.threshold) * 100)
+    : 100
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending': return 'bg-yellow-100 text-yellow-800'
@@ -107,10 +191,10 @@ export default function PaymentDashboard() {
             <ArrowLeft size={16} /> Back to Dashboard
           </button>
           <div className="flex items-center gap-1">
-            <span className="font-sora font-bold text-xl text-white">STUDIA Payments</span>
+            <span className="font-sora font-bold text-xl text-white">STUDIA</span>
             <sup className="text-brand-blue text-xs">β</sup>
           </div>
-          <button onClick={fetchPayments} className="p-2 rounded-lg hover:bg-white/10 transition">
+          <button onClick={() => (tab === 'payments' ? fetchPayments() : userIdRef.current && loadReferralData(userIdRef.current))} className="p-2 rounded-lg hover:bg-white/10 transition">
             <RefreshCw size={18} className="text-[#8B97B5]" />
           </button>
         </div>
@@ -118,89 +202,234 @@ export default function PaymentDashboard() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
-          <div>
-            <h1 className="font-sora font-bold text-4xl text-white mb-2">Payment Tracking</h1>
-            <p className="text-[#8B97B5]">Your real transaction history and escrow status</p>
+
+          <div className="flex bg-surface-elevated rounded-xl p-1 gap-1 max-w-md">
+            <button
+              onClick={() => setTab('payments')}
+              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${tab === 'payments' ? 'bg-brand-blue text-white' : 'text-[#8B97B5] hover:text-white'}`}
+            >
+              Payments
+            </button>
+            <button
+              onClick={() => setTab('invite')}
+              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${tab === 'invite' ? 'bg-brand-blue text-white' : 'text-[#8B97B5] hover:text-white'}`}
+            >
+              <Gift size={15} /> Invite & Earn
+            </button>
           </div>
 
-          <div className="grid md:grid-cols-4 gap-4">
-            {[
-              { label: 'Total Payments', value: payments.length, color: 'from-brand-blue' },
-              { label: 'In Escrow', value: payments.filter((p) => p.status === 'processing').length, color: 'from-warning' },
-              { label: 'Completed', value: payments.filter((p) => p.status === 'completed').length, color: 'from-brand-green' },
-              { label: 'Refunded', value: payments.filter((p) => p.status === 'refunded').length, color: 'from-red-500' },
-            ].map((stat, i) => (
-              <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}
-                className={`bg-gradient-to-br ${stat.color} to-transparent rounded-xl p-4 border border-white/10`}>
-                <p className="text-[#8B97B5] text-sm mb-1">{stat.label}</p>
-                <p className="font-sora font-bold text-3xl text-white">{stat.value}</p>
-              </motion.div>
-            ))}
-          </div>
+          {tab === 'payments' ? (
+            <>
+              <div>
+                <h1 className="font-sora font-bold text-4xl text-white mb-2">Payment Tracking</h1>
+                <p className="text-[#8B97B5]">Your real transaction history and escrow status</p>
+              </div>
 
-          <div className="bg-surface-elevated rounded-2xl border border-white/5 overflow-hidden">
-            <div className="overflow-x-auto">
-              {loading ? (
-                <div className="p-12 text-center text-[#8B97B5]">Loading your payments...</div>
-              ) : payments.length === 0 ? (
-                <div className="p-12 text-center text-[#8B97B5]">No payments yet. Choose a plan to get started.</div>
+              <div className="grid md:grid-cols-4 gap-4">
+                {[
+                  { label: 'Total Payments', value: payments.length, color: 'from-brand-blue' },
+                  { label: 'In Escrow', value: payments.filter((p) => p.status === 'processing').length, color: 'from-warning' },
+                  { label: 'Completed', value: payments.filter((p) => p.status === 'completed').length, color: 'from-brand-green' },
+                  { label: 'Refunded', value: payments.filter((p) => p.status === 'refunded').length, color: 'from-red-500' },
+                ].map((stat, i) => (
+                  <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}
+                    className={`bg-gradient-to-br ${stat.color} to-transparent rounded-xl p-4 border border-white/10`}>
+                    <p className="text-[#8B97B5] text-sm mb-1">{stat.label}</p>
+                    <p className="font-sora font-bold text-3xl text-white">{stat.value}</p>
+                  </motion.div>
+                ))}
+              </div>
+
+              <div className="bg-surface-elevated rounded-2xl border border-white/5 overflow-hidden">
+                <div className="overflow-x-auto">
+                  {loading ? (
+                    <div className="p-12 text-center text-[#8B97B5]">Loading your payments...</div>
+                  ) : payments.length === 0 ? (
+                    <div className="p-12 text-center text-[#8B97B5]">No payments yet. Choose a plan to get started.</div>
+                  ) : (
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-white/5 bg-surface-base/50">
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Transaction ID</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Phone</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Plan</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Amount</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Status</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {payments.map((payment, i) => (
+                          <motion.tr key={payment.transactionId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}
+                            className="border-b border-white/5 hover:bg-surface-base/50 transition">
+                            <td className="px-6 py-4 text-sm font-mono text-white">{payment.transactionId}</td>
+                            <td className="px-6 py-4 text-sm text-[#8B97B5]">{payment.phoneNumber}</td>
+                            <td className="px-6 py-4 text-sm text-white">{payment.planName}</td>
+                            <td className="px-6 py-4 text-sm font-semibold text-brand-blue">KSh {payment.amount}</td>
+                            <td className="px-6 py-4 text-sm">
+                              <div className="flex items-center gap-2">
+                                {getStatusIcon(payment.status)}
+                                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(payment.status)}`}>
+                                  {payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-sm text-[#8B97B5]">{new Date(payment.createdAt).toLocaleDateString()}</td>
+                          </motion.tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-r from-brand-blue/10 to-purple-premium/10 rounded-2xl p-8 border border-brand-blue/20">
+                <h2 className="font-sora font-bold text-2xl text-white mb-6">Escrow Payment Flow</h2>
+                <div className="grid md:grid-cols-5 gap-4">
+                  {[
+                    { step: '1', title: 'Pending', desc: 'Payment initiated', color: 'from-yellow-500' },
+                    { step: '2', title: 'Processing', desc: 'Funds in escrow', color: 'from-brand-blue' },
+                    { step: '3', title: 'AI Active', desc: 'Lectures process', color: 'from-purple-premium' },
+                    { step: '4', title: 'Released/Refund', desc: 'Complete or refund', color: 'from-brand-green' },
+                  ].map((item, i) => (
+                    <div key={i} className="relative">
+                      <div className={`bg-gradient-to-br ${item.color} to-transparent rounded-lg p-4 border border-white/10`}>
+                        <p className="font-sora font-bold text-2xl text-white mb-1">{item.step}</p>
+                        <p className="font-semibold text-white text-sm">{item.title}</p>
+                        <p className="text-xs text-[#8B97B5] mt-1">{item.desc}</p>
+                      </div>
+                      {i < 3 && <div className="hidden md:block absolute top-1/2 -right-2 text-brand-blue text-lg">→</div>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <h1 className="font-sora font-bold text-4xl text-white mb-2 flex items-center gap-3">
+                  🎉 Invite & Earn
+                </h1>
+                <p className="text-[#8B97B5]">Invite fellow students and unlock bonus AI credits.</p>
+              </div>
+
+              {referralLoading ? (
+                <div className="text-center py-12 text-[#8B97B5]">Loading your referral info...</div>
               ) : (
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-white/5 bg-surface-base/50">
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Transaction ID</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Phone</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Plan</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Amount</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Status</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {payments.map((payment, i) => (
-                      <motion.tr key={payment.transactionId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}
-                        className="border-b border-white/5 hover:bg-surface-base/50 transition">
-                        <td className="px-6 py-4 text-sm font-mono text-white">{payment.transactionId}</td>
-                        <td className="px-6 py-4 text-sm text-[#8B97B5]">{payment.phoneNumber}</td>
-                        <td className="px-6 py-4 text-sm text-white">{payment.planName}</td>
-                        <td className="px-6 py-4 text-sm font-semibold text-brand-blue">KSh {payment.amount}</td>
-                        <td className="px-6 py-4 text-sm">
-                          <div className="flex items-center gap-2">
-                            {getStatusIcon(payment.status)}
-                            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(payment.status)}`}>
-                              {payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
+                <>
+                  {isAmbassador && (
+                    <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+                      className="bg-gradient-to-r from-warning/20 to-red-500/20 border border-warning/40 rounded-2xl p-6 flex items-center gap-4">
+                      <Trophy className="text-warning shrink-0" size={32} />
+                      <div>
+                        <p className="font-sora font-bold text-white text-lg">🏆 Campus Ambassador</p>
+                        <p className="text-sm text-[#8B97B5]">You've referred 100+ students — you're officially a STUDIA legend.</p>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  <div className="bg-gradient-to-br from-brand-blue/10 to-purple-500/10 border border-brand-blue/20 rounded-2xl p-8 space-y-6">
+                    <div>
+                      <p className="text-sm text-[#8B97B5] mb-2">Your Referral Code</p>
+                      <p className="font-sora font-bold text-3xl text-white tracking-wider">{referralCode || '...'}</p>
+                    </div>
+
+                    <div>
+                      <p className="text-sm text-[#8B97B5] mb-2">Your Referral Link</p>
+                      <div className="bg-surface-base border border-white/10 rounded-xl p-3 text-sm text-[#8B97B5] font-mono break-all">
+                        {referralLink || 'Generating...'}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button onClick={copyLink} className="flex-1 flex items-center justify-center gap-2 bg-surface-elevated border border-white/10 text-white py-3 rounded-xl hover:border-brand-blue/40 text-sm font-medium transition-colors">
+                        <Copy size={16} /> {copied ? 'Copied!' : 'Copy Link'}
+                      </button>
+                      <button onClick={shareLink} className="flex-1 flex items-center justify-center gap-2 bg-brand-blue text-white py-3 rounded-xl hover:bg-brand-blue/90 text-sm font-medium transition-colors">
+                        <Share2 size={16} /> Share Link
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-surface-elevated border border-white/5 rounded-2xl p-6 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <p className="font-sora font-bold text-white">Progress</p>
+                      <p className="text-sm text-[#8B97B5]">
+                        {verifiedCount} {nextMilestone ? `/ ${nextMilestone.threshold}` : ''} Friends Invited
+                      </p>
+                    </div>
+                    <div className="w-full bg-surface-base rounded-full h-3">
+                      <div className="bg-gradient-to-r from-brand-blue to-green-400 h-3 rounded-full transition-all duration-700"
+                        style={{ width: `${Math.min(100, progressToNext)}%` }} />
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <p className="text-brand-blue font-semibold">{currentMilestoneTotal} bonus credits earned</p>
+                      {nextMilestone && (
+                        <p className="text-[#8B97B5]">Invite {nextMilestone.threshold - verifiedCount} more for {nextMilestone.total} total</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="bg-surface-elevated border border-white/5 rounded-2xl overflow-hidden">
+                    <div className="p-6 pb-0">
+                      <p className="font-sora font-bold text-white text-lg mb-1">Reward Tiers</p>
+                      <p className="text-sm text-[#8B97B5] mb-4">The more friends you bring, the more you earn.</p>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b border-white/5 bg-surface-base/50">
+                            <th className="px-6 py-3 text-left text-xs font-semibold text-[#8B97B5]">Verified Friends</th>
+                            <th className="px-6 py-3 text-left text-xs font-semibold text-[#8B97B5]">You Earn</th>
+                            <th className="px-6 py-3 text-left text-xs font-semibold text-[#8B97B5]">Friend Earns</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[
+                            { friends: '1', you: '2 bonus credits', friend: '2 bonus credits' },
+                            { friends: '5', you: '5 bonus credits', friend: '2 bonus credits' },
+                            { friends: '10', you: '12 bonus credits', friend: '2 bonus credits' },
+                            { friends: '25', you: '30 bonus credits', friend: '2 bonus credits' },
+                            { friends: '50', you: '70 bonus credits', friend: '2 bonus credits' },
+                            { friends: '100', you: '150 bonus credits + 🏆 Campus Ambassador', friend: '2 bonus credits' },
+                            { friends: '100+', you: '+1 credit per referral', friend: '2 bonus credits' },
+                          ].map((row, i) => (
+                            <tr key={i} className={`border-b border-white/5 ${verifiedCount >= parseInt(row.friends) ? 'bg-green-500/5' : ''}`}>
+                              <td className="px-6 py-3 text-sm text-white font-semibold">{row.friends}</td>
+                              <td className="px-6 py-3 text-sm text-brand-blue">{row.you}</td>
+                              <td className="px-6 py-3 text-sm text-[#8B97B5]">{row.friend}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <p className="font-sora font-bold text-white text-lg flex items-center gap-2">
+                      <Users size={20} className="text-brand-blue" /> Your Referrals ({referralHistory.length})
+                    </p>
+                    {referralHistory.length === 0 ? (
+                      <div className="bg-surface-elevated border border-white/5 rounded-2xl p-8 text-center text-[#8B97B5] text-sm">
+                        No referrals yet — share your link above to start earning!
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {referralHistory.map((r) => (
+                          <div key={r.id} className="bg-surface-elevated border border-white/5 rounded-xl p-4 flex items-center justify-between">
+                            <p className="text-sm text-[#8B97B5]">Joined {new Date(r.created_at).toLocaleDateString()}</p>
+                            <span className={`text-xs font-semibold px-3 py-1 rounded-full ${r.status === 'verified' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                              {r.status === 'verified' ? '✓ Verified' : 'Pending'}
                             </span>
                           </div>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-[#8B97B5]">{new Date(payment.createdAt).toLocaleDateString()}</td>
-                      </motion.tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-
-          <div className="bg-gradient-to-r from-brand-blue/10 to-purple-premium/10 rounded-2xl p-8 border border-brand-blue/20">
-            <h2 className="font-sora font-bold text-2xl text-white mb-6">Escrow Payment Flow</h2>
-            <div className="grid md:grid-cols-5 gap-4">
-              {[
-                { step: '1', title: 'Pending', desc: 'Payment initiated', color: 'from-yellow-500' },
-                { step: '2', title: 'Processing', desc: 'Funds in escrow', color: 'from-brand-blue' },
-                { step: '3', title: 'AI Active', desc: 'Lectures process', color: 'from-purple-premium' },
-                { step: '4', title: 'Released/Refund', desc: 'Complete or refund', color: 'from-brand-green' },
-              ].map((item, i) => (
-                <div key={i} className="relative">
-                  <div className={`bg-gradient-to-br ${item.color} to-transparent rounded-lg p-4 border border-white/10`}>
-                    <p className="font-sora font-bold text-2xl text-white mb-1">{item.step}</p>
-                    <p className="font-semibold text-white text-sm">{item.title}</p>
-                    <p className="text-xs text-[#8B97B5] mt-1">{item.desc}</p>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  {i < 3 && <div className="hidden md:block absolute top-1/2 -right-2 text-brand-blue text-lg">→</div>}
-                </div>
-              ))}
-            </div>
-          </div>
+                </>
+              )}
+            </>
+          )}
         </motion.div>
       </div>
     </div>
