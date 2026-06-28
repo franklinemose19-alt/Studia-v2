@@ -31,7 +31,7 @@ const MILESTONES = [
   { threshold: 25, total: 30 },
   { threshold: 50, total: 70 },
   { threshold: 100, total: 150 },
-  }
+]
 export default function PaymentDashboard() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
