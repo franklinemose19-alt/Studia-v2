@@ -1,11 +1,14 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Loader, Eye, EyeOff, Check } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 
 export default function Signup() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const refCode = searchParams.get('ref')
+
   const [step, setStep] = useState(1)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -68,14 +71,23 @@ export default function Signup() {
 
     try {
       console.log('Starting signup process...')
-      await supabase.signUp(email, password, name, phone)
-console.log('Signup successful')
+      const result = await supabase.signUp(email, password, name, phone)
+      console.log('Signup successful')
 
-setSuccess(true)
+      const newUserId = result?.user?.id
+      if (newUserId && refCode) {
+        fetch('/api/referral', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'link', userId: newUserId, code: refCode }),
+        }).catch((err) => console.error('Referral link failed:', err))
+      }
 
-setTimeout(() => {
-  navigate('/dashboard')
-}, 2000)
+      setSuccess(true)
+
+      setTimeout(() => {
+        navigate('/dashboard')
+      }, 2000)
     } catch (err: any) {
       console.error('Signup error:', err)
       setError(err.message || 'Signup failed')
@@ -118,6 +130,12 @@ setTimeout(() => {
         <div className="bg-white rounded-2xl border border-gray-200 p-8">
           <h1 className="font-sora font-bold text-4xl text-navy mb-2">Create Account</h1>
           <p className="text-gray-600 mb-8">Step {step} of 3</p>
+
+          {refCode && (
+            <div className="bg-mint/10 border border-mint/20 rounded-xl p-3 mb-6">
+              <p className="text-xs text-mint font-semibold">🎁 You'll get 2 bonus AI credits after your first lecture, quiz, or summary!</p>
+            </div>
+          )}
 
           {error && (
             <motion.div
