@@ -374,68 +374,73 @@ export default function PaymentDashboard() {
                     </div>
                   </div>
 
-                  <div className="bg-surface-elevated border border-white/5 rounded-2xl overflow-hidden">
-                    <div className="p-6 pb-0">
-                      <p className="font-sora font-bold text-white text-lg mb-1">Reward Tiers</p>
-                      <p className="text-sm text-[#8B97B5] mb-4">The more friends you bring, the more you earn.</p>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead>
-                          <tr className="border-b border-white/5 bg-surface-base/50">
-                            <th className="px-6 py-3 text-left text-xs font-semibold text-[#8B97B5]">Verified Friends</th>
-                            <th className="px-6 py-3 text-left text-xs font-semibold text-[#8B97B5]">You Earn</th>
-                            <th className="px-6 py-3 text-left text-xs font-semibold text-[#8B97B5]">Friend Earns</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {[
-                            { friends: '1', you: '2 bonus credits', friend: '2 bonus credits' },
-                            { friends: '5', you: '5 bonus credits', friend: '2 bonus credits' },
-                            { friends: '10', you: '12 bonus credits', friend: '2 bonus credits' },
-                            { friends: '25', you: '30 bonus credits', friend: '2 bonus credits' },
-                            { friends: '50', you: '70 bonus credits', friend: '2 bonus credits' },
-                            { friends: '100', you: '150 bonus credits + 🏆 Campus Ambassador', friend: '2 bonus credits' },
-                            { friends: '100+', you: '+1 credit per referral', friend: '2 bonus credits' },
-                          ].map((row, i) => (
-                            <tr key={i} className={`border-b border-white/5 ${verifiedCount >= parseInt(row.friends) ? 'bg-green-500/5' : ''}`}>
-                              <td className="px-6 py-3 text-sm text-white font-semibold">{row.friends}</td>
-                              <td className="px-6 py-3 text-sm text-brand-blue">{row.you}</td>
-                              <td className="px-6 py-3 text-sm text-[#8B97B5]">{row.friend}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <p className="font-sora font-bold text-white text-lg flex items-center gap-2">
-                      <Users size={20} className="text-brand-blue" /> Your Referrals ({referralHistory.length})
-                    </p>
-                    {referralHistory.length === 0 ? (
-                      <div className="bg-surface-elevated border border-white/5 rounded-2xl p-8 text-center text-[#8B97B5] text-sm">
-                        No referrals yet — share your link above to start earning!
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {referralHistory.map((r) => (
-                          <div key={r.id} className="bg-surface-elevated border border-white/5 rounded-xl p-4 flex items-center justify-between">
-                            <p className="text-sm text-[#8B97B5]">Joined {new Date(r.created_at).toLocaleDateString()}</p>
-                            <span className={`text-xs font-semibold px-3 py-1 rounded-full ${r.status === 'verified' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
-                              {r.status === 'verified' ? '✓ Verified' : 'Pending'}
+                 {loading ? (
+                <div className="bg-surface-elevated rounded-2xl border border-white/5 p-12 text-center text-[#8B97B5]">Loading your payments...</div>
+              ) : payments.length === 0 ? (
+                <div className="bg-surface-elevated rounded-2xl border border-white/5 p-12 text-center text-[#8B97B5]">No payments yet. Choose a plan to get started.</div>
+              ) : (
+                <>
+                  {/* Mobile: stacked cards */}
+                  <div className="md:hidden space-y-3">
+                    {payments.map((payment, i) => (
+                      <motion.div key={payment.transactionId} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
+                        className="bg-surface-elevated rounded-2xl border border-white/5 p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-mono text-white truncate pr-2">{payment.transactionId}</span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {getStatusIcon(payment.status)}
+                            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(payment.status)}`}>
+                              {payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
                             </span>
                           </div>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-white font-medium">{payment.planName}</span>
+                          <span className="text-brand-blue font-semibold">KSh {payment.amount}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-[#8B97B5] pt-2 border-t border-white/5">
+                          <span>{payment.phoneNumber}</span>
+                          <span>{new Date(payment.createdAt).toLocaleDateString()}</span>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+
+                  {/* Desktop: table */}
+                  <div className="hidden md:block bg-surface-elevated rounded-2xl border border-white/5 overflow-hidden">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-white/5 bg-surface-base/50">
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Transaction ID</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Phone</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Plan</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Amount</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Status</th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {payments.map((payment, i) => (
+                          <motion.tr key={payment.transactionId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}
+                            className="border-b border-white/5 hover:bg-surface-base/50 transition">
+                            <td className="px-6 py-4 text-sm font-mono text-white">{payment.transactionId}</td>
+                            <td className="px-6 py-4 text-sm text-[#8B97B5]">{payment.phoneNumber}</td>
+                            <td className="px-6 py-4 text-sm text-white">{payment.planName}</td>
+                            <td className="px-6 py-4 text-sm font-semibold text-brand-blue">KSh {payment.amount}</td>
+                            <td className="px-6 py-4 text-sm">
+                              <div className="flex items-center gap-2">
+                                {getStatusIcon(payment.status)}
+                                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(payment.status)}`}>
+                                  {payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-sm text-[#8B97B5]">{new Date(payment.createdAt).toLocaleDateString()}</td>
+                          </motion.tr>
                         ))}
-                      </div>
-                    )}
+                      </tbody>
+                    </table>
                   </div>
                 </>
               )}
-            </>
-          )}
-        </motion.div>
-      </div>
-    </div>
-  )
-}
+                      
