@@ -32,10 +32,22 @@ const MILESTONES = [
   { threshold: 50, total: 70 },
   { threshold: 100, total: 150 },
 ]
+
+const REWARD_TIERS = [
+  { friends: '1', you: '2 bonus credits', friend: '2 bonus credits' },
+  { friends: '5', you: '5 bonus credits', friend: '2 bonus credits' },
+  { friends: '10', you: '12 bonus credits', friend: '2 bonus credits' },
+  { friends: '25', you: '30 bonus credits', friend: '2 bonus credits' },
+  { friends: '50', you: '70 bonus credits', friend: '2 bonus credits' },
+  { friends: '100', you: '150 bonus credits + 🏆 Campus Ambassador', friend: '2 bonus credits' },
+  { friends: '100+', you: '+1 credit per referral', friend: '2 bonus credits' },
+]
+
 export default function PaymentDashboard() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [tab, setTab] = useState<'payments' | 'invite'>(searchParams.get('tab') === 'invite' ? 'invite' : 'payments')
+
   const [payments, setPayments] = useState<Payment[]>([])
   const [loading, setLoading] = useState(true)
   const userIdRef = useRef<string | null>(null)
@@ -144,7 +156,7 @@ export default function PaymentDashboard() {
       try {
         await navigator.share({
           title: 'Join me on STUDIA',
-          text: 'I\'m using STUDIA to ace my exams — record lectures, get AI notes & quizzes instantly. Sign up with my link and we both get bonus credits!',
+          text: "I'm using STUDIA to ace my exams — record lectures, get AI notes & quizzes instantly. Sign up with my link and we both get bonus credits!",
           url: referralLink,
         })
       } catch {
@@ -193,7 +205,10 @@ export default function PaymentDashboard() {
             <span className="font-sora font-bold text-xl text-white">STUDIA</span>
             <sup className="text-brand-blue text-xs">β</sup>
           </div>
-          <button onClick={() => (tab === 'payments' ? fetchPayments() : userIdRef.current && loadReferralData(userIdRef.current))} className="p-2 rounded-lg hover:bg-white/10 transition">
+          <button
+            onClick={() => (tab === 'payments' ? fetchPayments() : userIdRef.current && loadReferralData(userIdRef.current))}
+            className="p-2 rounded-lg hover:bg-white/10 transition"
+          >
             <RefreshCw size={18} className="text-[#8B97B5]" />
           </button>
         </div>
@@ -244,13 +259,38 @@ export default function PaymentDashboard() {
                 ))}
               </div>
 
-              <div className="bg-surface-elevated rounded-2xl border border-white/5 overflow-hidden">
-                <div className="overflow-x-auto">
-                  {loading ? (
-                    <div className="p-12 text-center text-[#8B97B5]">Loading your payments...</div>
-                  ) : payments.length === 0 ? (
-                    <div className="p-12 text-center text-[#8B97B5]">No payments yet. Choose a plan to get started.</div>
-                  ) : (
+              {loading ? (
+                <div className="bg-surface-elevated rounded-2xl border border-white/5 p-12 text-center text-[#8B97B5]">Loading your payments...</div>
+              ) : payments.length === 0 ? (
+                <div className="bg-surface-elevated rounded-2xl border border-white/5 p-12 text-center text-[#8B97B5]">No payments yet. Choose a plan to get started.</div>
+              ) : (
+                <>
+                  <div className="md:hidden space-y-3">
+                    {payments.map((payment, i) => (
+                      <motion.div key={payment.transactionId} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
+                        className="bg-surface-elevated rounded-2xl border border-white/5 p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-mono text-white truncate pr-2">{payment.transactionId}</span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {getStatusIcon(payment.status)}
+                            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(payment.status)}`}>
+                              {payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-white font-medium">{payment.planName}</span>
+                          <span className="text-brand-blue font-semibold">KSh {payment.amount}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-[#8B97B5] pt-2 border-t border-white/5">
+                          <span>{payment.phoneNumber}</span>
+                          <span>{new Date(payment.createdAt).toLocaleDateString()}</span>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+
+                  <div className="hidden md:block bg-surface-elevated rounded-2xl border border-white/5 overflow-hidden">
                     <table className="w-full">
                       <thead>
                         <tr className="border-b border-white/5 bg-surface-base/50">
@@ -283,9 +323,9 @@ export default function PaymentDashboard() {
                         ))}
                       </tbody>
                     </table>
-                  )}
-                </div>
-              </div>
+                  </div>
+                </>
+              )}
 
               <div className="bg-gradient-to-r from-brand-blue/10 to-purple-premium/10 rounded-2xl p-8 border border-brand-blue/20">
                 <h2 className="font-sora font-bold text-2xl text-white mb-6">Escrow Payment Flow</h2>
@@ -312,7 +352,7 @@ export default function PaymentDashboard() {
             <>
               <div>
                 <h1 className="font-sora font-bold text-4xl text-white mb-2 flex items-center gap-3">
-                  🎉 Invite & Earn
+                  🎉 Refer and Earn
                 </h1>
                 <p className="text-[#8B97B5]">Invite fellow students and unlock bonus AI credits.</p>
               </div>
@@ -355,95 +395,33 @@ export default function PaymentDashboard() {
                     </div>
                   </div>
 
-                
-                  {loading ? (
-                <div className="bg-surface-elevated rounded-2xl border border-white/5 p-12 text-center text-[#8B97B5]">Loading your payments...</div>
-              ) : payments.length === 0 ? (
-                <div className="bg-surface-elevated rounded-2xl border border-white/5 p-12 text-center text-[#8B97B5]">No payments yet. Choose a plan to get started.</div>
-              ) : (
-                <>
-                  {/* Mobile: stacked cards */}
-                  <div className="md:hidden space-y-3">
-                    {payments.map((payment, i) => (
-                      <motion.div key={payment.transactionId} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-                        className="bg-surface-elevated rounded-2xl border border-white/5 p-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-mono text-white truncate pr-2">{payment.transactionId}</span>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {getStatusIcon(payment.status)}
-                            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(payment.status)}`}>
-                              {payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-white font-medium">{payment.planName}</span>
-                          <span className="text-brand-blue font-semibold">KSh {payment.amount}</span>
-                        </div>
-                        <div className="flex items-center justify-between text-xs text-[#8B97B5] pt-2 border-t border-white/5">
-                          <span>{payment.phoneNumber}</span>
-                          <span>{new Date(payment.createdAt).toLocaleDateString()}</span>
-                        </div>
-                      </motion.div>
-                    ))}
+                  <div className="bg-surface-elevated border border-white/5 rounded-2xl p-6 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <p className="font-sora font-bold text-white">Progress</p>
+                      <p className="text-sm text-[#8B97B5]">
+                        {verifiedCount} {nextMilestone ? `/ ${nextMilestone.threshold}` : ''} Friends Invited
+                      </p>
+                    </div>
+                    <div className="w-full bg-surface-base rounded-full h-3">
+                      <div className="bg-gradient-to-r from-brand-blue to-green-400 h-3 rounded-full transition-all duration-700"
+                        style={{ width: `${Math.min(100, progressToNext)}%` }} />
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <p className="text-brand-blue font-semibold">{currentMilestoneTotal} bonus credits earned</p>
+                      {nextMilestone && (
+                        <p className="text-[#8B97B5]">Invite {nextMilestone.threshold - verifiedCount} more for {nextMilestone.total} total</p>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Desktop: table */}
-                  <div className="hidden md:block bg-surface-elevated rounded-2xl border border-white/5 overflow-hidden">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-white/5 bg-surface-base/50">
-                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Transaction ID</th>
-                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Phone</th>
-                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Plan</th>
-                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Amount</th>
-                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Status</th>
-                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Date</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {payments.map((payment, i) => (
-                          <motion.tr key={payment.transactionId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}
-                            className="border-b border-white/5 hover:bg-surface-base/50 transition">
-                            <td className="px-6 py-4 text-sm font-mono text-white">{payment.transactionId}</td>
-                            <td className="px-6 py-4 text-sm text-[#8B97B5]">{payment.phoneNumber}</td>
-                            <td className="px-6 py-4 text-sm text-white">{payment.planName}</td>
-                            <td className="px-6 py-4 text-sm font-semibold text-brand-blue">KSh {payment.amount}</td>
-                            <td className="px-6 py-4 text-sm">
-                              <div className="flex items-center gap-2">
-                                {getStatusIcon(payment.status)}
-                                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(payment.status)}`}>
-                                  {payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
-                                </span>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 text-sm text-[#8B97B5]">{new Date(payment.createdAt).toLocaleDateString()}</td>
-                          </motion.tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              )}
-
-                 {loading ? (
-              <div className="bg-surface-elevated border border-white/5 rounded-2xl overflow-hidden">
+                  <div className="bg-surface-elevated border border-white/5 rounded-2xl overflow-hidden">
                     <div className="p-6 pb-4">
                       <p className="font-sora font-bold text-white text-lg mb-1">Reward Tiers</p>
                       <p className="text-sm text-[#8B97B5]">The more friends you bring, the more you earn.</p>
                     </div>
 
-                    {/* Mobile: stacked cards */}
                     <div className="md:hidden px-4 pb-4 space-y-2">
-                      {[
-                        { friends: '1', you: '2 bonus credits', friend: '2 bonus credits' },
-                        { friends: '5', you: '5 bonus credits', friend: '2 bonus credits' },
-                        { friends: '10', you: '12 bonus credits', friend: '2 bonus credits' },
-                        { friends: '25', you: '30 bonus credits', friend: '2 bonus credits' },
-                        { friends: '50', you: '70 bonus credits', friend: '2 bonus credits' },
-                        { friends: '100', you: '150 bonus credits + 🏆 Campus Ambassador', friend: '2 bonus credits' },
-                        { friends: '100+', you: '+1 credit per referral', friend: '2 bonus credits' },
-                      ].map((row, i) => (
+                      {REWARD_TIERS.map((row, i) => (
                         <div key={i} className={`rounded-xl p-4 border border-white/5 ${verifiedCount >= parseInt(row.friends) ? 'bg-green-500/10' : 'bg-surface-base'}`}>
                           <p className="text-white font-semibold text-sm mb-2">{row.friends} verified friends</p>
                           <div className="flex justify-between text-xs">
@@ -458,7 +436,6 @@ export default function PaymentDashboard() {
                       ))}
                     </div>
 
-                    {/* Desktop: table */}
                     <div className="hidden md:block">
                       <table className="w-full">
                         <thead>
@@ -469,15 +446,7 @@ export default function PaymentDashboard() {
                           </tr>
                         </thead>
                         <tbody>
-                          {[
-                            { friends: '1', you: '2 bonus credits', friend: '2 bonus credits' },
-                            { friends: '5', you: '5 bonus credits', friend: '2 bonus credits' },
-                            { friends: '10', you: '12 bonus credits', friend: '2 bonus credits' },
-                            { friends: '25', you: '30 bonus credits', friend: '2 bonus credits' },
-                            { friends: '50', you: '70 bonus credits', friend: '2 bonus credits' },
-                            { friends: '100', you: '150 bonus credits + 🏆 Campus Ambassador', friend: '2 bonus credits' },
-                            { friends: '100+', you: '+1 credit per referral', friend: '2 bonus credits' },
-                          ].map((row, i) => (
+                          {REWARD_TIERS.map((row, i) => (
                             <tr key={i} className={`border-b border-white/5 ${verifiedCount >= parseInt(row.friends) ? 'bg-green-500/5' : ''}`}>
                               <td className="px-6 py-3 text-sm text-white font-semibold">{row.friends}</td>
                               <td className="px-6 py-3 text-sm text-brand-blue">{row.you}</td>
@@ -489,41 +458,33 @@ export default function PaymentDashboard() {
                     </div>
                   </div>
 
-                  {/* Desktop: table */}
-                  <div className="hidden md:block bg-surface-elevated rounded-2xl border border-white/5 overflow-hidden">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-white/5 bg-surface-base/50">
-                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Transaction ID</th>
-                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Phone</th>
-                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Plan</th>
-                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Amount</th>
-                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Status</th>
-                          <th className="px-6 py-4 text-left text-xs font-semibold text-[#8B97B5]">Date</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {payments.map((payment, i) => (
-                          <motion.tr key={payment.transactionId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}
-                            className="border-b border-white/5 hover:bg-surface-base/50 transition">
-                            <td className="px-6 py-4 text-sm font-mono text-white">{payment.transactionId}</td>
-                            <td className="px-6 py-4 text-sm text-[#8B97B5]">{payment.phoneNumber}</td>
-                            <td className="px-6 py-4 text-sm text-white">{payment.planName}</td>
-                            <td className="px-6 py-4 text-sm font-semibold text-brand-blue">KSh {payment.amount}</td>
-                            <td className="px-6 py-4 text-sm">
-                              <div className="flex items-center gap-2">
-                                {getStatusIcon(payment.status)}
-                                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(payment.status)}`}>
-                                  {payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
-                                </span>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 text-sm text-[#8B97B5]">{new Date(payment.createdAt).toLocaleDateString()}</td>
-                          </motion.tr>
+                  <div className="space-y-3">
+                    <p className="font-sora font-bold text-white text-lg flex items-center gap-2">
+                      <Users size={20} className="text-brand-blue" /> Your Referrals ({referralHistory.length})
+                    </p>
+                    {referralHistory.length === 0 ? (
+                      <div className="bg-surface-elevated border border-white/5 rounded-2xl p-8 text-center text-[#8B97B5] text-sm">
+                        No referrals yet — share your link above to start earning!
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {referralHistory.map((r) => (
+                          <div key={r.id} className="bg-surface-elevated border border-white/5 rounded-xl p-4 flex items-center justify-between">
+                            <p className="text-sm text-[#8B97B5]">Joined {new Date(r.created_at).toLocaleDateString()}</p>
+                            <span className={`text-xs font-semibold px-3 py-1 rounded-full ${r.status === 'verified' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                              {r.status === 'verified' ? '✓ Verified' : 'Pending'}
+                            </span>
+                          </div>
                         ))}
-                      </tbody>
-                    </table>
+                      </div>
+                    )}
                   </div>
                 </>
               )}
-                      
+            </>
+          )}
+        </motion.div>
+      </div>
+    </div>
+  )
+}
