@@ -199,8 +199,37 @@ export default function Pricing() {
             ))}
           </div>
 
-          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-            <div className="overflow-x-auto">
+        <div>
+            {/* Mobile: stacked cards, one per feature */}
+            <div className="md:hidden space-y-3">
+              {[
+                { feature: 'AI Lecture Processing', values: ['✓', '✓', '✓', '✓'] },
+                { feature: 'Lectures Recorded', values: ['3', 'Pay', '∞', '∞'] },
+                { feature: 'AI Summaries', values: ['✓', '✓', '✓', '✓'] },
+                { feature: 'Quiz Generation', values: ['✓', '✓', '✓', '✓'] },
+                { feature: 'SnapSolve', values: ['Limited', 'Limited', '✓', '✓'] },
+                { feature: 'Past Paper AI', values: ['Limited', 'Limited', '✓', '✓'] },
+                { feature: 'Offline Vault', values: ['✓', '✓', '✓', '✓'] },
+                { feature: 'Priority Processing', values: ['✗', '✗', '✓', '✓'] },
+              ].map((row, i) => (
+                <div key={i} className="bg-white rounded-xl border border-gray-200 p-4">
+                  <p className="font-sora font-semibold text-navy text-sm mb-3">{row.feature}</p>
+                  <div className="grid grid-cols-4 gap-2 text-center">
+                    {['Free', 'Lite', 'Pro', 'Semester'].map((label, j) => (
+                      <div key={j}>
+                        <p className="text-[10px] text-gray-400 mb-1">{label}</p>
+                        <p className={`text-sm font-medium ${row.values[j] === '✓' ? 'text-mint font-bold' : row.values[j] === '✗' ? 'text-gray-400' : 'text-gray-700'}`}>
+                          {row.values[j]}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop: table */}
+            <div className="hidden md:block bg-white rounded-2xl border border-gray-200 overflow-hidden">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-gray-200 bg-gray-50">
