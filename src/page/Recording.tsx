@@ -5,6 +5,8 @@ import { useNavigate } from 'react-router-dom'
 import { getSupabase } from '../lib/supabaseClient'
 import { useAuth } from '../lib/AuthContext'
 import { loadAccess, checkAccess, consumeCredit, grantLiteBonusCredit, freeCreditsRemaining, isUnlimitedPlan, type AccessInfo, emptyAccess } from '../lib/access'
+import SmartInkNotes from '../components/SmartInkNotes'
+import { getTierFromPlan, type SmartInkNote } from '../lib/smartInk'
 
 interface Recording {
   id: string
@@ -17,6 +19,7 @@ interface Recording {
   storageUrl?: string
   transcript?: string
   notes?: string
+  structuredNotes?: SmartInkNote
   isProcessing?: boolean
 }
 
@@ -117,7 +120,6 @@ export default function RecordingPage() {
   const [access, setAccess] = useState<AccessInfo>(emptyAccess)
   const [accessLoaded, setAccessLoaded] = useState(false)
   const [showPaywall, setShowPaywall] = useState(false)
-  const [sessionAccessSource, setSessionAccessSource] = useState<'unlimited' | 'free' | 'lite' | null>(null)
   const [liteDurationCap, setLiteDurationCap] = useState<number | null>(null)
 
   const [litePhone, setLitePhone] = useState('')
@@ -157,7 +159,7 @@ export default function RecordingPage() {
 
   useEffect(() => {
     const metadata = recordings.map(({ blob, ...rest }) => rest)
-    localStorage.setItem('recordingsMetadata', JSON.stringify(metadata))
+    try { localStorage.setItem('recordingsMetadata', JSON.stringify(metadata)) } catch { /* storage full */ }
   }, [recordings])
 
   const courseNames = Array.from(new Set(units.map((u) => u.course))).filter(Boolean)
@@ -234,9 +236,13 @@ export default function RecordingPage() {
     }
   }
 
-  const generateNotes = async (transcript: string, courseName?: string, unitName?: string): Promise<string | null> => {
+  const generateNotes = async (
+    transcript: string,
+    courseName?: string,
+    unitName?: string
+  ): Promise<{ notes: string | null; structuredNotes: SmartInkNote | undefined }> => {
     try {
-      setUploadStatus('📝 Generating smart notes...')
+      setUploadStatus('📝 Generating Smart Ink notes...')
       const response = await fetch('/api/generate-lecture-notes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -245,13 +251,16 @@ export default function RecordingPage() {
       if (!response.ok) {
         const err = await response.json()
         console.error('GPT error:', err)
-        return null
+        return { notes: null, structuredNotes: undefined }
       }
       const data = await response.json()
-      return data.notes || null
+      return {
+        notes: data.notes || null,
+        structuredNotes: data.structured || undefined,
+      }
     } catch (err) {
       console.error('Notes generation failed:', err)
-      return null
+      return { notes: null, structuredNotes: undefined }
     }
   }
 
@@ -268,7 +277,6 @@ export default function RecordingPage() {
     const result = checkAccess(access, 'core')
     if (result.allowed) {
       sessionSourceRef.current = result.source
-      setSessionAccessSource(result.source)
       liteCapRef.current = null
       setLiteDurationCap(null)
       startRecording()
@@ -323,7 +331,6 @@ export default function RecordingPage() {
           liteCapRef.current = cap
           setLiteDurationCap(cap)
           sessionSourceRef.current = null
-          setSessionAccessSource(null)
 
           if (access.userId) {
             await grantLiteBonusCredit(access.userId, access.liteBonusCredits)
@@ -437,18 +444,21 @@ export default function RecordingPage() {
         }))
       }
       sessionSourceRef.current = null
-      setSessionAccessSource(null)
       liteCapRef.current = null
       setLiteDurationCap(null)
 
       const storageUrl = await uploadToSupabase(blob, id, userId || 'anonymous')
       const transcript = await transcribeAudio(blob)
-      const notes = transcript ? await generateNotes(transcript, courseName, unitName) : null
+      const { notes, structuredNotes } = transcript
+        ? await generateNotes(transcript, courseName, unitName)
+        : { notes: null, structuredNotes: undefined }
 
-      setUploadStatus(notes ? '✅ Notes ready!' : '⚠️ Could not generate notes')
+      setUploadStatus(notes ? '✅ Smart Ink notes ready!' : '⚠️ Could not generate notes')
 
       setRecordings((prev) => prev.map((r) =>
-        r.id === id ? { ...r, storageUrl: storageUrl || undefined, transcript: transcript || undefined, notes: notes || undefined, isProcessing: false } : r
+        r.id === id
+          ? { ...r, storageUrl: storageUrl || undefined, transcript: transcript || undefined, notes: notes || undefined, structuredNotes, isProcessing: false }
+          : r
       ))
 
       clearCanvas()
@@ -493,6 +503,7 @@ export default function RecordingPage() {
   }
 
   const remaining = freeCreditsRemaining(access)
+  const notesTier = getTierFromPlan(access.currentPlan, access.subscriptionStatus)
 
   return (
     <div className="min-h-screen bg-surface-base">
@@ -514,15 +525,15 @@ export default function RecordingPage() {
 
           <div>
             <h1 className="font-sora font-bold text-4xl text-white mb-2">Smart Recording</h1>
-            <p className="text-[#8B97B5]">Record lectures, get AI-generated notes automatically.</p>
+            <p className="text-[#8B97B5]">Record lectures, get AI-generated Smart Ink notes automatically.</p>
             {accessLoaded && (
               <p className="text-sm mt-2">
                 {isUnlimitedPlan(access) ? (
                   <span className="text-green-400">✨ Unlimited — {access.currentPlan} plan</span>
                 ) : remaining > 0 ? (
-                  <span className="text-brand-blue">🎓 {remaining} free AI credit{remaining !== 1 ? 's' : ''} left (shared across Quiz, Summarize, AI Tools & Recording)</span>
+                  <span className="text-brand-blue">🎓 {remaining} free AI credit{remaining !== 1 ? 's' : ''} left</span>
                 ) : access.liteBonusCredits > 0 ? (
-                  <span className="text-brand-blue">💳 {access.liteBonusCredits} bonus credit{access.liteBonusCredits !== 1 ? 's' : ''} from a past Lite payment</span>
+                  <span className="text-brand-blue">💳 {access.liteBonusCredits} bonus credit{access.liteBonusCredits !== 1 ? 's' : ''} available</span>
                 ) : (
                   <span className="text-brand-blue">💳 Free credits used — pay per lecture or subscribe</span>
                 )}
@@ -539,7 +550,7 @@ export default function RecordingPage() {
                   <p>✓ Echo cancellation</p>
                   <p>✓ Noise suppression</p>
                   <p>✓ Whisper transcription</p>
-                  <p>✓ GPT-4o notes</p>
+                  <p>✓ Smart Ink notes</p>
                 </div>
               </div>
 
@@ -710,7 +721,7 @@ export default function RecordingPage() {
                             </span>
                           )}
                           {recording.notes && !recording.isProcessing && (
-                            <span className="text-xs text-green-400">✓ Notes ready</span>
+                            <span className="text-xs text-green-400">✓ Smart Ink ready</span>
                           )}
                         </div>
                       </div>
@@ -738,9 +749,23 @@ export default function RecordingPage() {
                         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
                           className="border-t border-white/5 p-6 bg-surface-base overflow-hidden">
                           <h4 className="font-sora font-bold text-white mb-4 flex items-center gap-2">
-                            <FileText size={16} className="text-purple-400" /> AI Generated Notes
+                            <FileText size={16} className="text-purple-400" />
+                            Smart Ink Notes
+                            {notesTier !== 'plain' && (
+                              <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ml-auto ${
+                                notesTier === 'semester' ? 'bg-gradient-to-r from-indigo-500/20 to-purple-500/20 text-indigo-300 border border-indigo-400/30'
+                                : notesTier === 'pro' ? 'bg-brand-blue/15 text-brand-blue'
+                                : 'bg-white/5 text-[#8B97B5]'
+                              }`}>
+                                {notesTier === 'semester' ? '3D · Full Color' : notesTier === 'pro' ? '2D · Pro Color' : 'Lite · Sketch'}
+                              </span>
+                            )}
                           </h4>
-                          <div className="text-sm text-[#8B97B5] whitespace-pre-wrap leading-relaxed">{recording.notes}</div>
+                          {recording.structuredNotes ? (
+                            <SmartInkNotes note={recording.structuredNotes} tier={notesTier} />
+                          ) : (
+                            <div className="text-sm text-[#8B97B5] whitespace-pre-wrap leading-relaxed">{recording.notes}</div>
+                          )}
                         </motion.div>
                       )}
                     </AnimatePresence>
