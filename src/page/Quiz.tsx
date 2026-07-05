@@ -280,8 +280,8 @@ const { userId } = useAuth()
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-12">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
           <div>
-            <h1 className="font-sora font-bold text-4xl text-white mb-2">Generate Quiz</h1>
-            <p className="text-[#8B97B5]">Pick a unit, upload a past paper, or paste notes — STUDIA builds your quiz.</p>
+          <h1 className="font-sora font-bold text-4xl text-white mb-2">Test Yourself</h1>
+<p className="text-[#8B97B5]">Pick a unit, upload a past paper, or paste notes — STUDIA builds your practice test.</p>
             {accessLoaded && (
               <p className="text-sm mt-2">
                 {isUnlimitedPlan(access) ? (
