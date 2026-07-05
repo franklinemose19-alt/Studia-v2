@@ -89,8 +89,8 @@ export default function Dashboard() {
   const cards = [
     { icon: Mic, title: 'Record Lecture', desc: 'Smart recording with auto-tagging', path: '/recording', color: 'from-indigo-premium' },
     { icon: BookOpen, title: 'My Notes', desc: 'Save & organize notes', path: '/notes', color: 'from-purple-premium' },
-    { icon: FileText, title: 'Summarize', desc: 'Turn notes into quick summaries', path: '/summarize', color: 'from-purple-premium' },
-    { icon: BarChart3, title: 'Quiz Practice', desc: 'Test your knowledge', path: '/quiz', color: 'from-mint' },
+    
+    { icon: BarChart3, title: 'Test Yourself', desc: 'AI practice tests & past papers', path: '/quiz', color: 'from-mint' },
     { icon: Sparkles, title: 'AI Tools', desc: 'SnapSolve, past papers & deep notes', path: '/ai-tools', color: 'from-indigo-premium' },
     { icon: Calendar, title: 'Exam Countdown', desc: 'Track your exams', path: '/exam-countdown', color: 'from-warning' },
     { icon: TrendingUp, title: 'Adaptive Learning', desc: 'See your weak topics', path: '/adaptive-learning', color: 'from-mint' },
