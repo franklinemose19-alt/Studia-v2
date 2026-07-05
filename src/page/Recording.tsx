@@ -1,3 +1,5 @@
+import StudyChat from '../components/StudyChat'
+import { buildStudentContext, formatContextForAI } from '../lib/studentContext'
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mic, Square, Play, Pause, Trash2, Download, ArrowLeft, Loader, FileText, BookOpen, Phone, Lock } from 'lucide-react'
@@ -762,10 +764,18 @@ export default function RecordingPage() {
                             )}
                           </h4>
                           {recording.structuredNotes ? (
-                            <SmartInkNotes note={recording.structuredNotes} tier={notesTier} />
-                          ) : (
-                            <div className="text-sm text-[#8B97B5] whitespace-pre-wrap leading-relaxed">{recording.notes}</div>
-                          )}
+  <SmartInkNotes note={recording.structuredNotes} tier={notesTier} />
+) : (
+  <div className="text-sm text-[#8B97B5] whitespace-pre-wrap leading-relaxed">{recording.notes}</div>
+)}
+{recording.notes && (
+  <StudyChat
+    documentContext={recording.notes}
+    studentContext={formatContextForAI(buildStudentContext(access.currentPlan))}
+    mode="notes"
+    placeholder="Ask about these notes..."
+  />
+)}
                         </motion.div>
                       )}
                     </AnimatePresence>
