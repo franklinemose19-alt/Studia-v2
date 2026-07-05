@@ -1,3 +1,5 @@
+import StudyChat from '../components/StudyChat'
+import { buildStudentContext, formatContextForAI } from '../lib/studentContext'
 import { useAuth } from '../lib/AuthContext'
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -486,7 +488,17 @@ export default function AITools() {
                 </div>
                 {tab === 'snapsolve' && renderSnapSolve(result as SnapResult)}
                 {tab === 'pastpapers' && renderPastPapers(result as PastPaperResult)}
-                {tab === 'deepnotes' && renderDeepNotes(result as DeepNotesResult)}
+                {tab === 'deepnotes' && renderDeepNotes(result as DeepNotesResult)}<StudyChat
+  documentContext={JSON.stringify(result).slice(0, 3000)}
+  studentContext={formatContextForAI(buildStudentContext(access.currentPlan))}
+  mode={tab === 'snapsolve' ? 'snapsolve' : tab === 'deepnotes' ? 'notes' : 'general'}
+  placeholder={
+    tab === 'snapsolve' ? 'Ask a follow-up question...'
+    : tab === 'deepnotes' ? 'Ask about these deep notes...'
+    : 'Ask about this paper...'
+  }
+/>
+                
               </motion.div>
             )}
           </AnimatePresence>
