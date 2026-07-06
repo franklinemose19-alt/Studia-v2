@@ -1,3 +1,5 @@
+import { fetchWithRetry } from './_utils/openaiRetry.js'
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
@@ -11,6 +13,64 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'OpenAI API key not configured' })
     }
 
+    // ── Chat mode ──────────────────────────────────────────────────────────
+    if (mode === 'chat') {
+      const { chatMessages, documentContext, studentContext, chatMode } = req.body
+
+      if (!chatMessages || !Array.isArray(chatMessages)) {
+        return res.status(400).json({ error: 'chatMessages required' })
+      }
+
+      let systemPrompt = `You are STUDIA AI, an intelligent academic tutor for Kenyan university students. Be warm, concise, and exam-focused. Keep replies to 2-3 short paragraphs max unless more detail is genuinely needed.\n\n`
+
+      if (studentContext) systemPrompt += `${studentContext}\n\n`
+
+      if (documentContext) {
+        systemPrompt += `The student is asking about this content:\n${documentContext}\n\n`
+      }
+
+      if (chatMode === 'notes') {
+        systemPrompt += `Help the student understand their lecture notes. Explain concepts clearly, give examples, highlight exam-relevant points. Connect concepts to their known weak topics when relevant.`
+      } else if (chatMode === 'quiz') {
+        systemPrompt += `Help the student understand why quiz answers were correct or wrong. Give reasoning, mnemonics, and connect to their weak topics.`
+      } else if (chatMode === 'snapsolve') {
+        systemPrompt += `Continue tutoring the student on the problem. Go deeper if asked, simplify if they're confused, give related practice problems.`
+      } else {
+        systemPrompt += `Answer academic questions clearly. Be encouraging and practical for a Kenyan university context.`
+      }
+
+      const conversationMessages = chatMessages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      }))
+
+      const chatResponse = await fetchWithRetry('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          max_tokens: 600,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...conversationMessages,
+          ],
+        }),
+      })
+
+      const chatData = await chatResponse.json()
+
+      if (!chatData.choices?.[0]?.message?.content) {
+        console.error('Chat OpenAI error:', JSON.stringify(chatData))
+        return res.status(500).json({ error: 'Chat response failed' })
+      }
+
+      return res.status(200).json({ reply: chatData.choices[0].message.content })
+    }
+
+    // ── Standard modes ─────────────────────────────────────────────────────
     let messages
     const model = image ? 'gpt-4o' : 'gpt-4o-mini'
 
@@ -53,6 +113,7 @@ Only respond with the JSON object, nothing else.`,
 Only respond with the JSON object, nothing else.`
 
       messages = [{ role: 'user', content }]
+
     } else if (mode === 'pastpapers') {
       if (!image && !text) return res.status(400).json({ error: 'No content provided' })
       const content = image
@@ -102,6 +163,7 @@ Only respond with the JSON object, nothing else.`,
 Only respond with the JSON object, nothing else.`
 
       messages = [{ role: 'user', content }]
+
     } else if (mode === 'deepnotes') {
       if (!text && !image) return res.status(400).json({ error: 'No content provided' })
       const content = image
@@ -153,11 +215,12 @@ Only respond with the JSON object, nothing else.`,
 Only respond with the JSON object, nothing else.`
 
       messages = [{ role: 'user', content }]
+
     } else {
       return res.status(400).json({ error: 'Invalid mode' })
     }
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetchWithRetry('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -188,6 +251,7 @@ Only respond with the JSON object, nothing else.`
     }
 
     return res.status(200).json({ result: parsed })
+
   } catch (err) {
     console.error('AI Tools error:', err)
     return res.status(500).json({ error: err.message || 'Internal server error' })
