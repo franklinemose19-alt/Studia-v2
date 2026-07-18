@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import ProtectedRoute from './lib/ProtectedRoute'
+import AdminRoute from './lib/AdminRoute'
 import { AuthProvider } from './lib/AuthContext'
 import BottomNav from './components/BottomNav'
 
@@ -20,6 +21,7 @@ const Pricing = lazy(() => import('./page/Pricing'))
 const Checkout = lazy(() => import('./page/Checkout'))
 const PaymentDashboard = lazy(() => import('./page/PaymentDashboard'))
 const AITools = lazy(() => import('./page/AITools'))
+const AdminDashboard = lazy(() => import('./page/AdminDashboard'))
 
 function PageLoader() {
   return (
@@ -40,9 +42,9 @@ export default function App() {
             <Route path="/signup" element={<Signup />} />
             <Route path="/pricing" element={<Pricing />} />
 
-            {/* Summarize now lives inside /notes */}
             <Route path="/summarize" element={<Navigate to="/notes?tab=summarize" replace />} />
 
+            <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
             <Route path="/checkout" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
             <Route path="/ai-tools" element={<ProtectedRoute><AITools /></ProtectedRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
