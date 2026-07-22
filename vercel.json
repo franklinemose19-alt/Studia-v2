@@ -1,23 +1,7 @@
 {
   "rewrites": [
     {
-      "source": "/icon-192.png",
-      "destination": "/icon-192.png"
-    },
-    {
-      "source": "/icon-512.png",
-      "destination": "/icon-512.png"
-    },
-    {
-      "source": "/icon-maskable.png",
-      "destination": "/icon-maskable.png"
-    },
-    {
-      "source": "/manifest.json",
-      "destination": "/manifest.json"
-    },
-    {
-      "source": "/(.*)",
+      "source": "/((?!manifest\\.json|icon-192\\.png|icon-512\\.png|icon-maskable\\.png|sw\\.js|workbox-.*).*)",
       "destination": "/index.html"
     }
   ]
