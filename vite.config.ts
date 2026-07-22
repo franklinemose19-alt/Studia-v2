@@ -9,35 +9,51 @@ export default defineConfig({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
       strategies: 'generateSW',
-
-      // Use our own public/manifest.json — don't auto-generate one
-      manifest: false,
-
-      // Tell Vite to include these assets in the build output
       includeAssets: [
         'icon-192.png',
         'icon-512.png',
         'icon-maskable.png',
-        'manifest.json',
       ],
-
+      manifest: {
+        name: 'STUDIA AI',
+        short_name: 'STUDIA',
+        description: 'Turn every lecture into smart study material. AI notes, quizzes, and diagrams — built for Kenyan university students.',
+        theme_color: '#3B82F6',
+        background_color: '#080C18',
+        display: 'standalone',
+        orientation: 'portrait',
+        scope: '/',
+        start_url: '/',
+        id: '/',
+        icons: [
+          {
+            src: '/icon-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: '/icon-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: '/icon-maskable.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+        ],
+      },
       workbox: {
-        // Cache all app assets
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-
-        // Use index.html as offline fallback for navigation requests
         navigateFallback: 'index.html',
-
-        // Never intercept these as navigation requests —
-        // serve them as real files
         navigateFallbackDenylist: [
           /^\/icon-.*\.png$/,
           /^\/manifest\.json$/,
           /^\/api\//,
-          /^\/icons\//,
         ],
-
-        // External API calls — always go to network, never cache
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/api\.openai\.com\/.*/i,
@@ -49,10 +65,6 @@ export default defineConfig({
           },
           {
             urlPattern: /^https:\/\/sandbox\.safaricom\.co\.ke\/.*/i,
-            handler: 'NetworkOnly',
-          },
-          {
-            urlPattern: /^https:\/\/api\.safaricom\.co\.ke\/.*/i,
             handler: 'NetworkOnly',
           },
         ],
