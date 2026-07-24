@@ -1,3 +1,4 @@
+import { usePWAInstall } from '../hooks/usePWAInstall'
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
@@ -11,6 +12,8 @@ const REFERRAL_SNOOZE_KEY = 'referralReminderSnoozedUntil'
 
 export default function Dashboard() {
   const navigate = useNavigate()
+  const { installPrompt, isInstalled, isInstalling, install } = usePWAInstall()
+  
   const [stats, setStats] = useState({
     lectures: 0,
     quizzes: 0,
@@ -237,7 +240,37 @@ export default function Dashboard() {
           >
             <div className="absolute -right-20 -top-20 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
             <div className="relative z-10">
-              <h2 className="font-sora font-bold text-3xl mb-3">Pro Tip 💡</h2>
+             {/* Install app banner */}
+{!isInstalled && installPrompt && (
+  <motion.div
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    className="bg-gradient-to-r from-mint/20 to-light-blue/20 border border-mint/30 rounded-2xl p-6 flex flex-col sm:flex-row items-start sm:items-center gap-4"
+  >
+    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-mint to-light-blue flex items-center justify-center text-2xl shrink-0">
+      📲
+    </div>
+    <div className="flex-1 min-w-0">
+      <p className="font-sora font-bold text-navy text-lg">Install STUDIA AI</p>
+      <p className="text-gray-600 text-sm mt-0.5">Add to your home screen for instant access — works offline too.</p>
+    </div>
+    <button
+      onClick={install}
+      disabled={isInstalling}
+      className="bg-gradient-to-r from-mint to-light-blue text-white px-6 py-3 rounded-xl font-semibold hover:opacity-90 transition disabled:opacity-50 flex items-center gap-2 whitespace-nowrap shrink-0"
+    >
+      {isInstalling ? (
+        <>
+          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          Installing...
+        </>
+      ) : (
+        '📲 Install App'
+      )}
+    </button>
+  </motion.div>
+)}
+            <h2 className="font-sora font-bold text-3xl mb-3">Pro Tip 💡</h2>
               <p className="text-white/90 mb-6 max-w-2xl">
                 The most successful students record their lectures, summarize key concepts, and take quizzes regularly. STUDIA automates all of this for you.
               </p>
