@@ -1,10 +1,11 @@
+import { usePWAInstall } from '../hooks/usePWAInstall'
 import { motion } from 'framer-motion'
 import { Mic, BookOpen, Zap, Image, Calendar, Lock, Check } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 export default function Landing() {
   const navigate = useNavigate()
-
+const { installPrompt, isInstalled, isInstalling, install } = usePWAInstall()
   const scrollToFeatures = () => {
     document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })
   }
@@ -39,7 +40,12 @@ export default function Landing() {
         <div className="max-w-7xl mx-auto relative z-10">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center max-w-4xl mx-auto">
             <div className="inline-block bg-indigo-premium/10 text-indigo-premium px-4 py-1.5 rounded-full text-xs font-semibold mb-6">
-              🆕 Smart Ink Notes — Now with AI Diagrams
+              🆕 Smart Ink Notes — Now with AI Diagrams{!isInstalled && (
+  <div className="inline-flex items-center gap-2 bg-mint/10 text-mint px-3 py-1.5 rounded-full text-xs font-semibold mb-3 ml-2">
+    📲 Installable App
+  </div>
+)}
+              
             </div>
             <h1 className="font-sora font-bold text-4xl sm:text-5xl md:text-6xl text-navy mb-6 leading-tight">
               Turn Every Lecture Into<br />
@@ -48,14 +54,35 @@ export default function Landing() {
             <p className="text-lg sm:text-xl text-gray-600 mb-8 leading-relaxed max-w-2xl mx-auto">
               Record your lecture. STUDIA transcribes it, generates color-coded Smart Ink notes with auto-diagrams, and quizzes you — automatically.
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <button onClick={() => navigate('/signup')} className="bg-indigo-premium text-white px-8 py-4 rounded-xl font-semibold hover:bg-purple-premium transition">
-                🚀 Start Free — 3 AI Credits
-              </button>
-              <button onClick={() => navigate('/pricing')} className="border-2 border-navy text-navy px-8 py-4 rounded-xl font-semibold hover:bg-navy/5 transition">
-                View Plans
-              </button>
-            </div>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center flex-wrap">
+  <button onClick={() => navigate('/signup')} className="bg-indigo-premium text-white px-8 py-4 rounded-xl font-semibold hover:bg-purple-premium transition">
+    🚀 Start Free — 3 AI Credits
+  </button>
+  <button onClick={() => navigate('/pricing')} className="border-2 border-navy text-navy px-8 py-4 rounded-xl font-semibold hover:bg-navy/5 transition">
+    View Plans
+  </button>
+  {!isInstalled && installPrompt && (
+    <button
+      onClick={install}
+      disabled={isInstalling}
+      className="bg-gradient-to-r from-mint to-light-blue text-white px-8 py-4 rounded-xl font-semibold hover:opacity-90 transition flex items-center justify-center gap-2 disabled:opacity-50"
+    >
+      {isInstalling ? (
+        <>
+          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          Installing...
+        </>
+      ) : (
+        <>📲 Install App</>
+      )}
+    </button>
+  )}
+  {isInstalled && (
+    <div className="flex items-center gap-2 text-mint font-semibold px-4 py-4">
+      <span>✓</span> App Installed
+    </div>
+  )}
+</div>
             <p className="text-xs text-gray-400 mt-4">No card needed. M-Pesa payments. Made for Kenyan students.</p>
           </motion.div>
         </div>
