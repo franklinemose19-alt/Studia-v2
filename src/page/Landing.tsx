@@ -54,18 +54,27 @@ const { installPrompt, isInstalled, isInstalling, install } = usePWAInstall()
             <p className="text-lg sm:text-xl text-gray-600 mb-8 leading-relaxed max-w-2xl mx-auto">
               Record your lecture. STUDIA transcribes it, generates color-coded Smart Ink notes with auto-diagrams, and quizzes you — automatically.
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center flex-wrap">
+        {/* Primary CTAs */}
+<div className="flex flex-col sm:flex-row gap-4 justify-center">
   <button onClick={() => navigate('/signup')} className="bg-indigo-premium text-white px-8 py-4 rounded-xl font-semibold hover:bg-purple-premium transition">
     🚀 Start Free — 3 AI Credits
   </button>
   <button onClick={() => navigate('/pricing')} className="border-2 border-navy text-navy px-8 py-4 rounded-xl font-semibold hover:bg-navy/5 transition">
     View Plans
   </button>
-  {!isInstalled && installPrompt && (
+</div>
+
+{/* Install button — standalone row below CTAs */}
+<div className="flex justify-center mt-2">
+  {isInstalled ? (
+    <div className="flex items-center gap-2 bg-mint/10 border border-mint/30 text-mint font-semibold px-6 py-3 rounded-xl text-sm">
+      ✓ STUDIA AI is installed on your device
+    </div>
+  ) : installPrompt ? (
     <button
       onClick={install}
       disabled={isInstalling}
-      className="bg-gradient-to-r from-mint to-light-blue text-white px-8 py-4 rounded-xl font-semibold hover:opacity-90 transition flex items-center justify-center gap-2 disabled:opacity-50"
+      className="flex items-center gap-2 bg-gradient-to-r from-mint to-light-blue text-white px-8 py-3.5 rounded-xl font-semibold text-base hover:opacity-90 transition disabled:opacity-50 shadow-lg shadow-mint/20"
     >
       {isInstalling ? (
         <>
@@ -73,14 +82,15 @@ const { installPrompt, isInstalled, isInstalling, install } = usePWAInstall()
           Installing...
         </>
       ) : (
-        <>📲 Install App</>
+        <>
+          📲 Download the App — Free
+        </>
       )}
     </button>
-  )}
-  {isInstalled && (
-    <div className="flex items-center gap-2 text-mint font-semibold px-4 py-4">
-      <span>✓</span> App Installed
-    </div>
+  ) : (
+    <p className="text-xs text-gray-400 flex items-center gap-1.5">
+      📲 Open in Chrome on Android or Safari on iPhone to install
+    </p>
   )}
 </div>
             <p className="text-xs text-gray-400 mt-4">No card needed. M-Pesa payments. Made for Kenyan students.</p>
