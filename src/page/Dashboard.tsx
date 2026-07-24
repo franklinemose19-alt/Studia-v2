@@ -113,13 +113,34 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-white via-surface-light to-white">
       <nav className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-premium to-purple-premium flex items-center justify-center">
-              <span className="text-white font-bold">S</span>
-            </div>
-            <span className="font-sora font-bold text-navy text-lg">STUDIA</span>
-          </div>
+  <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+    <div className="flex items-center gap-3">
+      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-premium to-purple-premium flex items-center justify-center shrink-0">
+        <span className="text-white font-bold">S</span>
+      </div>
+      <span className="font-sora font-bold text-navy text-lg hidden sm:inline">STUDIA</span>
+
+      {/* Install button — top left, next to logo */}
+      {!isInstalled && installPrompt && (
+        <button
+          onClick={install}
+          disabled={isInstalling}
+          className="flex items-center gap-1.5 bg-gradient-to-r from-mint to-light-blue text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:opacity-90 transition disabled:opacity-50 ml-1"
+        >
+          {isInstalling ? (
+            <>
+              <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              Installing...
+            </>
+          ) : (
+            <>📲 Install</>
+          )}
+        </button>
+      )}
+      {isInstalled && (
+        <span className="text-xs text-mint font-semibold ml-1 hidden sm:inline">✓ Installed</span>
+      )}
+    </div>
 
           <div className="flex items-center gap-4">
             <div className="hidden md:flex items-center gap-2 bg-gray-100 rounded-lg px-4 py-2 w-64">
