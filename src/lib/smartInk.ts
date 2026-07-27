@@ -48,8 +48,16 @@ export function parseInlineHighlights(text: string): { text: string; highlight: 
 }
 
 export function getTierFromPlan(plan: string | null, status: string | null): NoteVisualTier {
-  if (status !== 'active') return 'lite'
-  if (plan === 'semester') return 'semester'
-  if (plan === 'pro') return 'pro'
-  return 'lite'
+  // New plan names
+  if (plan === 'valedictorian' && status === 'active') return 'semester'
+  if (plan === 'excellence' && status === 'active') return 'pro'
+  if (plan === 'achiever') return 'lite'
+  if (plan === 'explorer') return 'plain'
+
+  // Legacy plan names (backwards compatibility)
+  if (plan === 'semester' && status === 'active') return 'semester'
+  if (plan === 'pro' && status === 'active') return 'pro'
+  if (plan === 'lite') return 'lite'
+
+  return 'plain'
 }
