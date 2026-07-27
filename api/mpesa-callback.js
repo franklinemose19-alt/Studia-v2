@@ -1,17 +1,37 @@
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 
+async function supaFetch(path, options = {}) {
+  return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+      apikey: SUPABASE_SERVICE_KEY,
+      ...(options.headers || {}),
+    },
+  })
+}
+
 function getEndDate(planId) {
   const now = new Date()
-  if (planId === 'pro') { {
-    now.setDate(now.getDate() + 30)
-    return now.toISOString()
+  if (planId === 'excellence') {
+    const end = new Date(now)
+    end.setMonth(end.getMonth() + 1)
+    return end.toISOString()
   }
-  if (planId === 'semester') {
-    now.setMonth(now.getMonth() + 4)
-    return now.toISOString()
+  if (planId === 'valedictorian') {
+    const end = new Date(now)
+    end.setMonth(end.getMonth() + 6)
+    return end.toISOString()
   }
   return null
+}
+
+function getLectureAllowance(planId) {
+  if (planId === 'excellence') return 25      // 25 lectures/month
+  if (planId === 'valedictorian') return 80   // 80 lectures/semester
+  return 0
 }
 
 export default async function handler(req, res) {
@@ -20,146 +40,105 @@ export default async function handler(req, res) {
   }
 
   try {
-    const body = req.body
-    const stkCallback = body.Body?.stkCallback
-    if (!stkCallback) {
-      return res.status(400).json({ error: 'Invalid callback format' })
+    const callbackData = req.body?.Body?.stkCallback
+    if (!callbackData) {
+      return res.status(400).json({ error: 'Invalid callback structure' })
     }
 
-    const { CheckoutRequestID, ResultCode, ResultDesc, CallbackMetadata } = stkCallback
+    const { ResultCode, CheckoutRequestID } = callbackData
+    if (ResultCode !== 0) {
+      console.log(`Payment failed: ${CheckoutRequestID}, Code: ${ResultCode}`)
+      await supaFetch(`payments?transaction_id=eq.${CheckoutRequestID}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'failed', updated_at: new Date().toISOString() }),
+      })
+      return res.status(200).json({ success: true })
+    }
 
-    if (ResultCode === 0) {
-      const updateRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/payments?transaction_id=eq.${CheckoutRequestID}`,
-        {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
-            apikey: SUPABASE_SERVICE_KEY,
-            Prefer: 'return=representation',
-          },
-          body: JSON.stringify({
-            status: 'completed',
-            mpesa_confirmation: {
-              resultCode: ResultCode,
-              resultDesc: ResultDesc,
-              amount: CallbackMetadata?.Item?.[0]?.Value,
-              transactionDate: CallbackMetadata?.Item?.[1]?.Value,
-              transactionId: CallbackMetadata?.Item?.[2]?.Value,
-              phoneNumber: CallbackMetadata?.Item?.[3]?.Value,
-            },
-            completed_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          }),
-        }
-      )
+    // Fetch payment record
+    const paymentRes = await supaFetch(`payments?transaction_id=eq.${CheckoutRequestID}`)
+    const payments = await paymentRes.json()
+    const payment = payments?.[0]
 
-      if (!updateRes.ok) {
-        console.error('Failed to update payment:', await updateRes.text())
-        return res.status(200).json({ success: true })
-      }
+    if (!payment) {
+      console.error('Payment record not found:', CheckoutRequestID)
+      return res.status(200).json({ success: true })
+    }
 
-      const updatedPayments = await updateRes.json()
-      const payment = updatedPayments?.[0]
-      if (!payment) {
-        console.error('No payment row found for', CheckoutRequestID)
-        return res.status(200).json({ success: true })
-      }
+    // Update payment to completed
+    await supaFetch(`payments?transaction_id=eq.${CheckoutRequestID}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }),
+    })
 
     const userId = payment.created_by
-      const planId = payment.plan_id
-      const planName = payment.plan_name
+    const planId = payment.plan_id
 
-      if (!userId) {
-        console.warn('Payment has no linked user — cannot activate plan')
-        return res.status(200).json({ success: true })
-      }
+    if (!userId) {
+      console.warn('No userId on payment')
+      return res.status(200).json({ success: true })
+    }
 
-      // Lite is pay-per-lecture, not a recurring plan — Recording.tsx unlocks
-      // access itself via polling. Don't touch subscriptions/users for it.
-      if (planId && planId.startsWith('lite')) {
-        console.log(`✅ Lite lecture payment confirmed for user ${userId}`)
-        return res.status(200).json({ success: true })
-      }
+    // ── Achiever (pay-per-lecture) — don't touch subscriptions ────────────
+    if (planId && (planId.startsWith('achiever') || planId.startsWith('lite'))) {
+      console.log(`✅ Achiever lecture payment confirmed for user ${userId}`)
+      // Grant one bonus AI credit for non-recording AI features
+      const userRes = await supaFetch(`users?auth_id=eq.${userId}&select=lite_bonus_credits`)
+      const userData = await userRes.json()
+      const currentBonus = userData?.[0]?.lite_bonus_credits || 0
+      await supaFetch(`users?auth_id=eq.${userId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ lite_bonus_credits: currentBonus + 1 }),
+      })
+      return res.status(200).json({ success: true })
+    }
 
+    // ── Excellence / Valedictorian — activate subscription ────────────────
+    if (planId === 'excellence' || planId === 'valedictorian') {
       const endDate = getEndDate(planId)
+      const allowance = getLectureAllowance(planId)
+      const now = new Date().toISOString()
 
-      const subRes = await fetch(`${SUPABASE_URL}/rest/v1/subscriptions`, {
+      // Upsert subscription
+      await supaFetch(`subscriptions`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
-          apikey: SUPABASE_SERVICE_KEY,
-          Prefer: 'return=representation',
-        },
+        headers: { Prefer: 'resolution=merge-duplicates' },
         body: JSON.stringify({
           user_id: userId,
           plan_id: planId,
-          plan_name: planName,
           status: 'active',
-          start_date: new Date().toISOString(),
+          start_date: now,
           end_date: endDate,
-          payment_id: payment.id,
-          auto_renew: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          created_at: now,
+          updated_at: now,
         }),
       })
 
-      let subscriptionId = null
-      if (subRes.ok) {
-        const subData = await subRes.json()
-        subscriptionId = subData?.[0]?.id || null
-      } else {
-        console.error('Failed to create subscription:', await subRes.text())
-      }
+      // Update user record — reset lecture usage, set new allowance
+      await supaFetch(`users?auth_id=eq.${userId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          current_plan: planId,
+          subscription_status: 'active',
+          lecture_allowance: allowance,
+          lectures_used: 0,
+          period_start: now,
+          period_end: endDate,
+          plan_locked: false,
+          updated_at: now,
+        }),
+      })
 
-      const userUpdateRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/users?auth_id=eq.${userId}`,
-        {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
-            apikey: SUPABASE_SERVICE_KEY,
-            Prefer: 'return=minimal',
-          },
-          body: JSON.stringify({
-            current_plan: planName,
-            plan_id: planId,
-            subscription_status: 'active',
-            subscription_id: subscriptionId,
-            updated_at: new Date().toISOString(),
-          }),
-        }
-      )
-
-      if (!userUpdateRes.ok) {
-        console.error('Failed to update user plan:', await userUpdateRes.text())
-      }
-
-      console.log(`✅ Plan activated: user ${userId} → ${planName}`)
-      return res.status(200).json({ success: true })
-
-    } else {
-      await fetch(
-        `${SUPABASE_URL}/rest/v1/payments?transaction_id=eq.${CheckoutRequestID}`,
-        {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
-            apikey: SUPABASE_SERVICE_KEY,
-          },
-          body: JSON.stringify({ status: 'failed', updated_at: new Date().toISOString() }),
-        }
-      )
-      console.log(`Payment failed: ${CheckoutRequestID}. Code: ${ResultCode}`)
-      return res.status(200).json({ success: true })
+      console.log(`✅ ${planId} activated for user ${userId} — ${allowance} lectures until ${endDate}`)
     }
-  } catch (error) {
-    console.error('M-Pesa Callback Error:', error)
+
     return res.status(200).json({ success: true })
+  } catch (error) {
+    console.error('Callback error:', error)
+    return res.status(500).json({ error: error.message })
   }
 }
