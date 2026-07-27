@@ -24,13 +24,10 @@ export default async function handler(req, res) {
       let systemPrompt = `You are STUDIA AI, an intelligent academic tutor for Kenyan university students. Be warm, concise, and exam-focused. Keep replies to 2-3 short paragraphs max unless more detail is genuinely needed.\n\n`
 
       if (studentContext) systemPrompt += `${studentContext}\n\n`
-
-      if (documentContext) {
-        systemPrompt += `The student is asking about this content:\n${documentContext}\n\n`
-      }
+      if (documentContext) systemPrompt += `The student is asking about this content:\n${documentContext}\n\n`
 
       if (chatMode === 'notes') {
-        systemPrompt += `Help the student understand their lecture notes. Explain concepts clearly, give examples, highlight exam-relevant points. Connect concepts to their known weak topics when relevant.`
+        systemPrompt += `Help the student understand their lecture notes. Explain concepts clearly, give examples, highlight exam-relevant points.`
       } else if (chatMode === 'quiz') {
         systemPrompt += `Help the student understand why quiz answers were correct or wrong. Give reasoning, mnemonics, and connect to their weak topics.`
       } else if (chatMode === 'snapsolve') {
@@ -39,11 +36,6 @@ export default async function handler(req, res) {
         systemPrompt += `Answer academic questions clearly. Be encouraging and practical for a Kenyan university context.`
       }
 
-      const conversationMessages = chatMessages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      }))
-
       const chatResponse = await fetchWithRetry('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -51,17 +43,16 @@ export default async function handler(req, res) {
           Authorization: `Bearer ${OPENAI_API_KEY}`,
         },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model: 'gpt-5-mini',
           max_tokens: 600,
           messages: [
             { role: 'system', content: systemPrompt },
-            ...conversationMessages,
+            ...chatMessages.map((m) => ({ role: m.role, content: m.content })),
           ],
         }),
       })
 
       const chatData = await chatResponse.json()
-
       if (!chatData.choices?.[0]?.message?.content) {
         console.error('Chat OpenAI error:', JSON.stringify(chatData))
         return res.status(500).json({ error: 'Chat response failed' })
@@ -72,7 +63,6 @@ export default async function handler(req, res) {
 
     // ── Standard modes ─────────────────────────────────────────────────────
     let messages
-    const model = image ? 'gpt-4o' : 'gpt-4o-mini'
 
     if (mode === 'snapsolve') {
       if (!image && !text) return res.status(400).json({ error: 'No image or text provided' })
@@ -94,7 +84,6 @@ Respond with a JSON object in this exact format:
     { "question": "Related MCQ question", "options": ["A", "B", "C", "D"], "answer": "B" }
   ]
 }
-
 Only respond with the JSON object, nothing else.`,
             },
           ]
@@ -109,7 +98,6 @@ Only respond with the JSON object, nothing else.`,
     { "question": "Related MCQ question", "options": ["A", "B", "C", "D"], "answer": "B" }
   ]
 }
-
 Only respond with the JSON object, nothing else.`
 
       messages = [{ role: 'user', content }]
@@ -139,7 +127,6 @@ Respond with a JSON object in this exact format:
   "exam_tips": ["Tip 1", "Tip 2", "Tip 3"],
   "predicted_topics": ["Topic likely to appear", "Topic 2"]
 }
-
 Only respond with the JSON object, nothing else.`,
             },
           ]
@@ -159,7 +146,6 @@ Only respond with the JSON object, nothing else.`,
   "exam_tips": ["Tip 1", "Tip 2", "Tip 3"],
   "predicted_topics": ["Topic likely to appear", "Topic 2"]
 }
-
 Only respond with the JSON object, nothing else.`
 
       messages = [{ role: 'user', content }]
@@ -190,7 +176,6 @@ Respond with a JSON object in this exact format:
   "revision_checklist": ["Point to remember 1", "Point to remember 2"],
   "further_reading": ["Topic to explore 1", "Topic to explore 2"]
 }
-
 Only respond with the JSON object, nothing else.`,
             },
           ]
@@ -211,7 +196,6 @@ Only respond with the JSON object, nothing else.`,
   "revision_checklist": ["Point 1", "Point 2"],
   "further_reading": ["Topic 1", "Topic 2"]
 }
-
 Only respond with the JSON object, nothing else.`
 
       messages = [{ role: 'user', content }]
@@ -227,7 +211,7 @@ Only respond with the JSON object, nothing else.`
         Authorization: `Bearer ${OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model,
+        model: 'gpt-5-mini',
         messages,
         max_tokens: 3000,
       }),
