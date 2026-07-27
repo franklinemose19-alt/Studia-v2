@@ -1,5 +1,8 @@
 import { fetchWithRetry } from './_utils/openaiRetry.js'
 
+// Simple in-memory cache — helps within a function instance's lifetime
+const notesCache = new Map()
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
@@ -15,18 +18,25 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'API key not configured' })
     }
 
+    // Cache key based on first 200 chars of transcript + course/unit
+    const cacheKey = `${transcript.slice(0, 200)}-${courseName || ''}-${unitName || ''}`
+    if (notesCache.has(cacheKey)) {
+      console.log('Cache hit: lecture notes')
+      return res.status(200).json(notesCache.get(cacheKey))
+    }
+
     const systemPrompt = `You are STUDIA Smart Ink, an AI that converts lecture transcripts into beautifully structured, exam-focused study notes for Kenyan university students across ALL subjects (medicine, law, engineering, business, science, humanities, etc).
 
-Think like the best student in class taking notes. Adapt entirely to the actual subject matter — do NOT force medical categories onto non-medical content.
+Think like the best student in class taking notes. Automatically decide what deserves a heading, a definition box, an example, an exam tip, or a table — based on the ACTUAL subject matter of this specific transcript. Do not force medical-style categories onto non-medical content — adapt entirely to the real subject.
 
-Return ONLY valid JSON (no markdown fences, no explanation) in this exact shape:
+Return ONLY valid JSON, no markdown fences, no explanation, in this exact shape:
 {
   "title": "Short descriptive title for this lecture",
-  "subjectArea": "Medicine | Law | Engineering | Business | Computer Science | Economics | Science | Humanities | General",
+  "subjectArea": "Best-guess subject area, e.g. Medicine, Law, Engineering, Business, Computer Science, Economics, General",
   "sections": [
     { "type": "heading", "text": "MAIN TOPIC" },
     { "type": "subheading", "text": "Subtopic name" },
-    { "type": "paragraph", "text": "Explanation. Wrap key terms in **double asterisks**." },
+    { "type": "paragraph", "text": "Explanation text. Wrap key terms in **double asterisks**." },
     { "type": "definition", "text": "Term: clear definition" },
     { "type": "example", "text": "A concrete example or application" },
     { "type": "examtip", "text": "A high-yield exam-ready point" },
@@ -36,8 +46,7 @@ Return ONLY valid JSON (no markdown fences, no explanation) in this exact shape:
       "type": "flowchart",
       "title": "Short chart title",
       "nodes": [
-        { "id": "1", "label": "Step 1", "sublabel": "optional detail", "shape": "rect|diamond|oval" },
-        { "id": "2", "label": "Step 2", "sublabel": "", "shape": "rect" }
+        { "id": "1", "label": "Step 1", "sublabel": "optional detail", "shape": "rect|diamond|oval" }
       ],
       "edges": [
         { "from": "1", "to": "2", "label": "optional arrow label" }
@@ -52,12 +61,12 @@ Return ONLY valid JSON (no markdown fences, no explanation) in this exact shape:
 }
 
 Rules:
-- Use "flowchart" sections for processes, cause-effect chains, classifications, or step-by-step procedures. Max 8 nodes per chart. Limit to 1-2 flowcharts per lecture.
-- Use "table" for genuine comparisons or classifications — only when it truly fits.
+- Use "flowchart" sections for processes, cause-effect chains, classifications, or step-by-step procedures. Max 8 nodes. Limit to 1-2 flowcharts per lecture.
+- Use "table" for genuine comparisons only.
 - Use "examtip" sparingly — only genuinely high-yield points.
 - Keep paragraphs concise — a few sentences max.
-- Produce 6-16 sections total. Include quickRevision always.
-- node "shape": use "rect" for steps/concepts, "diamond" for decisions/conditions, "oval" for start/end points.`
+- Produce 6-16 sections total. Always include quickRevision.
+- node shape: "rect" for steps, "diamond" for decisions, "oval" for start/end.`
 
     const response = await fetchWithRetry('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -66,7 +75,7 @@ Rules:
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4.1-mini',
+        model: 'gpt-5-mini',
         max_tokens: 4000,
         response_format: { type: 'json_object' },
         messages: [
@@ -100,7 +109,16 @@ ${transcript}`,
     }
 
     const plainText = flattenToPlainText(structured)
-    return res.status(200).json({ notes: plainText, structured })
+    const result = { notes: plainText, structured }
+
+    // Cache the result
+    notesCache.set(cacheKey, result)
+    if (notesCache.size > 50) {
+      const firstKey = notesCache.keys().next().value
+      notesCache.delete(firstKey)
+    }
+
+    return res.status(200).json(result)
   } catch (error) {
     console.error('Lecture notes generation error:', error)
     return res.status(500).json({ error: error.message || 'Internal server error' })
