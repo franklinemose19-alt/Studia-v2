@@ -1,3 +1,5 @@
+import { fetchWithRetry } from './_utils/openaiRetry.js'
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
@@ -20,7 +22,7 @@ export default async function handler(req, res) {
       messages = [
         {
           role: 'system',
-          content: 'You are a helpful study assistant. Read the handwritten or printed lecture notes in the image and summarize them into clear, concise key points. Keep it under 300 words. Use bullet points for clarity.',
+          content: 'You are a helpful study assistant for Kenyan university students. Read the handwritten or printed lecture notes in the image and summarize them into clear, concise key points. Keep it under 300 words. Use bullet points for clarity.',
         },
         {
           role: 'user',
@@ -34,7 +36,7 @@ export default async function handler(req, res) {
       messages = [
         {
           role: 'system',
-          content: 'You are a helpful study assistant. Summarize the lecture notes provided by the user into clear, concise key points. Keep it under 300 words. Use bullet points for clarity.',
+          content: 'You are a helpful study assistant for Kenyan university students. Summarize the lecture notes provided by the user into clear, concise key points. Keep it under 300 words. Use bullet points for clarity.',
         },
         {
           role: 'user',
@@ -43,14 +45,14 @@ export default async function handler(req, res) {
       ]
     }
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetchWithRetry('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: image ? 'gpt-4o' : 'gpt-3.5-turbo',
+        model: 'gpt-5-mini',
         messages,
         temperature: 0.7,
         max_tokens: 500,
