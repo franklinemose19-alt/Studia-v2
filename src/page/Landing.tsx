@@ -1,154 +1,357 @@
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Loader, Eye, EyeOff } from 'lucide-react'
-import { useNavigate, useLocation } from 'react-router-dom'
-import { supabase } from '../lib/supabaseClient'
+import { Mic, BookOpen, Zap, Image, Calendar, Lock, Check, Star } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { usePWAInstall } from '../hooks/usePWAInstall'
 import { useAuth } from '../lib/AuthContext'
 
-export default function Login() {
+export default function Landing() {
   const navigate = useNavigate()
-  const location = useLocation()
+  const { installPrompt, isInstalled, isInstalling, install } = usePWAInstall()
   const { signedIn, loading } = useAuth()
 
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
-
-  // If already signed in, go straight to dashboard (or where they came from)
+  // Already signed in → skip landing, go straight to dashboard
   useEffect(() => {
     if (!loading && signedIn) {
-      const from = (location.state as any)?.from?.pathname || '/dashboard'
-      navigate(from, { replace: true })
+      navigate('/dashboard', { replace: true })
     }
-  }, [signedIn, loading, navigate, location])
+  }, [signedIn, loading, navigate])
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setSubmitting(true)
-    setError('')
-
-    try {
-      if (!email || !password) {
-        setError('Please enter email and password')
-        setSubmitting(false)
-        return
-      }
-
-      console.log('Attempting login with email:', email)
-      const data = await supabase.signIn(email, password)
-
-      console.log('Login successful:', data)
-      // AuthContext's onAuthStateChange fires automatically —
-      // no need to manually navigate, the useEffect above handles it
-    } catch (err: any) {
-      console.error('Login error:', err)
-      setError(err.message || 'An error occurred during login')
-      setSubmitting(false)
-    }
+  const scrollToFeatures = () => {
+    document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })
   }
 
-  // Show nothing while session check is in progress
   if (loading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-indigo-premium" />
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-premium to-purple-premium flex items-center justify-center">
+            <span className="text-white font-bold text-xl">S</span>
+          </div>
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-premium" />
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-white via-surface-light to-white flex items-center justify-center px-4">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
-        <button
-          onClick={() => navigate('/')}
-          className="flex items-center gap-2 text-navy hover:text-indigo-premium transition mb-8"
-        >
-          <ArrowLeft size={20} />
-          Back
-        </button>
-
-        <div className="bg-white rounded-2xl border border-gray-200 p-8 shadow-sm">
-          {/* Logo */}
-          <div className="flex items-center gap-2 mb-6">
+    <div className="min-h-screen bg-white overflow-hidden">
+      {/* Nav */}
+      <nav className="fixed w-full top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-premium to-purple-premium flex items-center justify-center">
-              <span className="text-white font-bold text-lg">S</span>
+              <span className="text-white font-bold text-xl">S</span>
             </div>
             <span className="font-sora font-bold text-navy text-lg">STUDIA AI</span>
           </div>
-
-          <h1 className="font-sora font-bold text-3xl text-navy mb-1">Welcome back</h1>
-          <p className="text-gray-500 text-sm mb-8">Sign in to continue to your dashboard</p>
-
-          {error && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-              className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
-              <p className="text-sm text-red-600">{error}</p>
-            </motion.div>
-          )}
-
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-navy mb-2">Email</label>
-              <input
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={submitting}
-                autoComplete="email"
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-navy placeholder-gray-400 outline-none focus:border-indigo-premium transition disabled:opacity-50 text-base"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-navy mb-2">Password</label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={submitting}
-                  autoComplete="current-password"
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 pr-12 text-navy placeholder-gray-400 outline-none focus:border-indigo-premium transition disabled:opacity-50 text-base"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-3.5 text-gray-400 hover:text-navy"
-                  disabled={submitting}
-                >
-                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={submitting}
-              className="w-full bg-indigo-premium text-white font-bold py-3.5 rounded-xl hover:bg-purple-premium transition disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {submitting ? (
-                <>
-                  <Loader className="animate-spin" size={20} />
-                  Signing in...
-                </>
-              ) : (
-                'Sign In'
-              )}
+          <div className="hidden md:flex items-center gap-8">
+            <button onClick={scrollToFeatures} className="text-navy hover:text-indigo-premium transition text-sm font-medium">Features</button>
+            <button onClick={() => navigate('/pricing')} className="text-navy hover:text-indigo-premium transition text-sm font-medium">Pricing</button>
+            <button onClick={() => navigate('/login')} className="text-navy hover:text-indigo-premium transition text-sm font-medium">Sign In</button>
+            <button onClick={() => navigate('/signup')} className="bg-indigo-premium text-white px-5 py-2 rounded-lg hover:bg-purple-premium transition text-sm font-semibold">
+              Get Started
             </button>
-          </form>
-
-          <p className="text-center text-sm text-gray-600 mt-6">
-            Don't have an account?{' '}
-            <button onClick={() => navigate('/signup')} className="text-indigo-premium hover:text-purple-premium font-semibold">
-              Sign up free
-            </button>
-          </p>
+          </div>
+          <button onClick={() => navigate('/signup')} className="md:hidden bg-indigo-premium text-white px-4 py-2 rounded-lg text-sm font-semibold">
+            Start Free
+          </button>
         </div>
-      </motion.div>
+      </nav>
+
+      {/* ── HERO ──────────────────────────────────────────────────────────── */}
+      <section className="pt-28 sm:pt-36 pb-16 sm:pb-24 px-4 sm:px-6 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-indigo-premium/5 via-purple-premium/5 to-transparent" />
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-gradient-to-r from-indigo-premium/10 to-purple-premium/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="max-w-5xl mx-auto relative z-10 text-center">
+
+          {/* Eyebrow */}
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+            <span className="inline-flex items-center gap-2 bg-indigo-premium/8 border border-indigo-premium/20 text-indigo-premium px-4 py-1.5 rounded-full text-xs font-semibold mb-6">
+              <span className="w-1.5 h-1.5 bg-indigo-premium rounded-full animate-pulse" />
+              Built for university students
+            </span>
+          </motion.div>
+
+          {/* Headline */}
+          <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+            className="font-sora font-bold text-5xl sm:text-6xl md:text-7xl text-navy mb-6 leading-[1.1] tracking-tight">
+            Record Once.<br />
+            <span className="bg-gradient-to-r from-indigo-premium to-purple-premium bg-clip-text text-transparent">
+              Revise Forever.
+            </span>
+          </motion.h1>
+
+          {/* Sub-headline */}
+          <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+            className="text-lg sm:text-xl text-gray-500 mb-4 max-w-2xl mx-auto leading-relaxed">
+            Spend less time writing notes and more time mastering your courses.
+          </motion.p>
+
+          {/* Description */}
+          <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
+            className="text-base sm:text-lg text-gray-600 mb-10 max-w-xl mx-auto">
+            Turn every lecture into AI-powered notes, quizzes, summaries, and flashcards in minutes.
+          </motion.p>
+
+          {/* CTAs */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
+            className="flex flex-col sm:flex-row gap-4 justify-center mb-6">
+            <button
+              onClick={() => navigate('/signup')}
+              className="bg-indigo-premium text-white px-8 py-4 rounded-xl font-bold text-base hover:bg-purple-premium transition shadow-lg shadow-indigo-premium/25 flex items-center justify-center gap-2"
+            >
+              🚀 Start Learning Free
+            </button>
+            <button
+              onClick={scrollToFeatures}
+              className="border-2 border-gray-200 text-navy px-8 py-4 rounded-xl font-bold text-base hover:border-indigo-premium/50 hover:bg-gray-50 transition flex items-center justify-center gap-2"
+            >
+              ▶️ See How It Works
+            </button>
+          </motion.div>
+
+          {/* Install button */}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.35 }}
+            className="flex justify-center mb-8">
+            {isInstalled ? (
+              <div className="flex items-center gap-2 text-mint text-sm font-semibold">
+                <Check size={16} /> STUDIA AI is installed on your device
+              </div>
+            ) : installPrompt ? (
+              <button onClick={install} disabled={isInstalling}
+                className="flex items-center gap-2 bg-gradient-to-r from-mint to-light-blue text-white px-7 py-3 rounded-xl font-semibold text-sm hover:opacity-90 transition disabled:opacity-50 shadow-md shadow-mint/20">
+                {isInstalling ? (
+                  <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Installing...</>
+                ) : (
+                  <>📲 Install STUDIA AI — Free</>
+                )}
+              </button>
+            ) : null}
+          </motion.div>
+
+          {/* Trust badges */}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
+            className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 text-xs text-gray-500">
+            <span className="flex items-center gap-1.5">
+              <Check size={13} className="text-mint" />
+              3 AI lectures included
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Check size={13} className="text-mint" />
+              No credit card required
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Check size={13} className="text-mint" />
+              Powered by GPT-5 mini
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Check size={13} className="text-mint" />
+              M-Pesa payments
+            </span>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ── SOCIAL PROOF ───────────────────────────────────────────────────── */}
+      <section className="py-12 px-4 sm:px-6 bg-gray-50/50">
+        <div className="max-w-6xl mx-auto">
+          <p className="text-center text-sm text-gray-400 font-medium mb-8">Students are studying smarter with STUDIA</p>
+          <div className="grid sm:grid-cols-3 gap-5">
+            {[
+              { quote: 'I revised my entire CAT in one evening using STUDIA. The AI quiz questions were spot on.', who: 'Brian K.', course: 'Computer Science Student' },
+              { quote: 'My lecture recordings became organized notes automatically. I stopped missing important points.', who: 'Faith M.', course: 'Nursing Student' },
+              { quote: 'I no longer spend hours rewriting notes. STUDIA does it in minutes and the Smart Ink notes are beautiful.', who: 'James O.', course: 'Engineering Student' },
+            ].map((t, i) => (
+              <motion.div key={i} initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}
+                className="bg-white rounded-2xl p-6 border border-gray-200 hover:border-indigo-premium/30 hover:shadow-lg transition">
+                <div className="flex gap-0.5 mb-4">
+                  {[...Array(5)].map((_, j) => (
+                    <Star key={j} size={14} className="text-warning fill-warning" />
+                  ))}
+                </div>
+                <p className="text-gray-700 text-sm leading-relaxed mb-4">"{t.quote}"</p>
+                <div>
+                  <p className="font-semibold text-navy text-sm">{t.who}</p>
+                  <p className="text-xs text-gray-400">{t.course}</p>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── FEATURES ────────────────────────────────────────────────────────── */}
+      <section id="features" className="py-16 sm:py-24 px-4 sm:px-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-14">
+            <h2 className="font-sora font-bold text-3xl sm:text-4xl text-navy mb-4">
+              Everything you need to ace your exams
+            </h2>
+            <p className="text-gray-500 max-w-xl mx-auto">
+              STUDIA replaces five separate study apps with one AI-powered platform built for Kenyan university students.
+            </p>
+          </div>
+          <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-6">
+            {[
+              { icon: Mic, title: 'Smart Recording', desc: 'Record any lecture. AI transcribes it, generates notes, and maps it to your syllabus topics automatically.' },
+              { icon: BookOpen, title: '🖍️ Smart Ink Notes', desc: 'Beautiful notes that make revision easier before exams. Color-coded, structured, and exam-focused.' },
+              { icon: Zap, title: 'AI Quiz Engine', desc: 'Revise faster with AI-powered quizzes. Upload a past paper PDF and practice with real exam-style questions.' },
+              { icon: Image, title: 'SnapSolve', desc: 'Snap any question, whiteboard, or assignment. Get a detailed step-by-step answer in seconds.' },
+              { icon: Calendar, title: 'Exam Countdown', desc: 'Upload your official timetable — STUDIA auto-matches your exam dates to units and starts the countdown.' },
+              { icon: Lock, title: 'Offline Vault', desc: 'Download everything to your phone. Study without internet — on matatu, in the library, anywhere.' },
+            ].map((feature, i) => (
+              <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
+                className="bg-white rounded-2xl p-6 border border-gray-200 hover:border-indigo-premium/50 hover:shadow-lg transition group cursor-pointer">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-premium to-purple-premium text-white flex items-center justify-center mb-5 group-hover:scale-110 transition">
+                  <feature.icon size={22} />
+                </div>
+                <h3 className="font-sora font-bold text-base text-navy mb-2">{feature.title}</h3>
+                <p className="text-gray-500 text-sm leading-relaxed">{feature.desc}</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── TRUST ───────────────────────────────────────────────────────────── */}
+      <section className="py-16 px-4 sm:px-6 bg-gray-50/50">
+        <div className="max-w-5xl mx-auto">
+          <h2 className="font-sora font-bold text-2xl text-navy text-center mb-10">Why students trust STUDIA</h2>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            {[
+              { icon: '🎓', title: 'Built for University Students', desc: 'Designed specifically for Kenyan campus life' },
+              { icon: '💳', title: 'Secure M-Pesa Payments', desc: 'Pay with the method you already use' },
+              { icon: '🔒', title: 'Private Recordings', desc: 'Your lectures belong only to you' },
+              { icon: '☁️', title: 'Sync Across Devices', desc: 'Start on phone, continue on laptop' },
+              { icon: '⚡', title: 'Powered by GPT-5 mini', desc: 'Fastest AI model available today' },
+            ].map((item, i) => (
+              <motion.div key={i} initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}
+                className="bg-white rounded-2xl p-5 border border-gray-200 hover:border-indigo-premium/30 hover:shadow-md transition text-center group">
+                <p className="text-3xl mb-3 group-hover:scale-110 transition inline-block">{item.icon}</p>
+                <p className="font-sora font-bold text-navy text-sm mb-1">{item.title}</p>
+                <p className="text-xs text-gray-500">{item.desc}</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── PRICING PREVIEW ──────────────────────────────────────────────────── */}
+      <section className="py-16 sm:py-20 px-4 sm:px-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-10">
+            <h2 className="font-sora font-bold text-3xl sm:text-4xl text-navy mb-3">
+              Affordable for every student
+            </h2>
+            <p className="text-gray-500">Start free. Pay only when you need more.</p>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+            {[
+              { emoji: '🌍', plan: 'Explorer', price: 'Free', period: '', badge: null, perks: ['3 lifetime AI lectures', 'Smart Ink notes', 'Quiz generation'], highlight: false },
+              { emoji: '🎯', plan: 'Achiever', price: 'KSh 29', period: '/lecture', badge: '⭐ Popular', perks: ['Pay as you go', 'Sketch Smart Ink', '1 bonus credit'], highlight: false },
+              { emoji: '🚀', plan: 'Excellence', price: 'KSh 399', period: '/month', badge: null, perks: ['25 AI lectures/month', 'Full color Smart Ink', 'SnapSolve + Past Papers'], highlight: false },
+              { emoji: '🏆', plan: 'Valedictorian', price: 'KSh 1,200', period: '/semester', badge: '🔥 Best Value', perks: ['80 AI lectures/semester', '3D gradient notes', 'Everything included'], highlight: true },
+            ].map((plan, i) => (
+              <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}
+                className={`rounded-2xl p-6 border relative ${
+                  plan.highlight
+                    ? 'bg-gradient-to-br from-warning/20 to-red-500/10 border-warning/40 shadow-xl scale-105'
+                    : 'bg-white border-gray-200 hover:shadow-md transition'
+                }`}>
+                {plan.badge && (
+                  <span className={`absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full text-xs font-bold text-white whitespace-nowrap ${plan.highlight ? 'bg-warning' : 'bg-light-blue'}`}>
+                    {plan.badge}
+                  </span>
+                )}
+                <p className="text-2xl mb-1">{plan.emoji}</p>
+                <h3 className="font-sora font-bold text-lg text-navy mb-1">{plan.plan}</h3>
+                <div className="flex items-baseline gap-1 mb-4">
+                  <span className="text-2xl font-bold text-navy">{plan.price}</span>
+                  {plan.period && <span className="text-gray-500 text-xs">{plan.period}</span>}
+                </div>
+                <ul className="space-y-1.5 mb-5">
+                  {plan.perks.map((perk, j) => (
+                    <li key={j} className="flex items-center gap-2 text-xs text-gray-700">
+                      <Check size={12} className="text-mint shrink-0" /> {perk}
+                    </li>
+                  ))}
+                </ul>
+                <button onClick={() => navigate('/signup')}
+                  className={`w-full py-2.5 rounded-xl text-sm font-semibold transition ${
+                    plan.highlight ? 'bg-warning text-white hover:bg-red-500' : 'bg-indigo-premium text-white hover:bg-purple-premium'
+                  }`}>
+                  Get Started
+                </button>
+              </motion.div>
+            ))}
+          </div>
+          <div className="text-center">
+            <button onClick={() => navigate('/pricing')} className="text-indigo-premium hover:text-purple-premium font-semibold text-sm underline">
+              See full feature comparison →
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* ── FAQ ─────────────────────────────────────────────────────────────── */}
+      <section className="py-16 px-4 sm:px-6 bg-gray-50/50">
+        <div className="max-w-3xl mx-auto">
+          <h2 className="font-sora font-bold text-2xl sm:text-3xl text-navy text-center mb-10">Frequently asked questions</h2>
+          <div className="space-y-4">
+            {[
+              { q: 'Can I pay using M-Pesa?', a: 'Yes — M-Pesa is the only payment method STUDIA supports right now. All plans are paid via M-Pesa STK push directly inside the app.' },
+              { q: 'Can I upgrade anytime?', a: 'Absolutely. You can upgrade from Explorer to Achiever, Excellence, or Valedictorian at any time from your dashboard.' },
+              { q: 'What happens after my three free lectures?', a: 'Your Explorer AI features are permanently locked. There is no reset. You\'ll need to upgrade to Achiever (KSh 29–49/lecture), Excellence (KSh 399/month), or Valedictorian (KSh 1,200/semester) to continue.' },
+              { q: 'Can I study using my phone?', a: 'Yes — STUDIA is built mobile-first. Install it directly from Chrome on Android or Safari on iPhone as a home screen app. Everything works offline once downloaded to your Vault.' },
+              { q: 'Do my lectures stay private?', a: 'Yes. Your recordings are encrypted and stored securely in your own Supabase storage bucket. Only you can access them — STUDIA staff cannot listen to or read your recordings.' },
+            ].map((item, i) => (
+              <motion.div key={i} initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }}
+                className="bg-white rounded-xl p-5 border border-gray-200">
+                <p className="font-semibold text-navy mb-2 text-sm sm:text-base">{item.q}</p>
+                <p className="text-gray-500 text-sm">{item.a}</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── CTA ─────────────────────────────────────────────────────────────── */}
+      <section className="py-20 sm:py-24 px-4 sm:px-6 bg-gradient-to-br from-indigo-premium to-purple-premium text-white">
+        <div className="max-w-3xl mx-auto text-center">
+          <h2 className="font-sora font-bold text-4xl sm:text-5xl mb-4 leading-tight">
+            Start studying smarter today.
+          </h2>
+          <p className="text-white/80 text-lg mb-8">
+            3 free AI lectures. No card. No commitment. Cancel anytime.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center mb-6">
+            <button onClick={() => navigate('/signup')}
+              className="bg-white text-indigo-premium px-8 py-4 rounded-xl font-bold hover:bg-gray-100 transition shadow-lg">
+              🚀 Start Learning Free
+            </button>
+            <button onClick={() => navigate('/login')}
+              className="border-2 border-white/40 text-white px-8 py-4 rounded-xl font-bold hover:bg-white/10 transition">
+              Sign In
+            </button>
+          </div>
+          {!isInstalled && installPrompt && (
+            <button onClick={install} disabled={isInstalling}
+              className="mx-auto flex items-center justify-center gap-2 bg-white/10 border border-white/30 text-white px-6 py-3 rounded-xl font-medium text-sm hover:bg-white/20 transition disabled:opacity-50">
+              {isInstalling ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Installing...</> : <>📲 Install STUDIA AI App</>}
+            </button>
+          )}
+        </div>
+      </section>
+
+      <footer className="bg-navy text-white/50 py-8 px-4 sm:px-6 text-center text-xs">
+        <div className="max-w-7xl mx-auto space-y-1">
+          <p className="font-sora font-bold text-white text-sm">STUDIA AI</p>
+          <p>Built for Kenyan university students · Powered by AI</p>
+          <p>© 2025 STUDIA. All rights reserved.</p>
+        </div>
+      </footer>
     </div>
   )
 }
