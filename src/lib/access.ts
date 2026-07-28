@@ -186,10 +186,11 @@ export const grantLiteBonusCredit = async (userId: string, currentBonusCredits: 
       .update({ lite_bonus_credits: currentBonusCredits + 1 })
       .eq('auth_id', userId)
   } catch (err) {
-    console.error('Failed to grant bonus credit:', err)// ── Backwards-compatible aliases ───────────────────────────────────────────
-// Recording.tsx and other pages import these names — keep them working
-export const freeCreditsRemaining = explorerLecturesRemaining
-export const isUnlimitedPlan = isActivePaidPlan
+    console.error('Failed to grant bonus credit:', err)
     
   }
 }
+// ── Backwards-compatible aliases ───────────────────────────────────────────
+// Recording.tsx and other pages import these names — keep them working
+export const freeCreditsRemaining = explorerLecturesRemaining
+export const isUnlimitedPlan = isActivePaidPlan
