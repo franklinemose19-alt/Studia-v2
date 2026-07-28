@@ -43,7 +43,9 @@ export const loadAccess = async (cachedUserId?: string | null): Promise<AccessIn
 
     const { data } = await client
       .from('users')
-      .select('current_plan, subscription_status, free_ai_credits_used, lite_bonus_credits, lecture_allowance, lectures_used, period_end, plan_locked')
+      .select(
+        'current_plan, subscription_status, free_ai_credits_used, lite_bonus_credits, lecture_allowance, lectures_used, period_end, plan_locked'
+      )
       .eq('auth_id', uid)
       .maybeSingle()
 
@@ -71,126 +73,228 @@ export const isActivePaidPlan = (access: AccessInfo) =>
   access.subscriptionStatus === 'active'
 
 export const isPremiumPlan = (access: AccessInfo) =>
-  access.currentPlan === 'valedictorian' && access.subscriptionStatus === 'active'
+  access.currentPlan === 'valedictorian' &&
+  access.subscriptionStatus === 'active'
 
-export const isUnlimitedPlan = (access: AccessInfo) => isActivePaidPlan(access)
+export const isUnlimitedPlan = (access: AccessInfo) =>
+  isActivePaidPlan(access)
 
 export const explorerLecturesRemaining = (access: AccessInfo) =>
-  Math.max(0, EXPLORER_LIFETIME_LIMIT - (access.freeCreditsUsed || 0))
+  Math.max(
+    0,
+    EXPLORER_LIFETIME_LIMIT - (access.freeCreditsUsed || 0)
+  )
 
 export const paidLecturesRemaining = (access: AccessInfo) =>
-  Math.max(0, (access.lectureAllowance || 0) - (access.lecturesUsed || 0))
+  Math.max(
+    0,
+    (access.lectureAllowance || 0) - (access.lecturesUsed || 0)
+  )
 
 export const getPlanLabel = (plan: string | null) => {
   switch (plan) {
-    case 'explorer': return '🌍 Explorer'
-    case 'achiever': return '🎯 Achiever'
-    case 'excellence': return '🚀 Excellence'
-    case 'valedictorian': return '🏆 Valedictorian'
-    default: return '🌍 Explorer'
+    case 'explorer':
+      return '🌍 Explorer'
+    case 'achiever':
+      return '🎯 Achiever'
+    case 'excellence':
+      return '🚀 Excellence'
+    case 'valedictorian':
+      return '🏆 Valedictorian'
+    default:
+      return '🌍 Explorer'
   }
 }
 
 export const getPlanColor = (plan: string | null) => {
   switch (plan) {
-    case 'explorer': return 'text-gray-400'
-    case 'achiever': return 'text-light-blue'
-    case 'excellence': return 'text-mint'
-    case 'valedictorian': return 'text-warning'
-    default: return 'text-gray-400'
+    case 'explorer':
+      return 'text-gray-400'
+    case 'achiever':
+      return 'text-light-blue'
+    case 'excellence':
+      return 'text-mint'
+    case 'valedictorian':
+      return 'text-warning'
+    default:
+      return 'text-gray-400'
   }
 }
 
 // ── Access result ──────────────────────────────────────────────────────────
 
 export type AccessResult =
-  | { allowed: true; source: 'paid_subscription' | 'achiever_session' | 'explorer_free' | 'bonus' }
-  | { allowed: false; reason: 'explorer_locked' | 'no_lectures_left' | 'needs_premium' }
-
-export const checkAccess = (access: AccessInfo, feature: FeatureType): AccessResult => {
-  // Explorer permanently locked
-  if (access.planLocked) {
-    return { allowed: false, reason: 'explorer_locked' }
-  }
-
-  // Active paid subscription (Excellence or Valedictorian)
-  if (isActivePaidPlan(access)) {
-    // Premium features need Valedictorian
-    if (feature === 'premium' && !isPremiumPlan(access)) {
-      // Excellence users can use bonus credits for premium
-      if (access.liteBonusCredits > 0) return { allowed: true, source: 'bonus' }
-      if (explorerLecturesRemaining(access) > 0) return { allowed: true, source: 'explorer_free' }
-      return { allowed: false, reason: 'needs_premium' }
+  | {
+      allowed: true
+      source:
+        | 'paid_subscription'
+        | 'achiever_session'
+        | 'explorer_free'
+        | 'bonus'
     }
-    // Check lecture allowance
-    if (paidLecturesRemaining(access) > 0) return { allowed: true, source: 'paid_subscription' }
-    return { allowed: false, reason: 'no_lectures_left' }
+  | {
+      allowed: false
+      reason:
+        | 'explorer_locked'
+        | 'no_lectures_left'
+        | 'needs_premium'
+    }
+
+export const checkAccess = (
+  access: AccessInfo,
+  feature: FeatureType
+): AccessResult => {
+
+  if (access.planLocked) {
+    return {
+      allowed: false,
+      reason: 'explorer_locked',
+    }
   }
 
-  // Achiever bonus credits from paid sessions
-  if (access.liteBonusCredits > 0) return { allowed: true, source: 'bonus' }
+  if (isActivePaidPlan(access)) {
 
-  // Explorer free lectures (lifetime, not resettable)
-  if (explorerLecturesRemaining(access) > 0) return { allowed: true, source: 'explorer_free' }
+    if (feature === 'premium' && !isPremiumPlan(access)) {
 
-  // Locked out
-  return { allowed: false, reason: 'explorer_locked' }
+      if (access.liteBonusCredits > 0) {
+        return {
+          allowed: true,
+          source: 'bonus',
+        }
+      }
+
+      if (explorerLecturesRemaining(access) > 0) {
+        return {
+          allowed: true,
+          source: 'explorer_free',
+        }
+      }
+
+      return {
+        allowed: false,
+        reason: 'needs_premium',
+      }
+    }
+
+    if (paidLecturesRemaining(access) > 0) {
+      return {
+        allowed: true,
+        source: 'paid_subscription',
+      }
+    }
+
+    return {
+      allowed: false,
+      reason: 'no_lectures_left',
+    }
+  }
+
+  if (access.liteBonusCredits > 0) {
+    return {
+      allowed: true,
+      source: 'bonus',
+    }
+  }
+
+  if (explorerLecturesRemaining(access) > 0) {
+    return {
+      allowed: true,
+      source: 'explorer_free',
+    }
+  }
+
+  return {
+    allowed: false,
+    reason: 'explorer_locked',
+  }
 }
+
 
 export const consumeCredit = async (
   access: AccessInfo,
-  source: 'paid_subscription' | 'achiever_session' | 'explorer_free' | 'bonus'
+  source:
+    | 'paid_subscription'
+    | 'achiever_session'
+    | 'explorer_free'
+    | 'bonus'
 ): Promise<void> => {
+
   if (!access.userId) return
 
-  // Fire referral verify on first action
   fetch('/api/referral', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'verify', userId: access.userId }),
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      action: 'verify',
+      userId: access.userId,
+    }),
   }).catch(() => {})
+
 
   try {
     const client = await getSupabase()
 
     if (source === 'explorer_free') {
+
       await client
         .from('users')
         .update({
           free_ai_credits_used: access.freeCreditsUsed + 1,
-          plan_locked: access.freeCreditsUsed + 1 >= EXPLORER_LIFETIME_LIMIT,
+          plan_locked:
+            access.freeCreditsUsed + 1 >= EXPLORER_LIFETIME_LIMIT,
         })
         .eq('auth_id', access.userId)
+
     } else if (source === 'bonus') {
+
       await client
         .from('users')
-        .update({ lite_bonus_credits: Math.max(0, access.liteBonusCredits - 1) })
+        .update({
+          lite_bonus_credits:
+            Math.max(0, access.liteBonusCredits - 1),
+        })
         .eq('auth_id', access.userId)
+
     } else if (source === 'paid_subscription') {
+
       await client
         .from('users')
-        .update({ lectures_used: access.lecturesUsed + 1 })
+        .update({
+          lectures_used: access.lecturesUsed + 1,
+        })
         .eq('auth_id', access.userId)
     }
-    // achiever_session doesn't consume a stored credit — it's per-session paid
+
   } catch (err) {
     console.error('Failed to consume credit:', err)
   }
 }
 
-export const grantLiteBonusCredit = async (userId: string, currentBonusCredits: number): Promise<void> => {
+
+export const grantLiteBonusCredit = async (
+  userId: string,
+  currentBonusCredits: number
+): Promise<void> => {
+
   try {
+
     const client = await getSupabase()
+
     await client
       .from('users')
-      .update({ lite_bonus_credits: currentBonusCredits + 1 })
+      .update({
+        lite_bonus_credits: currentBonusCredits + 1,
+      })
       .eq('auth_id', userId)
+
   } catch (err) {
     console.error('Failed to grant bonus credit:', err)
-    
   }
 }
+
+
 // ── Backwards-compatible aliases ───────────────────────────────────────────
-// Recording.tsx and other pages import these names — keep them working
+// Recording.tsx and older pages import this name
 export const freeCreditsRemaining = explorerLecturesRemaining
-export const isUnlimitedPlan = isActivePaidPlan
