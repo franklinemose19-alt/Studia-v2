@@ -1,51 +1,80 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
-import { getSupabase } from './supabaseClient'
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  type ReactNode,
+} from 'react'
+import type { User, Session } from '@supabase/supabase-js'
+import { getClient } from './supabaseClient'
 
 interface AuthContextValue {
+  user: User | null
+  session: Session | null
   userId: string | null
   loading: boolean
+  signedIn: boolean
 }
 
-const AuthContext = createContext<AuthContextValue>({ userId: null, loading: true })
+const AuthContext = createContext<AuthContextValue>({
+  user: null,
+  session: null,
+  userId: null,
+  loading: true,
+  signedIn: false,
+})
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [userId, setUserId] = useState<string | null>(null)
+  const [user, setUser] = useState<User | null>(null)
+  const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    let mounted = true
-    let subscription: { unsubscribe: () => void } | null = null
-
-    const init = async () => {
-      try {
-        const client = await getSupabase()
-        const { data } = await client.auth.getUser()
-        if (mounted) {
-          setUserId(data.user?.id || null)
-          setLoading(false)
-        }
-
-        const { data: sub } = client.auth.onAuthStateChange((_event, session) => {
-          if (mounted) setUserId(session?.user?.id || null)
-        })
-        subscription = sub.subscription
-      } catch (err) {
-        console.error('Auth init failed:', err)
-        if (mounted) {
-          setUserId(null)
-          setLoading(false)
-        }
-      }
-    }
-
-    init()
-    return () => {
-      mounted = false
-      subscription?.unsubscribe()
-    }
+  const handleSession = useCallback((newSession: Session | null) => {
+    setSession(newSession)
+    setUser(newSession?.user ?? null)
   }, [])
 
-  return <AuthContext.Provider value={{ userId, loading }}>{children}</AuthContext.Provider>
+  useEffect(() => {
+    const client = getClient()
+
+    // Step 1 — Check for an existing session immediately on mount.
+    // getSession() reads from localStorage — no network call, instant.
+    client.auth.getSession().then(({ data: { session: existingSession } }) => {
+      handleSession(existingSession)
+      setLoading(false)
+    })
+
+    // Step 2 — Listen for all future auth events for the lifetime of the app.
+    // This fires on: SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED, USER_UPDATED,
+    // PASSWORD_RECOVERY, MFA_CHALLENGE_VERIFIED
+    const { data: { subscription } } = client.auth.onAuthStateChange(
+      (_event, newSession) => {
+        handleSession(newSession)
+        // Don't set loading here — it's only for the initial check above
+      }
+    )
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [handleSession])
+
+  const value: AuthContextValue = {
+    user,
+    session,
+    userId: user?.id ?? null,
+    loading,
+    signedIn: !!user,
+  }
+
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  )
 }
 
-export const useAuth = () => useContext(AuthContext)
+export function useAuth() {
+  return useContext(AuthContext)
+}
