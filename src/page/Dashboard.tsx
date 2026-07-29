@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   LogOut, Mic, BookOpen, BarChart3, Calendar, Zap, Award, Clock,
   ChevronRight, Search, Bell, TrendingUp, Lock, CreditCard,
-  Sparkles, FileText, X, AlertTriangle,
+  Sparkles, X, AlertTriangle,
 } from 'lucide-react'
 import { signOut } from '../lib/supabaseClient'
 import { usePWAInstall } from '../hooks/usePWAInstall'
@@ -99,7 +99,6 @@ export default function Dashboard() {
     { icon: BookOpen, title: 'Unit Management', desc: 'Define syllabi', path: '/units', color: 'from-warning' },
     { icon: CreditCard, title: 'Payments', desc: 'History & refer friends', path: '/payments', color: 'from-mint' },
     { icon: Calendar, title: 'Study Planner', desc: 'Weekly schedule', path: '/study-planner', color: 'from-light-blue' },
-    { icon: FileText, title: 'Study Chat', desc: 'Ask STUDIA AI', path: '/ai-tools', color: 'from-purple-premium' },
   ]
 
   const statCards = [
