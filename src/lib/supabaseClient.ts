@@ -3,20 +3,15 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 const SUPABASE_URL = 'https://dmqjhhbjhzzyinxnblge.supabase.co'
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRtcWpoaGJqaHp6eWlueG5ibGdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQyODEzMTAsImV4cCI6MjA1OTg1NzMxMH0.up7DFUefMqAPUkZk76mMt0dBtSSGvRyGVvJRMqSqfmo'
 
-// Single shared client instance — never create multiple
 let _client: SupabaseClient | null = null
 
 export function getClient(): SupabaseClient {
   if (!_client) {
     _client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
-        // Persist session in localStorage — survives browser restarts
         persistSession: true,
-        // Automatically refresh the JWT before it expires
         autoRefreshToken: true,
-        // Detect session from URL hash (needed for magic links / OAuth)
         detectSessionInUrl: true,
-        // Use localStorage for session storage
         storage: typeof window !== 'undefined' ? window.localStorage : undefined,
         storageKey: 'studia-auth-token',
       },
@@ -25,10 +20,7 @@ export function getClient(): SupabaseClient {
   return _client
 }
 
-// Convenience async getter (matches existing getSupabase() usage)
 export const getSupabase = async (): Promise<SupabaseClient> => getClient()
-
-// ── Auth helpers ──────────────────────────────────────────────────────────
 
 export const supabase = {
   signIn: async (email: string, password: string) => {
@@ -42,7 +34,7 @@ export const supabase = {
     console.log('Signin successful, user ID:', data.user?.id)
 
     if (data.user) {
-      await ensureUserRow(data.user.id, data.user.email || '', '')
+      await ensureUserRow(data.user.id, data.user.email || '', data.user.user_metadata?.full_name || '')
     }
 
     return { user: data.user, session: data.session }
@@ -67,6 +59,21 @@ export const supabase = {
 
     return { user: data.user, session: data.session }
   },
+
+  signInWithGoogle: async () => {
+    const client = getClient()
+    const { error } = await client.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/dashboard`,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
+      },
+    })
+    if (error) throw error
+  },
 }
 
 export const signOut = async (): Promise<void> => {
@@ -81,11 +88,8 @@ export const getCurrentUser = async () => {
   return user
 }
 
-// ── User row helpers ───────────────────────────────────────────────────────
-
 async function createUserRow(userId: string, email: string, name: string, phone?: string) {
   const client = getClient()
-
   const { error } = await client.from('users').insert({
     auth_id: userId,
     email,
@@ -100,7 +104,6 @@ async function createUserRow(userId: string, email: string, name: string, phone?
     plan_locked: false,
     created_at: new Date().toISOString(),
   })
-
   if (error && !error.message.includes('duplicate')) {
     console.error('Failed to create user row:', error)
   }
@@ -108,7 +111,6 @@ async function createUserRow(userId: string, email: string, name: string, phone?
 
 async function ensureUserRow(userId: string, email: string, name: string) {
   const client = getClient()
-
   const { data } = await client
     .from('users')
     .select('auth_id')
