@@ -8,6 +8,7 @@ import {
 } from 'react'
 import type { User, Session } from '@supabase/supabase-js'
 import { getClient } from './supabaseClient'
+import { toast } from './toast'
 
 interface AuthContextValue {
   user: User | null
@@ -38,38 +39,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const client = getClient()
 
-    // Step 1 — Check for an existing session immediately on mount.
-    // getSession() reads from localStorage — no network call, instant.
-    client.auth.getSession().then(({ data: { session: existingSession } }) => {
+    // Check for existing session on mount — reads localStorage, no network call
+    client.auth.getSession().then(({ data: { session: existingSession }, error }) => {
+      if (error) {
+        console.error('Session check error:', error.message)
+        if (error.message.toLowerCase().includes('invalid')) {
+          toast.error('Session expired — please sign in again.')
+        }
+      }
       handleSession(existingSession)
       setLoading(false)
     })
 
-    // Step 2 — Listen for all future auth events for the lifetime of the app.
-    // This fires on: SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED, USER_UPDATED,
-    // PASSWORD_RECOVERY, MFA_CHALLENGE_VERIFIED
+    // Listen for all future auth state changes
     const { data: { subscription } } = client.auth.onAuthStateChange(
-      (_event, newSession) => {
+      (event, newSession) => {
         handleSession(newSession)
-        // Don't set loading here — it's only for the initial check above
+
+        if (event === 'SIGNED_OUT') {
+          toast.info('You have been signed out.')
+        }
+
+        if (event === 'TOKEN_REFRESHED') {
+          console.log('Session token refreshed automatically')
+        }
       }
     )
 
-    return () => {
-      subscription.unsubscribe()
-    }
+    return () => subscription.unsubscribe()
   }, [handleSession])
 
-  const value: AuthContextValue = {
-    user,
-    session,
-    userId: user?.id ?? null,
-    loading,
-    signedIn: !!user,
-  }
-
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={{
+      user,
+      session,
+      userId: user?.id ?? null,
+      loading,
+      signedIn: !!user,
+    }}>
       {children}
     </AuthContext.Provider>
   )
