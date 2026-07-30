@@ -3,12 +3,11 @@ import ReactDOM from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
 import { registerSW } from 'virtual:pwa-register'
+import ToastContainer from './components/Toast.tsx'
 
-// Register service worker — auto-updates in background
 registerSW({
   immediate: true,
   onNeedRefresh() {
-    // New content available — service worker will auto-update
     console.log('STUDIA AI updated — refresh for latest version')
   },
   onOfflineReady() {
@@ -19,5 +18,6 @@ registerSW({
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />
+    <ToastContainer />
   </React.StrictMode>,
 )
