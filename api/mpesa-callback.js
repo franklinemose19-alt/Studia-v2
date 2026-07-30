@@ -1,3 +1,4 @@
+
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 
@@ -8,9 +9,21 @@ async function supaFetch(path, options = {}) {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
       apikey: SUPABASE_SERVICE_KEY,
+      Prefer: 'return=minimal',
       ...(options.headers || {}),
     },
   })
+}
+
+async function insertNotification(userId, title, message, type = 'info') {
+  try {
+    await supaFetch('notifications', {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId, title, message, type }),
+    })
+  } catch (err) {
+    console.error('Failed to insert notification:', err)
+  }
 }
 
 function getEndDate(planId) {
@@ -29,9 +42,19 @@ function getEndDate(planId) {
 }
 
 function getLectureAllowance(planId) {
-  if (planId === 'excellence') return 25      // 25 lectures/month
-  if (planId === 'valedictorian') return 80   // 80 lectures/semester
+  if (planId === 'excellence') return 25
+  if (planId === 'valedictorian') return 80
   return 0
+}
+
+function getPlanDisplayName(planId) {
+  const names = {
+    'achiever-1hr': 'Achiever (1 Hour)',
+    'achiever-2hr': 'Achiever (2 Hours)',
+    'excellence': '🚀 Excellence',
+    'valedictorian': '🏆 Valedictorian',
+  }
+  return names[planId] || planId
 }
 
 export default async function handler(req, res) {
@@ -46,12 +69,26 @@ export default async function handler(req, res) {
     }
 
     const { ResultCode, CheckoutRequestID } = callbackData
+
     if (ResultCode !== 0) {
       console.log(`Payment failed: ${CheckoutRequestID}, Code: ${ResultCode}`)
       await supaFetch(`payments?transaction_id=eq.${CheckoutRequestID}`, {
         method: 'PATCH',
         body: JSON.stringify({ status: 'failed', updated_at: new Date().toISOString() }),
       })
+
+      // Fetch payment to get userId for notification
+      const paymentRes = await supaFetch(`payments?transaction_id=eq.${CheckoutRequestID}&select=created_by,plan_name`)
+      const payments = await paymentRes.json()
+      if (payments?.[0]?.created_by) {
+        await insertNotification(
+          payments[0].created_by,
+          'Payment Failed ❌',
+          `Your payment for ${payments[0].plan_name || 'STUDIA'} was not completed. Please try again.`,
+          'error'
+        )
+      }
+
       return res.status(200).json({ success: true })
     }
 
@@ -65,7 +102,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true })
     }
 
-    // Update payment to completed
+    // Mark payment completed
     await supaFetch(`payments?transaction_id=eq.${CheckoutRequestID}`, {
       method: 'PATCH',
       body: JSON.stringify({
@@ -77,34 +114,45 @@ export default async function handler(req, res) {
 
     const userId = payment.created_by
     const planId = payment.plan_id
+    const planName = getPlanDisplayName(planId)
 
     if (!userId) {
       console.warn('No userId on payment')
       return res.status(200).json({ success: true })
     }
 
-    // ── Achiever (pay-per-lecture) — don't touch subscriptions ────────────
+    // ── Achiever (pay-per-lecture) ─────────────────────────────────────────
     if (planId && (planId.startsWith('achiever') || planId.startsWith('lite'))) {
-      console.log(`✅ Achiever lecture payment confirmed for user ${userId}`)
-      // Grant one bonus AI credit for non-recording AI features
       const userRes = await supaFetch(`users?auth_id=eq.${userId}&select=lite_bonus_credits`)
       const userData = await userRes.json()
       const currentBonus = userData?.[0]?.lite_bonus_credits || 0
+
       await supaFetch(`users?auth_id=eq.${userId}`, {
         method: 'PATCH',
         body: JSON.stringify({ lite_bonus_credits: currentBonus + 1 }),
       })
+
+      const duration = planId.includes('2hr') ? '2 hours' : '1 hour'
+      await insertNotification(
+        userId,
+        'Lecture Unlocked! 🎙️',
+        `Your ${duration} lecture session is ready. Start recording now! You also received 1 bonus AI credit.`,
+        'success'
+      )
+
+      console.log(`✅ Achiever lecture unlocked for user ${userId}`)
       return res.status(200).json({ success: true })
     }
 
-    // ── Excellence / Valedictorian — activate subscription ────────────────
+    // ── Excellence / Valedictorian ─────────────────────────────────────────
     if (planId === 'excellence' || planId === 'valedictorian') {
       const endDate = getEndDate(planId)
       const allowance = getLectureAllowance(planId)
       const now = new Date().toISOString()
+      const periodLabel = planId === 'valedictorian' ? 'semester' : 'month'
 
       // Upsert subscription
-      await supaFetch(`subscriptions`, {
+      await supaFetch('subscriptions', {
         method: 'POST',
         headers: { Prefer: 'resolution=merge-duplicates' },
         body: JSON.stringify({
@@ -118,7 +166,7 @@ export default async function handler(req, res) {
         }),
       })
 
-      // Update user record — reset lecture usage, set new allowance
+      // Update user record
       await supaFetch(`users?auth_id=eq.${userId}`, {
         method: 'PATCH',
         body: JSON.stringify({
@@ -132,6 +180,13 @@ export default async function handler(req, res) {
           updated_at: now,
         }),
       })
+
+      await insertNotification(
+        userId,
+        `${planName} Activated! 🎉`,
+        `You now have ${allowance} AI lectures this ${periodLabel}. Your plan is active until ${endDate ? new Date(endDate).toLocaleDateString() : 'end of period'}. Start recording!`,
+        'success'
+      )
 
       console.log(`✅ ${planId} activated for user ${userId} — ${allowance} lectures until ${endDate}`)
     }
