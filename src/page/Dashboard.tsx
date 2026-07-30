@@ -4,14 +4,17 @@ import { useNavigate } from 'react-router-dom'
 import {
   LogOut, Mic, BookOpen, BarChart3, Calendar, Zap, Award, Clock,
   ChevronRight, Search, Bell, TrendingUp, Lock, CreditCard,
-  Sparkles, X, AlertTriangle,
+  Sparkles, X, AlertTriangle, Gift, Crown,
 } from 'lucide-react'
 import { signOut } from '../lib/supabaseClient'
 import { usePWAInstall } from '../hooks/usePWAInstall'
-import { loadAccess, explorerLecturesRemaining, paidLecturesRemaining, getPlanLabel, getPlanColor, type AccessInfo, emptyAccess } from '../lib/access'
+import {
+  loadAccess, explorerLecturesRemaining, paidLecturesRemaining,
+  getPlanLabel, getPlanColor, type AccessInfo, emptyAccess,
+} from '../lib/access'
 import { useAuth } from '../lib/AuthContext'
-
-const REFERRAL_SNOOZE_KEY = 'referralReminderSnoozedUntil'
+import { getSupabase } from '../lib/supabaseClient'
+import { toast } from '../lib/toast'
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -19,11 +22,11 @@ export default function Dashboard() {
   const { installPrompt, isInstalled, isInstalling, install } = usePWAInstall()
 
   const [stats, setStats] = useState({ lectures: 0, quizzes: 0, avgScore: 0, streak: 0 })
-  const [showReferralReminder, setShowReferralReminder] = useState(false)
   const [access, setAccess] = useState<AccessInfo>(emptyAccess)
+  const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
-    // Load stats
+    // Load stats from localStorage
     let lectures = 0
     let quizResults: any[] = []
     try { lectures = JSON.parse(localStorage.getItem('recordingsMetadata') || '[]').length } catch {}
@@ -35,9 +38,15 @@ export default function Dashboard() {
       const activeDates = new Set<string>()
       try {
         JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')
-          .forEach((r: any) => { const d = new Date(r.timestamp || r.date); if (!isNaN(d.getTime())) activeDates.add(d.toISOString().slice(0, 10)) })
+          .forEach((r: any) => {
+            const d = new Date(r.timestamp || r.date)
+            if (!isNaN(d.getTime())) activeDates.add(d.toISOString().slice(0, 10))
+          })
       } catch {}
-      quizResults.forEach((q: any) => { const d = new Date(q.date); if (!isNaN(d.getTime())) activeDates.add(d.toISOString().slice(0, 10)) })
+      quizResults.forEach((q: any) => {
+        const d = new Date(q.date)
+        if (!isNaN(d.getTime())) activeDates.add(d.toISOString().slice(0, 10))
+      })
       let streak = 0
       const cursor = new Date()
       if (!activeDates.has(cursor.toISOString().slice(0, 10))) cursor.setDate(cursor.getDate() - 1)
@@ -45,20 +54,33 @@ export default function Dashboard() {
       setStats({ lectures, quizzes: quizResults.length, avgScore: avg, streak })
     } catch {}
 
-    const snoozedUntil = parseInt(localStorage.getItem(REFERRAL_SNOOZE_KEY) || '0', 10)
-    if (Date.now() > snoozedUntil) setShowReferralReminder(true)
+    // Load access + check admin
+    const init = async () => {
+      const a = await loadAccess(userId)
+      setAccess(a)
 
-    // Load access info
-    loadAccess(userId).then(setAccess)
+      if (userId) {
+        try {
+          const client = await getSupabase()
+          const { data } = await client
+            .from('users')
+            .select('is_admin')
+            .eq('auth_id', userId)
+            .maybeSingle()
+          setIsAdmin(!!data?.is_admin)
+        } catch {}
+      }
+    }
+    init()
   }, [userId])
 
-  const dismissReferralReminder = () => {
-    localStorage.setItem(REFERRAL_SNOOZE_KEY, String(Date.now() + 7 * 24 * 60 * 60 * 1000))
-    setShowReferralReminder(false)
-  }
-
   const handleSignOut = async () => {
-    try { await signOut() } catch {}
+    try {
+      await signOut()
+      toast.info('Signed out successfully')
+    } catch {
+      toast.error('Sign out failed')
+    }
     navigate('/')
   }
 
@@ -75,13 +97,19 @@ export default function Dashboard() {
     if (isExplorer) {
       const used = access.freeCreditsUsed || 0
       const pct = Math.round((used / 3) * 100)
-      return { used, total: 3, pct, label: 'lifetime lectures used', color: used >= 3 ? 'bg-red-500' : used >= 2 ? 'bg-yellow-400' : 'bg-mint' }
+      return {
+        used, total: 3, pct,
+        color: used >= 3 ? 'bg-red-500' : used >= 2 ? 'bg-yellow-400' : 'bg-mint',
+      }
     }
     if (isPaidPlan) {
       const used = access.lecturesUsed || 0
       const total = access.lectureAllowance || 0
       const pct = total > 0 ? Math.round((used / total) * 100) : 0
-      return { used, total, pct, label: 'lectures used this period', color: pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-yellow-400' : 'bg-mint' }
+      return {
+        used, total, pct,
+        color: pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-yellow-400' : 'bg-mint',
+      }
     }
     return null
   }
@@ -97,7 +125,7 @@ export default function Dashboard() {
     { icon: TrendingUp, title: 'Adaptive Learning', desc: 'Weak topic analysis', path: '/adaptive-learning', color: 'from-mint' },
     { icon: Lock, title: 'Offline Vault', desc: 'Study anywhere', path: '/offline-vault', color: 'from-light-blue' },
     { icon: BookOpen, title: 'Unit Management', desc: 'Define syllabi', path: '/units', color: 'from-warning' },
-    { icon: CreditCard, title: 'Payments', desc: 'History & refer friends', path: '/payments', color: 'from-mint' },
+    { icon: CreditCard, title: 'Payments', desc: 'History & billing', path: '/payments', color: 'from-mint' },
     { icon: Calendar, title: 'Study Planner', desc: 'Weekly schedule', path: '/study-planner', color: 'from-light-blue' },
   ]
 
@@ -110,20 +138,35 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-white via-surface-light to-white">
+
+      {/* Nav */}
       <nav className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-premium to-purple-premium flex items-center justify-center shrink-0">
               <span className="text-white font-bold">S</span>
             </div>
-            <span className="font-sora font-bold text-navy text-base sm:text-lg hidden xs:inline">STUDIA</span>
+            <span className="font-sora font-bold text-navy text-base sm:text-lg hidden sm:inline">STUDIA AI</span>
 
             {/* Install button */}
             {!isInstalled && installPrompt && (
               <button onClick={install} disabled={isInstalling}
                 className="flex items-center gap-1.5 bg-gradient-to-r from-mint to-light-blue text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-90 transition disabled:opacity-50 ml-1">
-                {isInstalling ? <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : '📲'}
+                {isInstalling
+                  ? <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  : '📲'}
                 <span className="hidden sm:inline">{isInstalling ? 'Installing...' : 'Install App'}</span>
+              </button>
+            )}
+
+            {/* Admin link — only visible to you */}
+            {isAdmin && (
+              <button
+                onClick={() => navigate('/admin')}
+                className="flex items-center gap-1.5 bg-warning/10 border border-warning/30 text-warning px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-warning/20 transition ml-1"
+              >
+                <Crown size={13} />
+                <span className="hidden sm:inline">Owner</span>
               </button>
             )}
           </div>
@@ -131,12 +174,14 @@ export default function Dashboard() {
           <div className="flex items-center gap-2 sm:gap-4">
             <div className="hidden md:flex items-center gap-2 bg-gray-100 rounded-lg px-4 py-2 w-48 lg:w-64">
               <Search size={18} className="text-gray-400 shrink-0" />
-              <input type="text" placeholder="Search lectures..." className="bg-transparent text-navy outline-none w-full text-sm" />
+              <input type="text" placeholder="Search lectures..."
+                className="bg-transparent text-navy outline-none w-full text-sm" />
             </div>
             <button className="p-2 hover:bg-gray-100 rounded-lg transition">
               <Bell size={20} className="text-navy" />
             </button>
-            <button onClick={handleSignOut} className="flex items-center gap-1.5 text-navy hover:text-indigo-premium transition pl-2 sm:pl-4 border-l border-gray-200">
+            <button onClick={handleSignOut}
+              className="flex items-center gap-1.5 text-navy hover:text-indigo-premium transition pl-2 sm:pl-4 border-l border-gray-200">
               <LogOut size={18} />
               <span className="text-sm font-medium hidden sm:inline">Sign out</span>
             </button>
@@ -198,12 +243,18 @@ export default function Dashboard() {
                     )}
                   </div>
                 ) : isAchiever ? (
-                  <p className="text-sm text-gray-600">Pay KSh 29–49 per lecture. Bonus AI credits: <span className="font-bold text-navy">{access.liteBonusCredits || 0}</span></p>
+                  <p className="text-sm text-gray-600">
+                    Pay KSh 29–49 per lecture · Bonus AI credits: <span className="font-bold text-navy">{access.liteBonusCredits || 0}</span>
+                  </p>
                 ) : isPaidPlan && usageBar ? (
                   <div className="space-y-2">
                     <p className="text-sm text-gray-600">
                       <span className="font-bold text-navy">{usageBar.total - usageBar.used}</span> of {usageBar.total} lectures remaining
-                      {access.periodEnd && <span className="text-gray-400 ml-1">· resets {new Date(access.periodEnd).toLocaleDateString()}</span>}
+                      {access.periodEnd && (
+                        <span className="text-gray-400 ml-1">
+                          · resets {new Date(access.periodEnd).toLocaleDateString()}
+                        </span>
+                      )}
                     </p>
                     <div className="w-full bg-white/50 rounded-full h-2">
                       <div className={`${usageBar.color} h-2 rounded-full transition-all`} style={{ width: `${usageBar.pct}%` }} />
@@ -212,52 +263,30 @@ export default function Dashboard() {
                 ) : null}
               </div>
 
-              {(isLocked || isExplorer || (isPaidPlan && paidLeft <= 3)) && (
-                <button
-                  onClick={() => navigate('/pricing')}
-                  className="bg-indigo-premium text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-purple-premium transition whitespace-nowrap shrink-0"
-                >
-                  {isLocked ? '🔓 Unlock Now' : isPaidPlan ? '➕ Get More' : '⬆️ Upgrade'}
+              {(isLocked || (isPaidPlan && paidLeft <= 3)) && (
+                <button onClick={() => navigate('/pricing')}
+                  className="bg-indigo-premium text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-purple-premium transition whitespace-nowrap shrink-0">
+                  {isLocked ? '🔓 Unlock Now' : '➕ Get More'}
                 </button>
               )}
             </div>
           </div>
 
-          {/* Locked overlay */}
+          {/* Explorer locked full-width banner */}
           {isLocked && (
             <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
               className="bg-red-500 rounded-2xl p-6 text-white text-center">
               <p className="text-2xl mb-2">🔒</p>
               <p className="font-sora font-bold text-xl mb-2">AI Features Locked</p>
-              <p className="text-white/90 text-sm mb-4">You've used all 3 Explorer lectures. To keep studying smarter, choose a plan.</p>
-              <button onClick={() => navigate('/pricing')} className="bg-white text-red-500 font-bold px-6 py-2.5 rounded-xl hover:bg-gray-100 transition">
+              <p className="text-white/90 text-sm mb-4">
+                You've used all 3 Explorer lectures. Choose a plan to keep studying smarter.
+              </p>
+              <button onClick={() => navigate('/pricing')}
+                className="bg-white text-red-500 font-bold px-6 py-2.5 rounded-xl hover:bg-gray-100 transition">
                 View Plans — from KSh 29
               </button>
             </motion.div>
           )}
-
-          {/* Referral banner */}
-          <AnimatePresence>
-            {showReferralReminder && !isLocked && (
-              <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-                className="bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl p-5 sm:p-6 text-white relative overflow-hidden">
-                <button onClick={dismissReferralReminder} className="absolute top-3 right-3 text-white/70 hover:text-white">
-                  <X size={18} />
-                </button>
-                <div className="flex items-center gap-4 pr-8 flex-wrap">
-                  <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center text-2xl shrink-0">🎁</div>
-                  <div className="flex-1 min-w-[180px]">
-                    <p className="font-sora font-bold text-base sm:text-lg">Earn bonus AI credits — invite your friends!</p>
-                    <p className="text-white/80 text-sm">Get up to 150+ bonus credits by referring classmates to STUDIA.</p>
-                  </div>
-                  <button onClick={() => { dismissReferralReminder(); navigate('/payments?tab=invite') }}
-                    className="bg-white text-purple-600 px-5 py-2.5 rounded-xl font-semibold text-sm whitespace-nowrap hover:bg-gray-100 transition shrink-0">
-                    Invite Now
-                  </button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
 
           {/* Stats */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -273,15 +302,50 @@ export default function Dashboard() {
             ))}
           </div>
 
+          {/* ── REFER AND EARN — permanent card, always visible ────────────── */}
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+            className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border-2 border-purple-500/20 rounded-2xl p-5 sm:p-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-2xl shrink-0">
+                🎁
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                  <p className="font-sora font-bold text-navy text-base">Refer and Earn — Free AI Credits</p>
+                  <motion.span
+                    animate={{ rotate: [0, -10, 10, -10, 0] }}
+                    transition={{ duration: 1.5, repeat: Infinity, repeatDelay: 3 }}
+                    className="text-sm"
+                  >
+                    🎁
+                  </motion.span>
+                </div>
+                <p className="text-gray-600 text-sm">
+                  Invite classmates and earn up to <span className="font-semibold text-purple-600">150+ bonus AI credits</span>. They get 2 bonus credits too.
+                </p>
+              </div>
+              <button
+                onClick={() => navigate('/payments?tab=invite')}
+                className="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-5 py-2.5 rounded-xl font-semibold text-sm hover:opacity-90 transition whitespace-nowrap shrink-0 shadow-md shadow-purple-500/20"
+              >
+                Invite Friends →
+              </button>
+            </div>
+          </motion.div>
+
           {/* Quick Actions */}
           <div>
             <h2 className="font-sora font-bold text-xl sm:text-2xl text-navy mb-4 sm:mb-6">Quick Actions</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
               {cards.map((card, i) => (
-                <motion.button key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                  onClick={() => navigate(card.path)} className="group text-left">
-                  <div className={`bg-gradient-to-br ${card.color} to-transparent rounded-2xl p-4 sm:p-6 border border-gray-200 hover:border-indigo-premium/50 hover:shadow-lg transition h-full ${isLocked && card.path !== '/pricing' && card.path !== '/payments' ? 'opacity-50' : ''}`}>
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-white/20 flex items-center justify-center text-white mb-3 sm:mb-4 group-hover:scale-110 transition">
+                <motion.button key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.04 }}
+                  onClick={() => navigate(card.path)}
+                  className="group text-left">
+                  <div className={`bg-gradient-to-br ${card.color} to-transparent rounded-2xl p-4 sm:p-5 border border-gray-200 hover:border-indigo-premium/50 hover:shadow-lg transition h-full ${
+                    isLocked && !['payments'].includes(card.path.slice(1)) ? 'opacity-50' : ''
+                  }`}>
+                    <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center text-white mb-3 group-hover:scale-110 transition">
                       <card.icon size={20} />
                     </div>
                     <h3 className="font-sora font-bold text-navy text-xs sm:text-sm mb-0.5 break-words">{card.title}</h3>
@@ -301,7 +365,8 @@ export default function Dashboard() {
               <p className="text-white/90 mb-6 max-w-2xl text-sm sm:text-base">
                 Record your lectures, summarize key concepts, and take quizzes regularly. STUDIA automates all of this — just press record.
               </p>
-              <button onClick={() => navigate('/pricing')} className="bg-white text-indigo-premium px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition text-sm sm:text-base">
+              <button onClick={() => navigate('/pricing')}
+                className="bg-white text-indigo-premium px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition text-sm sm:text-base">
                 See Plans — from KSh 29
               </button>
             </div>
