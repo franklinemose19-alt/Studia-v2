@@ -3,23 +3,35 @@ import { motion } from 'framer-motion'
 import {
   TrendingUp, Users, DollarSign, Clock, RefreshCw,
   CheckCircle, AlertCircle, ArrowLeft, Crown, Zap,
-  Sparkles, UserCheck, Activity,
+  Activity, UserCheck,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getSupabase } from '../lib/supabaseClient'
 import { useAuth } from '../lib/AuthContext'
+import { AdminSkeleton, TableRowSkeleton } from '../components/SkeletonLoader'
 
 interface AdminStats {
   revenue: { total: number; monthly: number; today: number; escrow: number }
   payments: { pendingCount: number; recentPayments: any[] }
-  users: { total: number; planCounts: Record<string, number>; newToday: number; newThisWeek: number; newThisHour: number }
+  users: {
+    total: number
+    planCounts: Record<string, number>
+    newToday: number
+    newThisWeek: number
+    newThisHour: number
+  }
 }
 
 const PLAN_ICONS: Record<string, string> = {
-  free: '🆓', lite: '⚡', pro: '🎨', semester: '🏆', none: '👤'
+  explorer: '🌍', achiever: '🎯', excellence: '🚀', valedictorian: '🏆', none: '👤',
 }
 const PLAN_COLORS: Record<string, string> = {
-  free: 'text-gray-400', lite: 'text-light-blue', pro: 'text-mint', semester: 'text-warning', none: 'text-[#8B97B5]'
+  explorer: 'text-gray-400', achiever: 'text-light-blue',
+  excellence: 'text-mint', valedictorian: 'text-warning', none: 'text-[#8B97B5]',
+}
+const PLAN_BAR_COLORS: Record<string, string> = {
+  explorer: 'bg-gray-400', achiever: 'bg-light-blue',
+  excellence: 'bg-mint', valedictorian: 'bg-warning', none: 'bg-[#8B97B5]',
 }
 
 function formatKsh(amount: number) {
@@ -43,7 +55,27 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Admin check
+  useEffect(() => {
+    if (!userId) return
+    const check = async () => {
+      try {
+        const client = await getSupabase()
+        const { data } = await client
+          .from('users')
+          .select('is_admin')
+          .eq('auth_id', userId)
+          .maybeSingle()
+        setIsAdmin(!!data?.is_admin)
+      } catch {
+        setIsAdmin(false)
+      }
+    }
+    check()
+  }, [userId])
 
   const fetchStats = async () => {
     if (!userId) return
@@ -54,7 +86,10 @@ export default function AdminDashboard() {
         body: JSON.stringify({ adminUserId: userId }),
       })
       const data = await res.json()
-      if (!res.ok) { setError(data.error || 'Failed to load stats'); return }
+      if (!res.ok) {
+        setError(data.error || 'Failed to load stats')
+        return
+      }
       setStats(data)
       setLastUpdated(new Date())
       setError('')
@@ -66,16 +101,23 @@ export default function AdminDashboard() {
   }
 
   useEffect(() => {
+    if (isAdmin === null) return
+    if (!isAdmin) {
+      navigate('/dashboard', { replace: true })
+      return
+    }
     fetchStats()
     intervalRef.current = setInterval(fetchStats, 30000)
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
-  }, [userId])
+  }, [isAdmin, userId])
 
-  if (loading) {
+  if (isAdmin === null || (isAdmin && loading)) {
     return (
-      <div className="min-h-screen bg-surface-base flex flex-col items-center justify-center gap-4">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-brand-blue" />
-        <p className="text-[#8B97B5] text-sm">Loading your dashboard...</p>
+      <div className="min-h-screen bg-surface-base">
+        <nav className="border-b border-white/5 bg-surface-elevated/50 backdrop-blur-md h-16" />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+          <AdminSkeleton />
+        </div>
       </div>
     )
   }
@@ -94,6 +136,7 @@ export default function AdminDashboard() {
   }
 
   const s = stats!
+  const totalUsers = s.users.total || 0
 
   return (
     <div className="min-h-screen bg-surface-base">
@@ -106,13 +149,13 @@ export default function AdminDashboard() {
             <Crown size={18} className="text-warning" />
             <span className="font-sora font-bold text-white">Owner Dashboard</span>
           </div>
-          <button onClick={fetchStats} className="p-2 rounded-lg hover:bg-white/10 transition">
+          <button onClick={fetchStats} className="p-2 rounded-lg hover:bg-white/10 transition" title="Refresh">
             <RefreshCw size={17} className="text-[#8B97B5]" />
           </button>
         </div>
       </nav>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-10">
 
         {lastUpdated && (
           <p className="text-xs text-[#4A5568]">
@@ -120,22 +163,22 @@ export default function AdminDashboard() {
           </p>
         )}
 
-        {/* Revenue section */}
+        {/* Revenue */}
         <div>
-          <h2 className="font-sora font-bold text-white text-lg mb-4 flex items-center gap-2">
-            <DollarSign size={18} className="text-brand-green" /> Revenue
+          <h2 className="font-sora font-bold text-white text-base mb-4 flex items-center gap-2">
+            <DollarSign size={16} className="text-brand-green" /> Revenue
           </h2>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {[
-              { label: 'All-time Revenue', value: formatKsh(s.revenue.total), icon: TrendingUp, color: 'from-brand-green', sublabel: 'My money' },
-              { label: 'This Month', value: formatKsh(s.revenue.monthly), icon: Activity, color: 'from-brand-blue', sublabel: 'Month earnings' },
-              { label: 'Today', value: formatKsh(s.revenue.today), icon: Zap, color: 'from-purple-premium', sublabel: "Today's earnings" },
-              { label: 'In Escrow', value: formatKsh(s.revenue.escrow), icon: Clock, color: 'from-warning', sublabel: 'User money held' },
+              { label: 'All-time Revenue', sublabel: 'My money — confirmed', value: formatKsh(s.revenue.total), icon: TrendingUp, color: 'from-brand-green' },
+              { label: 'This Month', sublabel: 'Month to date', value: formatKsh(s.revenue.monthly), icon: Activity, color: 'from-brand-blue' },
+              { label: 'Today', sublabel: "Today's earnings", value: formatKsh(s.revenue.today), icon: Zap, color: 'from-purple-premium' },
+              { label: 'In Escrow', sublabel: 'User money held', value: formatKsh(s.revenue.escrow), icon: Clock, color: 'from-warning' },
             ].map((stat, i) => (
               <motion.div key={i} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}
                 className={`bg-gradient-to-br ${stat.color} to-transparent rounded-xl p-4 border border-white/10`}>
-                <stat.icon size={18} className="text-white/60 mb-2" />
-                <p className="font-sora font-bold text-2xl text-white mb-0.5">{stat.value}</p>
+                <stat.icon size={16} className="text-white/60 mb-2" />
+                <p className="font-sora font-bold text-xl sm:text-2xl text-white mb-0.5">{stat.value}</p>
                 <p className="text-xs text-white/70 font-medium">{stat.label}</p>
                 <p className="text-[10px] text-white/40 mt-0.5">{stat.sublabel}</p>
               </motion.div>
@@ -143,24 +186,24 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* User stats */}
+        {/* Users */}
         <div>
-          <h2 className="font-sora font-bold text-white text-lg mb-4 flex items-center gap-2">
-            <Users size={18} className="text-brand-blue" /> Users
+          <h2 className="font-sora font-bold text-white text-base mb-4 flex items-center gap-2">
+            <Users size={16} className="text-brand-blue" /> Users
           </h2>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
             {[
-              { label: 'Total Users', value: s.users.total, icon: Users },
-              { label: 'New Today', value: s.users.newToday, icon: UserCheck },
-              { label: 'New This Week', value: s.users.newThisWeek, icon: TrendingUp },
-              { label: 'Signups Last Hour', value: s.users.newThisHour, icon: Clock, note: 'Retry queue proxy' },
+              { label: 'Total Users', value: totalUsers, icon: Users, note: 'All time' },
+              { label: 'New Today', value: s.users.newToday, icon: UserCheck, note: 'Last 24h' },
+              { label: 'New This Week', value: s.users.newThisWeek, icon: TrendingUp, note: 'Last 7 days' },
+              { label: 'Signups Last Hour', value: s.users.newThisHour, icon: Clock, note: 'Demand indicator' },
             ].map((stat, i) => (
               <motion.div key={i} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}
                 className="bg-surface-elevated border border-white/5 rounded-xl p-4">
                 <stat.icon size={16} className="text-[#8B97B5] mb-2" />
                 <p className="font-sora font-bold text-2xl text-white mb-0.5">{stat.value}</p>
                 <p className="text-xs text-[#8B97B5]">{stat.label}</p>
-                {stat.note && <p className="text-[10px] text-[#4A5568] mt-0.5">{stat.note}</p>}
+                <p className="text-[10px] text-[#4A5568] mt-0.5">{stat.note}</p>
               </motion.div>
             ))}
           </div>
@@ -169,58 +212,63 @@ export default function AdminDashboard() {
           <div className="bg-surface-elevated border border-white/5 rounded-xl p-5">
             <p className="text-sm font-semibold text-white mb-4">Users by Plan</p>
             <div className="space-y-3">
-              {Object.entries(s.users.planCounts).map(([plan, count]) => {
-                const pct = s.users.total > 0 ? Math.round((count / s.users.total) * 100) : 0
-                return (
-                  <div key={plan}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className={`text-xs font-medium capitalize flex items-center gap-1.5 ${PLAN_COLORS[plan] || 'text-[#8B97B5]'}`}>
-                        {PLAN_ICONS[plan] || '👤'} {plan}
-                      </span>
-                      <span className="text-xs text-[#8B97B5]">{count} · {pct}%</span>
+              {Object.entries(s.users.planCounts)
+                .sort(([, a], [, b]) => b - a)
+                .map(([plan, count]) => {
+                  const pct = totalUsers > 0 ? Math.round((count / totalUsers) * 100) : 0
+                  return (
+                    <div key={plan}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className={`text-xs font-semibold flex items-center gap-1.5 ${PLAN_COLORS[plan] || 'text-[#8B97B5]'}`}>
+                          {PLAN_ICONS[plan] || '👤'} <span className="capitalize">{plan}</span>
+                        </span>
+                        <span className="text-xs text-[#8B97B5]">{count} · {pct}%</span>
+                      </div>
+                      <div className="w-full bg-surface-base rounded-full h-1.5">
+                        <div
+                          className={`h-1.5 rounded-full transition-all duration-700 ${PLAN_BAR_COLORS[plan] || 'bg-[#8B97B5]'}`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
                     </div>
-                    <div className="w-full bg-surface-base rounded-full h-1.5">
-                      <div
-                        className={`h-1.5 rounded-full transition-all duration-700 ${
-                          plan === 'semester' ? 'bg-warning'
-                          : plan === 'pro' ? 'bg-mint'
-                          : plan === 'lite' ? 'bg-light-blue'
-                          : 'bg-[#8B97B5]'
-                        }`}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
             </div>
           </div>
         </div>
 
-        {/* Pending payments / queue */}
+        {/* Pending payments alert */}
         {s.payments.pendingCount > 0 && (
           <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-5 flex items-start gap-4">
             <Clock className="text-yellow-400 shrink-0 mt-0.5" size={20} />
             <div>
-              <p className="text-white font-semibold">{s.payments.pendingCount} payment{s.payments.pendingCount !== 1 ? 's' : ''} pending / in escrow</p>
-              <p className="text-sm text-[#8B97B5] mt-0.5">These are M-Pesa STK pushes that were initiated but not yet confirmed by Safaricom.</p>
+              <p className="text-white font-semibold text-sm">
+                {s.payments.pendingCount} payment{s.payments.pendingCount !== 1 ? 's' : ''} pending / in escrow
+              </p>
+              <p className="text-[#8B97B5] text-xs mt-0.5">
+                STK pushes initiated but not yet confirmed by Safaricom.
+              </p>
             </div>
           </div>
         )}
 
         {/* Recent transactions */}
         <div>
-          <h2 className="font-sora font-bold text-white text-lg mb-4 flex items-center gap-2">
-            <CheckCircle size={18} className="text-brand-green" /> Recent Transactions
+          <h2 className="font-sora font-bold text-white text-base mb-4 flex items-center gap-2">
+            <CheckCircle size={16} className="text-brand-green" /> Recent Transactions
           </h2>
 
           {/* Mobile */}
           <div className="sm:hidden space-y-2">
-            {s.payments.recentPayments.map((p, i) => (
+            {s.payments.recentPayments.length === 0 ? (
+              <div className="bg-surface-elevated border border-white/5 rounded-xl p-8 text-center text-[#8B97B5] text-sm">
+                No transactions yet
+              </div>
+            ) : s.payments.recentPayments.map((p, i) => (
               <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}
                 className="bg-surface-elevated border border-white/5 rounded-xl p-4 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-mono text-white truncate pr-2 max-w-[140px]">{p.transaction_id}</span>
+                  <span className="text-[10px] font-mono text-white truncate pr-2 max-w-[140px]">{p.transaction_id}</span>
                   <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${getStatusColor(p.status)}`}>
                     {p.status}
                   </span>
@@ -229,17 +277,12 @@ export default function AdminDashboard() {
                   <span className="text-sm text-white font-medium">{p.plan_name}</span>
                   <span className="text-sm text-brand-green font-bold">{formatKsh(p.amount)}</span>
                 </div>
-                <div className="flex items-center justify-between text-xs text-[#8B97B5]">
+                <div className="flex items-center justify-between text-[10px] text-[#8B97B5]">
                   <span>{p.phone_number}</span>
                   <span>{new Date(p.created_at).toLocaleDateString()}</span>
                 </div>
               </motion.div>
             ))}
-            {s.payments.recentPayments.length === 0 && (
-              <div className="bg-surface-elevated border border-white/5 rounded-xl p-8 text-center text-[#8B97B5] text-sm">
-                No transactions yet
-              </div>
-            )}
           </div>
 
           {/* Desktop */}
@@ -257,35 +300,35 @@ export default function AdminDashboard() {
               </thead>
               <tbody>
                 {s.payments.recentPayments.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-5 py-8 text-center text-[#8B97B5]">No transactions yet</td>
-                  </tr>
-                ) : s.payments.recentPayments.map((p, i) => (
-                  <motion.tr key={i} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.03 }}
-                    className="border-b border-white/5 hover:bg-surface-base/40 transition">
-                    <td className="px-5 py-3 font-mono text-xs text-white">{p.transaction_id}</td>
-                    <td className="px-5 py-3 text-[#8B97B5]">{p.phone_number}</td>
-                    <td className="px-5 py-3 text-white">{p.plan_name}</td>
-                    <td className="px-5 py-3 text-brand-green font-semibold">{formatKsh(p.amount)}</td>
-                    <td className="px-5 py-3">
-                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${getStatusColor(p.status)}`}>
-                        {p.status}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-[#8B97B5] text-xs">{new Date(p.created_at).toLocaleDateString()}</td>
-                  </motion.tr>
-                ))}
+                  <tr><td colSpan={6} className="px-5 py-8 text-center text-[#8B97B5] text-sm">No transactions yet</td></tr>
+                ) : (
+                  s.payments.recentPayments.map((p, i) => (
+                    <motion.tr key={i} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.03 }}
+                      className="border-b border-white/5 hover:bg-surface-base/40 transition">
+                      <td className="px-5 py-3 font-mono text-xs text-white">{p.transaction_id}</td>
+                      <td className="px-5 py-3 text-[#8B97B5] text-xs">{p.phone_number}</td>
+                      <td className="px-5 py-3 text-white text-xs">{p.plan_name}</td>
+                      <td className="px-5 py-3 text-brand-green font-semibold text-xs">{formatKsh(p.amount)}</td>
+                      <td className="px-5 py-3">
+                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${getStatusColor(p.status)}`}>
+                          {p.status}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-[#8B97B5] text-xs">{new Date(p.created_at).toLocaleDateString()}</td>
+                    </motion.tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
         </div>
 
-        {/* What escrow means */}
+        {/* Money explanation */}
         <div className="bg-gradient-to-r from-brand-blue/10 to-purple-500/10 border border-brand-blue/20 rounded-xl p-5 text-sm text-[#8B97B5]">
-          <p className="text-white font-semibold mb-2">💡 My Money vs User Money</p>
-          <p><span className="text-brand-green">My money</span> = KSh that has been fully confirmed by Safaricom and is yours (completed payments).</p>
-          <p className="mt-1"><span className="text-warning">User money / Escrow</span> = KSh users paid that's still in a processing state — M-Pesa confirmed but our callback hasn't fired yet, or still pending.</p>
-          <p className="mt-1"><span className="text-brand-blue">Signups last hour</span> = acts as a proxy for your signup queue — how many new users are trying to join right now.</p>
+          <p className="text-white font-semibold mb-2 text-sm">💡 My Money vs User Money</p>
+          <p className="text-xs"><span className="text-brand-green font-medium">My money</span> = fully confirmed by Safaricom, yours to keep.</p>
+          <p className="text-xs mt-1"><span className="text-warning font-medium">Escrow</span> = user paid but Safaricom callback hasn't confirmed yet — usually resolves in seconds.</p>
+          <p className="text-xs mt-1"><span className="text-brand-blue font-medium">Signups last hour</span> = live demand indicator. High = marketing is working.</p>
         </div>
 
       </div>
