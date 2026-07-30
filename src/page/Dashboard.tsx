@@ -3,18 +3,20 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import {
   LogOut, Mic, BookOpen, BarChart3, Calendar, Zap, Award, Clock,
-  ChevronRight, Search, Bell, TrendingUp, Lock, CreditCard,
-  Sparkles, X, AlertTriangle, Gift, Crown,
+  ChevronRight, Search, TrendingUp, Lock, CreditCard,
+  Sparkles, AlertTriangle, Crown,
 } from 'lucide-react'
-import { signOut } from '../lib/supabaseClient'
+import { signOut, getSupabase } from '../lib/supabaseClient'
 import { usePWAInstall } from '../hooks/usePWAInstall'
 import {
   loadAccess, explorerLecturesRemaining, paidLecturesRemaining,
   getPlanLabel, getPlanColor, type AccessInfo, emptyAccess,
 } from '../lib/access'
 import { useAuth } from '../lib/AuthContext'
-import { getSupabase } from '../lib/supabaseClient'
 import { toast } from '../lib/toast'
+import { DashboardSkeleton } from '../components/SkeletonLoader'
+import UpgradeModal from '../components/UpgradeModal'
+import NotificationBell from '../components/NotificationBell'
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -24,41 +26,51 @@ export default function Dashboard() {
   const [stats, setStats] = useState({ lectures: 0, quizzes: 0, avgScore: 0, streak: 0 })
   const [access, setAccess] = useState<AccessInfo>(emptyAccess)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [pageLoading, setPageLoading] = useState(true)
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [upgradeReason, setUpgradeReason] = useState<'explorer_locked' | 'no_lectures_left' | 'needs_premium'>('explorer_locked')
 
   useEffect(() => {
-    // Load stats from localStorage
-    let lectures = 0
-    let quizResults: any[] = []
-    try { lectures = JSON.parse(localStorage.getItem('recordingsMetadata') || '[]').length } catch {}
-    try {
-      quizResults = JSON.parse(localStorage.getItem('quizResults') || '[]')
-      const avg = quizResults.length > 0
-        ? Math.round(quizResults.reduce((s, q) => s + (q.total > 0 ? (q.score / q.total) * 100 : 0), 0) / quizResults.length)
-        : 0
-      const activeDates = new Set<string>()
-      try {
-        JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')
-          .forEach((r: any) => {
-            const d = new Date(r.timestamp || r.date)
-            if (!isNaN(d.getTime())) activeDates.add(d.toISOString().slice(0, 10))
-          })
-      } catch {}
-      quizResults.forEach((q: any) => {
-        const d = new Date(q.date)
-        if (!isNaN(d.getTime())) activeDates.add(d.toISOString().slice(0, 10))
-      })
-      let streak = 0
-      const cursor = new Date()
-      if (!activeDates.has(cursor.toISOString().slice(0, 10))) cursor.setDate(cursor.getDate() - 1)
-      while (activeDates.has(cursor.toISOString().slice(0, 10))) { streak++; cursor.setDate(cursor.getDate() - 1) }
-      setStats({ lectures, quizzes: quizResults.length, avgScore: avg, streak })
-    } catch {}
-
-    // Load access + check admin
     const init = async () => {
+      // Load stats
+      let lectures = 0
+      let quizResults: any[] = []
+      try { lectures = JSON.parse(localStorage.getItem('recordingsMetadata') || '[]').length } catch {}
+      try {
+        quizResults = JSON.parse(localStorage.getItem('quizResults') || '[]')
+        const avg = quizResults.length > 0
+          ? Math.round(quizResults.reduce((s, q) => s + (q.total > 0 ? (q.score / q.total) * 100 : 0), 0) / quizResults.length)
+          : 0
+        const activeDates = new Set<string>()
+        try {
+          JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')
+            .forEach((r: any) => {
+              const d = new Date(r.timestamp || r.date)
+              if (!isNaN(d.getTime())) activeDates.add(d.toISOString().slice(0, 10))
+            })
+        } catch {}
+        quizResults.forEach((q: any) => {
+          const d = new Date(q.date)
+          if (!isNaN(d.getTime())) activeDates.add(d.toISOString().slice(0, 10))
+        })
+        let streak = 0
+        const cursor = new Date()
+        if (!activeDates.has(cursor.toISOString().slice(0, 10))) cursor.setDate(cursor.getDate() - 1)
+        while (activeDates.has(cursor.toISOString().slice(0, 10))) { streak++; cursor.setDate(cursor.getDate() - 1) }
+        setStats({ lectures, quizzes: quizResults.length, avgScore: avg, streak })
+      } catch {}
+
+      // Load access
       const a = await loadAccess(userId)
       setAccess(a)
 
+      // Show upgrade modal automatically if locked
+      if (a.planLocked) {
+        setUpgradeReason('explorer_locked')
+        setShowUpgradeModal(true)
+      }
+
+      // Check admin
       if (userId) {
         try {
           const client = await getSupabase()
@@ -70,7 +82,10 @@ export default function Dashboard() {
           setIsAdmin(!!data?.is_admin)
         } catch {}
       }
+
+      setPageLoading(false)
     }
+
     init()
   }, [userId])
 
@@ -84,36 +99,28 @@ export default function Dashboard() {
     navigate('/')
   }
 
-  // Lecture usage display
   const plan = access.currentPlan || 'explorer'
   const isExplorer = plan === 'explorer'
   const isAchiever = plan === 'achiever'
   const isPaidPlan = ['excellence', 'valedictorian'].includes(plan)
-  const explorerLeft = explorerLecturesRemaining(access)
   const paidLeft = paidLecturesRemaining(access)
+  const explorerLeft = explorerLecturesRemaining(access)
   const isLocked = access.planLocked
 
   const lectureUsageBar = () => {
     if (isExplorer) {
       const used = access.freeCreditsUsed || 0
       const pct = Math.round((used / 3) * 100)
-      return {
-        used, total: 3, pct,
-        color: used >= 3 ? 'bg-red-500' : used >= 2 ? 'bg-yellow-400' : 'bg-mint',
-      }
+      return { used, total: 3, pct, color: used >= 3 ? 'bg-red-500' : used >= 2 ? 'bg-yellow-400' : 'bg-mint' }
     }
     if (isPaidPlan) {
       const used = access.lecturesUsed || 0
       const total = access.lectureAllowance || 0
       const pct = total > 0 ? Math.round((used / total) * 100) : 0
-      return {
-        used, total, pct,
-        color: pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-yellow-400' : 'bg-mint',
-      }
+      return { used, total, pct, color: pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-yellow-400' : 'bg-mint' }
     }
     return null
   }
-
   const usageBar = lectureUsageBar()
 
   const cards = [
@@ -139,6 +146,14 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-white via-surface-light to-white">
 
+      {/* Upgrade Modal */}
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        reason={upgradeReason}
+        currentPlan={plan}
+      />
+
       {/* Nav */}
       <nav className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
@@ -148,7 +163,7 @@ export default function Dashboard() {
             </div>
             <span className="font-sora font-bold text-navy text-base sm:text-lg hidden sm:inline">STUDIA AI</span>
 
-            {/* Install button */}
+            {/* Install */}
             {!isInstalled && installPrompt && (
               <button onClick={install} disabled={isInstalling}
                 className="flex items-center gap-1.5 bg-gradient-to-r from-mint to-light-blue text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-90 transition disabled:opacity-50 ml-1">
@@ -159,29 +174,27 @@ export default function Dashboard() {
               </button>
             )}
 
-            {/* Admin link — only visible to you */}
+            {/* Admin */}
             {isAdmin && (
-              <button
-                onClick={() => navigate('/admin')}
-                className="flex items-center gap-1.5 bg-warning/10 border border-warning/30 text-warning px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-warning/20 transition ml-1"
-              >
+              <button onClick={() => navigate('/admin')}
+                className="flex items-center gap-1.5 bg-warning/10 border border-warning/30 text-warning px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-warning/20 transition ml-1">
                 <Crown size={13} />
                 <span className="hidden sm:inline">Owner</span>
               </button>
             )}
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-4">
-            <div className="hidden md:flex items-center gap-2 bg-gray-100 rounded-lg px-4 py-2 w-48 lg:w-64">
-              <Search size={18} className="text-gray-400 shrink-0" />
-              <input type="text" placeholder="Search lectures..."
-                className="bg-transparent text-navy outline-none w-full text-sm" />
+          <div className="flex items-center gap-1 sm:gap-3">
+            <div className="hidden md:flex items-center gap-2 bg-gray-100 rounded-lg px-4 py-2 w-48 lg:w-56">
+              <Search size={16} className="text-gray-400 shrink-0" />
+              <input type="text" placeholder="Search..." className="bg-transparent text-navy outline-none w-full text-sm" />
             </div>
-            <button className="p-2 hover:bg-gray-100 rounded-lg transition">
-              <Bell size={20} className="text-navy" />
-            </button>
+
+            {/* Real notification bell */}
+            <NotificationBell userId={userId} />
+
             <button onClick={handleSignOut}
-              className="flex items-center gap-1.5 text-navy hover:text-indigo-premium transition pl-2 sm:pl-4 border-l border-gray-200">
+              className="flex items-center gap-1.5 text-navy hover:text-indigo-premium transition pl-2 sm:pl-3 border-l border-gray-200 ml-1">
               <LogOut size={18} />
               <span className="text-sm font-medium hidden sm:inline">Sign out</span>
             </button>
@@ -190,189 +203,189 @@ export default function Dashboard() {
       </nav>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8 sm:space-y-10">
 
-          {/* Welcome */}
-          <div>
-            <h1 className="font-sora font-bold text-4xl sm:text-5xl text-navy mb-2">Welcome back! 👋</h1>
-            <p className="text-gray-600">
-              {stats.streak > 0 ? (
-                <>You're on a <span className="font-bold text-indigo-premium">{stats.streak}-day streak</span> 🔥 Keep it up!</>
-              ) : (
-                'Record a lecture or take a quiz today to start your streak!'
-              )}
-            </p>
-          </div>
+        {/* Skeleton while loading */}
+        {pageLoading ? (
+          <DashboardSkeleton />
+        ) : (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8 sm:space-y-10">
 
-          {/* Plan + lecture usage card */}
-          <div className={`rounded-2xl p-5 sm:p-6 border-2 ${
-            isLocked ? 'bg-red-50 border-red-200'
-            : plan === 'valedictorian' ? 'bg-gradient-to-r from-warning/10 to-red-500/10 border-warning/40'
-            : plan === 'excellence' ? 'bg-gradient-to-r from-mint/10 to-light-blue/10 border-mint/30'
-            : plan === 'achiever' ? 'bg-blue-50/50 border-light-blue/30'
-            : 'bg-gray-50 border-gray-200'
-          }`}>
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                  <span className={`font-sora font-bold text-lg ${getPlanColor(plan)}`}>
-                    {getPlanLabel(plan)}
-                  </span>
-                  {access.subscriptionStatus === 'active' && isPaidPlan && (
-                    <span className="text-[10px] bg-mint/20 text-mint px-2 py-0.5 rounded-full font-semibold">ACTIVE</span>
-                  )}
-                  {isLocked && (
-                    <span className="text-[10px] bg-red-500/20 text-red-600 px-2 py-0.5 rounded-full font-semibold">LOCKED</span>
-                  )}
-                </div>
+            {/* Welcome */}
+            <div>
+              <h1 className="font-sora font-bold text-4xl sm:text-5xl text-navy mb-2">Welcome back! 👋</h1>
+              <p className="text-gray-600">
+                {stats.streak > 0 ? (
+                  <>You're on a <span className="font-bold text-indigo-premium">{stats.streak}-day streak</span> 🔥 Keep it up!</>
+                ) : (
+                  'Record a lecture or take a quiz today to start your streak!'
+                )}
+              </p>
+            </div>
 
-                {isLocked ? (
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle size={16} className="text-red-500 shrink-0 mt-0.5" />
-                    <p className="text-sm text-red-700">Your 3 free lectures have been used. All AI features are locked. Upgrade to continue.</p>
-                  </div>
-                ) : isExplorer ? (
-                  <div className="space-y-2">
-                    <p className="text-sm text-gray-600">
-                      <span className="font-bold text-navy">{explorerLeft}</span> of 3 free lectures remaining (lifetime — no reset)
-                    </p>
-                    {usageBar && (
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div className={`${usageBar.color} h-2 rounded-full transition-all`} style={{ width: `${usageBar.pct}%` }} />
-                      </div>
+            {/* Plan + usage */}
+            <div className={`rounded-2xl p-5 sm:p-6 border-2 cursor-pointer transition-all ${
+              isLocked ? 'bg-red-50 border-red-300 hover:border-red-400'
+              : plan === 'valedictorian' ? 'bg-gradient-to-r from-warning/10 to-red-500/10 border-warning/40'
+              : plan === 'excellence' ? 'bg-gradient-to-r from-mint/10 to-light-blue/10 border-mint/30'
+              : plan === 'achiever' ? 'bg-blue-50/50 border-light-blue/30'
+              : 'bg-gray-50 border-gray-200'
+            }`}
+              onClick={() => {
+                if (isLocked) { setUpgradeReason('explorer_locked'); setShowUpgradeModal(true) }
+                else if (isPaidPlan && paidLeft === 0) { setUpgradeReason('no_lectures_left'); setShowUpgradeModal(true) }
+              }}
+            >
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span className={`font-sora font-bold text-lg ${getPlanColor(plan)}`}>
+                      {getPlanLabel(plan)}
+                    </span>
+                    {access.subscriptionStatus === 'active' && isPaidPlan && (
+                      <span className="text-[10px] bg-mint/20 text-mint px-2 py-0.5 rounded-full font-semibold">ACTIVE</span>
+                    )}
+                    {isLocked && (
+                      <span className="text-[10px] bg-red-500/20 text-red-600 px-2 py-0.5 rounded-full font-semibold">LOCKED</span>
                     )}
                   </div>
-                ) : isAchiever ? (
-                  <p className="text-sm text-gray-600">
-                    Pay KSh 29–49 per lecture · Bonus AI credits: <span className="font-bold text-navy">{access.liteBonusCredits || 0}</span>
-                  </p>
-                ) : isPaidPlan && usageBar ? (
-                  <div className="space-y-2">
-                    <p className="text-sm text-gray-600">
-                      <span className="font-bold text-navy">{usageBar.total - usageBar.used}</span> of {usageBar.total} lectures remaining
-                      {access.periodEnd && (
-                        <span className="text-gray-400 ml-1">
-                          · resets {new Date(access.periodEnd).toLocaleDateString()}
-                        </span>
+
+                  {isLocked ? (
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle size={16} className="text-red-500 shrink-0 mt-0.5" />
+                      <p className="text-sm text-red-700">All 3 free lectures used. Tap to unlock AI features →</p>
+                    </div>
+                  ) : isExplorer ? (
+                    <div className="space-y-2">
+                      <p className="text-sm text-gray-600">
+                        <span className="font-bold text-navy">{explorerLeft}</span> of 3 free lectures remaining · lifetime, no reset
+                      </p>
+                      {usageBar && (
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div className={`${usageBar.color} h-2 rounded-full transition-all`} style={{ width: `${usageBar.pct}%` }} />
+                        </div>
                       )}
+                    </div>
+                  ) : isAchiever ? (
+                    <p className="text-sm text-gray-600">
+                      Pay KSh 29–49 per lecture · Bonus credits: <span className="font-bold text-navy">{access.liteBonusCredits || 0}</span>
                     </p>
-                    <div className="w-full bg-white/50 rounded-full h-2">
-                      <div className={`${usageBar.color} h-2 rounded-full transition-all`} style={{ width: `${usageBar.pct}%` }} />
+                  ) : isPaidPlan && usageBar ? (
+                    <div className="space-y-2">
+                      <p className="text-sm text-gray-600">
+                        <span className="font-bold text-navy">{usageBar.total - usageBar.used}</span> of {usageBar.total} lectures remaining
+                        {access.periodEnd && (
+                          <span className="text-gray-400 ml-1">· resets {new Date(access.periodEnd).toLocaleDateString()}</span>
+                        )}
+                      </p>
+                      <div className="w-full bg-white/50 rounded-full h-2">
+                        <div className={`${usageBar.color} h-2 rounded-full transition-all`} style={{ width: `${usageBar.pct}%` }} />
+                      </div>
                     </div>
-                  </div>
-                ) : null}
-              </div>
-
-              {(isLocked || (isPaidPlan && paidLeft <= 3)) && (
-                <button onClick={() => navigate('/pricing')}
-                  className="bg-indigo-premium text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-purple-premium transition whitespace-nowrap shrink-0">
-                  {isLocked ? '🔓 Unlock Now' : '➕ Get More'}
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Explorer locked full-width banner */}
-          {isLocked && (
-            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-              className="bg-red-500 rounded-2xl p-6 text-white text-center">
-              <p className="text-2xl mb-2">🔒</p>
-              <p className="font-sora font-bold text-xl mb-2">AI Features Locked</p>
-              <p className="text-white/90 text-sm mb-4">
-                You've used all 3 Explorer lectures. Choose a plan to keep studying smarter.
-              </p>
-              <button onClick={() => navigate('/pricing')}
-                className="bg-white text-red-500 font-bold px-6 py-2.5 rounded-xl hover:bg-gray-100 transition">
-                View Plans — from KSh 29
-              </button>
-            </motion.div>
-          )}
-
-          {/* Stats */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            {statCards.map((stat, i) => (
-              <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-                className="bg-white rounded-2xl p-4 sm:p-6 border border-gray-200 hover:border-indigo-premium/50 hover:shadow-lg transition group">
-                <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-${stat.color}/10 flex items-center justify-center text-${stat.color} mb-3 sm:mb-4 group-hover:scale-110 transition`}>
-                  <stat.icon size={22} />
+                  ) : null}
                 </div>
-                <p className="text-2xl sm:text-3xl font-bold text-navy mb-1">{stat.value}</p>
-                <p className="text-xs sm:text-sm text-gray-600">{stat.label}</p>
-              </motion.div>
-            ))}
-          </div>
 
-          {/* ── REFER AND EARN — permanent card, always visible ────────────── */}
-          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-            className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border-2 border-purple-500/20 rounded-2xl p-5 sm:p-6">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-2xl shrink-0">
-                🎁
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                  <p className="font-sora font-bold text-navy text-base">Refer and Earn — Free AI Credits</p>
-                  <motion.span
-                    animate={{ rotate: [0, -10, 10, -10, 0] }}
-                    transition={{ duration: 1.5, repeat: Infinity, repeatDelay: 3 }}
-                    className="text-sm"
+                {(isLocked || (isPaidPlan && paidLeft <= 3)) && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setUpgradeReason(isLocked ? 'explorer_locked' : 'no_lectures_left')
+                      setShowUpgradeModal(true)
+                    }}
+                    className="bg-indigo-premium text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-purple-premium transition whitespace-nowrap shrink-0"
                   >
-                    🎁
-                  </motion.span>
-                </div>
-                <p className="text-gray-600 text-sm">
-                  Invite classmates and earn up to <span className="font-semibold text-purple-600">150+ bonus AI credits</span>. They get 2 bonus credits too.
-                </p>
+                    {isLocked ? '🔓 Unlock Now' : '➕ Get More'}
+                  </button>
+                )}
               </div>
-              <button
-                onClick={() => navigate('/payments?tab=invite')}
-                className="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-5 py-2.5 rounded-xl font-semibold text-sm hover:opacity-90 transition whitespace-nowrap shrink-0 shadow-md shadow-purple-500/20"
-              >
-                Invite Friends →
-              </button>
             </div>
-          </motion.div>
 
-          {/* Quick Actions */}
-          <div>
-            <h2 className="font-sora font-bold text-xl sm:text-2xl text-navy mb-4 sm:mb-6">Quick Actions</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
-              {cards.map((card, i) => (
-                <motion.button key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.04 }}
-                  onClick={() => navigate(card.path)}
-                  className="group text-left">
-                  <div className={`bg-gradient-to-br ${card.color} to-transparent rounded-2xl p-4 sm:p-5 border border-gray-200 hover:border-indigo-premium/50 hover:shadow-lg transition h-full ${
-                    isLocked && !['payments'].includes(card.path.slice(1)) ? 'opacity-50' : ''
-                  }`}>
-                    <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center text-white mb-3 group-hover:scale-110 transition">
-                      <card.icon size={20} />
-                    </div>
-                    <h3 className="font-sora font-bold text-navy text-xs sm:text-sm mb-0.5 break-words">{card.title}</h3>
-                    <p className="text-xs text-gray-600 hidden sm:block">{card.desc}</p>
+            {/* Stats */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              {statCards.map((stat, i) => (
+                <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
+                  className="bg-white rounded-2xl p-4 sm:p-6 border border-gray-200 hover:border-indigo-premium/50 hover:shadow-lg transition group">
+                  <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-${stat.color}/10 flex items-center justify-center text-${stat.color} mb-3 sm:mb-4 group-hover:scale-110 transition`}>
+                    <stat.icon size={22} />
                   </div>
-                </motion.button>
+                  <p className="text-2xl sm:text-3xl font-bold text-navy mb-1">{stat.value}</p>
+                  <p className="text-xs sm:text-sm text-gray-600">{stat.label}</p>
+                </motion.div>
               ))}
             </div>
-          </div>
 
-          {/* Pro tip */}
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
-            className="bg-gradient-to-r from-indigo-premium to-purple-premium rounded-3xl p-6 sm:p-8 text-white overflow-hidden relative">
-            <div className="absolute -right-20 -top-20 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
-            <div className="relative z-10">
-              <h2 className="font-sora font-bold text-2xl sm:text-3xl mb-3">Pro Tip 💡</h2>
-              <p className="text-white/90 mb-6 max-w-2xl text-sm sm:text-base">
-                Record your lectures, summarize key concepts, and take quizzes regularly. STUDIA automates all of this — just press record.
-              </p>
-              <button onClick={() => navigate('/pricing')}
-                className="bg-white text-indigo-premium px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition text-sm sm:text-base">
-                See Plans — from KSh 29
-              </button>
+            {/* Refer and Earn — permanent card */}
+            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+              className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border-2 border-purple-500/20 rounded-2xl p-5 sm:p-6">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-2xl shrink-0">
+                  🎁
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                    <p className="font-sora font-bold text-navy text-base">Refer and Earn — Free AI Credits</p>
+                  </div>
+                  <p className="text-gray-600 text-sm">
+                    Invite classmates and earn up to <span className="font-semibold text-purple-600">150+ bonus AI credits</span>. They get 2 bonus credits too.
+                  </p>
+                </div>
+                <button
+                  onClick={() => navigate('/payments?tab=invite')}
+                  className="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-5 py-2.5 rounded-xl font-semibold text-sm hover:opacity-90 transition whitespace-nowrap shrink-0 shadow-md shadow-purple-500/20"
+                >
+                  Invite Friends →
+                </button>
+              </div>
+            </motion.div>
+
+            {/* Quick Actions */}
+            <div>
+              <h2 className="font-sora font-bold text-xl sm:text-2xl text-navy mb-4 sm:mb-6">Quick Actions</h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+                {cards.map((card, i) => (
+                  <motion.button key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.04 }}
+                    onClick={() => {
+                      if (isLocked && !['payments', 'pricing'].includes(card.path.slice(1))) {
+                        setUpgradeReason('explorer_locked')
+                        setShowUpgradeModal(true)
+                        return
+                      }
+                      navigate(card.path)
+                    }}
+                    className="group text-left"
+                  >
+                    <div className={`bg-gradient-to-br ${card.color} to-transparent rounded-2xl p-4 sm:p-5 border border-gray-200 hover:border-indigo-premium/50 hover:shadow-lg transition h-full ${
+                      isLocked && !['payments'].includes(card.path.slice(1)) ? 'opacity-60' : ''
+                    }`}>
+                      <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center text-white mb-3 group-hover:scale-110 transition">
+                        <card.icon size={20} />
+                      </div>
+                      <h3 className="font-sora font-bold text-navy text-xs sm:text-sm mb-0.5 break-words">{card.title}</h3>
+                      <p className="text-xs text-gray-600 hidden sm:block">{card.desc}</p>
+                    </div>
+                  </motion.button>
+                ))}
+              </div>
             </div>
-          </motion.div>
 
-        </motion.div>
+            {/* Pro tip */}
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
+              className="bg-gradient-to-r from-indigo-premium to-purple-premium rounded-3xl p-6 sm:p-8 text-white overflow-hidden relative">
+              <div className="absolute -right-20 -top-20 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
+              <div className="relative z-10">
+                <h2 className="font-sora font-bold text-2xl sm:text-3xl mb-3">Pro Tip 💡</h2>
+                <p className="text-white/90 mb-6 max-w-2xl text-sm sm:text-base">
+                  Record your lectures, summarize key concepts, and take quizzes regularly. STUDIA automates all of this.
+                </p>
+                <button onClick={() => navigate('/pricing')}
+                  className="bg-white text-indigo-premium px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition text-sm sm:text-base">
+                  See Plans — from KSh 29
+                </button>
+              </div>
+            </motion.div>
+
+          </motion.div>
+        )}
       </div>
     </div>
   )
