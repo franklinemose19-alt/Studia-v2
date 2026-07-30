@@ -1,7 +1,18 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
-const SUPABASE_URL = 'https://dmqjhhbjhzzyinxnblge.supabase.co'
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRtcWpoaGJqaHp6eWlueG5ibGdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQyODEzMTAsImV4cCI6MjA1OTg1NzMxMH0.up7DFUefMqAPUkZk76mMt0dBtSSGvRyGVvJRMqSqfmo'
+// Primary: read from Vite env vars (set in Vercel dashboard)
+// Fallback: hardcoded values
+const SUPABASE_URL =
+  import.meta.env.VITE_SUPABASE_URL ||
+  'https://dmqjhhbjhzzyinxnblge.supabase.co'
+
+const SUPABASE_ANON_KEY =
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRtcWpoaGJqaHp6eWlueG5ibGdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQyODEzMTAsImV4cCI6MjA1OTg1NzMxMH0.up7DFUefMqAPUkZk76mMt0dBtSSGvRyGVvJRMqSqfmo'
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  console.error('❌ STUDIA: Missing Supabase configuration. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel settings.')
+}
 
 let _client: SupabaseClient | null = null
 
@@ -12,7 +23,6 @@ export function getClient(): SupabaseClient {
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
-        storage: typeof window !== 'undefined' ? window.localStorage : undefined,
         storageKey: 'studia-auth-token',
       },
     })
@@ -29,12 +39,19 @@ export const supabase = {
     console.log('Supabase client initialized')
 
     const { data, error } = await client.auth.signInWithPassword({ email, password })
-    if (error) throw error
+    if (error) {
+      console.error('Sign in error:', error.message)
+      throw error
+    }
 
     console.log('Signin successful, user ID:', data.user?.id)
 
     if (data.user) {
-      await ensureUserRow(data.user.id, data.user.email || '', data.user.user_metadata?.full_name || '')
+      await ensureUserRow(
+        data.user.id,
+        data.user.email || '',
+        data.user.user_metadata?.full_name || ''
+      )
     }
 
     return { user: data.user, session: data.session }
@@ -46,15 +63,12 @@ export const supabase = {
     const { data, error } = await client.auth.signUp({
       email,
       password,
-      options: {
-        data: { full_name: name },
-      },
+      options: { data: { full_name: name } },
     })
     if (error) throw error
 
-    const userId = data.user?.id
-    if (userId) {
-      await createUserRow(userId, email, name, phone)
+    if (data.user?.id) {
+      await createUserRow(data.user.id, email, name, phone)
     }
 
     return { user: data.user, session: data.session }
@@ -88,7 +102,12 @@ export const getCurrentUser = async () => {
   return user
 }
 
-async function createUserRow(userId: string, email: string, name: string, phone?: string) {
+async function createUserRow(
+  userId: string,
+  email: string,
+  name: string,
+  phone?: string
+) {
   const client = getClient()
   const { error } = await client.from('users').insert({
     auth_id: userId,
