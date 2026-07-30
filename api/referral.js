@@ -38,6 +38,18 @@ async function supaFetch(path, options = {}) {
   })
 }
 
+async function insertNotification(userId, title, message, type = 'info') {
+  try {
+    await supaFetch('notifications', {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ user_id: userId, title, message, type }),
+    })
+  } catch (err) {
+    console.error('Failed to insert notification:', err)
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
@@ -46,11 +58,14 @@ export default async function handler(req, res) {
   try {
     const { action } = req.body
 
+    // ── Generate ──────────────────────────────────────────────────────────
     if (action === 'generate') {
       const { userId } = req.body
       if (!userId) return res.status(400).json({ error: 'userId required' })
 
-      const existingRes = await supaFetch(`users?auth_id=eq.${userId}&select=referral_code,verified_referral_count,is_campus_ambassador`)
+      const existingRes = await supaFetch(
+        `users?auth_id=eq.${userId}&select=referral_code,verified_referral_count,is_campus_ambassador`
+      )
       const existing = await existingRes.json()
       const row = existing?.[0]
 
@@ -77,6 +92,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Could not generate referral code' })
     }
 
+    // ── Link ──────────────────────────────────────────────────────────────
     if (action === 'link') {
       const { userId, code } = req.body
       if (!userId || !code) return res.status(400).json({ error: 'userId and code required' })
@@ -89,7 +105,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ linked: false })
       }
 
-      const insertRes = await supaFetch(`referrals`, {
+      const insertRes = await supaFetch('referrals', {
         method: 'POST',
         headers: { Prefer: 'return=minimal' },
         body: JSON.stringify({
@@ -104,11 +120,14 @@ export default async function handler(req, res) {
       return res.status(200).json({ linked: insertRes.ok })
     }
 
+    // ── Verify ────────────────────────────────────────────────────────────
     if (action === 'verify') {
       const { userId } = req.body
       if (!userId) return res.status(400).json({ error: 'userId required' })
 
-      const pendingRes = await supaFetch(`referrals?referred_user_id=eq.${userId}&status=eq.pending&select=id,referrer_user_id`)
+      const pendingRes = await supaFetch(
+        `referrals?referred_user_id=eq.${userId}&status=eq.pending&select=id,referrer_user_id`
+      )
       const pendingData = await pendingRes.json()
       const pending = pendingData?.[0]
 
@@ -116,11 +135,13 @@ export default async function handler(req, res) {
         return res.status(200).json({ verified: false })
       }
 
+      // Mark referral as verified
       await supaFetch(`referrals?id=eq.${pending.id}`, {
         method: 'PATCH',
         body: JSON.stringify({ status: 'verified', verified_at: new Date().toISOString() }),
       })
 
+      // Give the referred user their bonus credits
       const friendRes = await supaFetch(`users?auth_id=eq.${userId}&select=lite_bonus_credits`)
       const friendData = await friendRes.json()
       const friendCredits = friendData?.[0]?.lite_bonus_credits || 0
@@ -129,6 +150,15 @@ export default async function handler(req, res) {
         body: JSON.stringify({ lite_bonus_credits: friendCredits + 2 }),
       })
 
+      // Notify referred user
+      await insertNotification(
+        userId,
+        'Bonus Credits Unlocked! 🎁',
+        'You received 2 bonus AI credits from your referral invitation. Use them on recording, quiz, summarize, or AI Tools!',
+        'success'
+      )
+
+      // Give referrer their milestone credits
       const referrerRes = await supaFetch(
         `users?auth_id=eq.${pending.referrer_user_id}&select=verified_referral_count,referral_milestone_credits_awarded,lite_bonus_credits,is_campus_ambassador`
       )
@@ -140,6 +170,7 @@ export default async function handler(req, res) {
         const newMilestoneTotal = computeMilestoneTotal(newCount)
         const alreadyAwarded = referrer.referral_milestone_credits_awarded || 0
         const topUp = Math.max(0, newMilestoneTotal - alreadyAwarded)
+        const becomeAmbassador = newCount >= 100 && !referrer.is_campus_ambassador
 
         await supaFetch(`users?auth_id=eq.${pending.referrer_user_id}`, {
           method: 'PATCH',
@@ -150,6 +181,40 @@ export default async function handler(req, res) {
             is_campus_ambassador: newCount >= 100 ? true : referrer.is_campus_ambassador,
           }),
         })
+
+        // Notify referrer
+        if (becomeAmbassador) {
+          await insertNotification(
+            pending.referrer_user_id,
+            'Campus Ambassador! 🏆',
+            "You've reached 100 verified referrals! You're now a STUDIA Campus Ambassador. You earned 150 bonus credits.",
+            'success'
+          )
+        } else if (topUp > 0) {
+          const milestoneMessages: Record<number, string> = {
+            1: 'Your first referral was verified! You earned 2 bonus AI credits 🎁',
+            5: 'You\'ve referred 5 students! Milestone reached — you earned bonus credits 🎉',
+            10: 'Amazing! 10 verified referrals — major milestone unlocked 🏅',
+            25: 'You\'re a STUDIA super-referrer! 25 students and counting 🔥',
+            50: 'Halfway to Ambassador — 50 verified referrals! 🌟',
+          }
+          const msg = milestoneMessages[newCount]
+            || `Someone joined using your referral link! You earned ${topUp} bonus AI credit${topUp !== 1 ? 's' : ''}.`
+
+          await insertNotification(
+            pending.referrer_user_id,
+            'New Referral Verified! 🎁',
+            msg,
+            'success'
+          )
+        } else {
+          await insertNotification(
+            pending.referrer_user_id,
+            'New Referral! 👋',
+            `Someone joined STUDIA using your referral link. You now have ${newCount} verified referral${newCount !== 1 ? 's' : ''}.`,
+            'info'
+          )
+        }
       }
 
       return res.status(200).json({ verified: true })
