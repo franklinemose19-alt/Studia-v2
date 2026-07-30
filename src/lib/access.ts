@@ -29,6 +29,43 @@ export const emptyAccess: AccessInfo = {
 
 const EXPLORER_LIFETIME_LIMIT = 3
 
+// ── Subscription expiry check ──────────────────────────────────────────────
+// Runs every time access is loaded — silently reverts expired subscriptions
+async function checkAndExpireSubscription(
+  uid: string,
+  plan: string | null,
+  status: string | null,
+  periodEnd: string | null
+): Promise<{ plan: string; status: string } | null> {
+  if (!['excellence', 'valedictorian'].includes(plan || '')) return null
+  if (status !== 'active') return null
+  if (!periodEnd) return null
+
+  const now = new Date()
+  const end = new Date(periodEnd)
+  if (now <= end) return null
+
+  // Subscription has expired — revert to explorer
+  try {
+    const client = await getSupabase()
+    await client
+      .from('users')
+      .update({
+        subscription_status: 'inactive',
+        current_plan: 'explorer',
+        lecture_allowance: 0,
+        lectures_used: 0,
+      })
+      .eq('auth_id', uid)
+
+    console.log(`Subscription expired for ${uid} — reverted to explorer`)
+    return { plan: 'explorer', status: 'inactive' }
+  } catch (err) {
+    console.error('Failed to expire subscription:', err)
+    return null
+  }
+}
+
 export const loadAccess = async (cachedUserId?: string | null): Promise<AccessInfo> => {
   try {
     const client = await getSupabase()
@@ -47,15 +84,26 @@ export const loadAccess = async (cachedUserId?: string | null): Promise<AccessIn
       .eq('auth_id', uid)
       .maybeSingle()
 
+    let currentPlan = data?.current_plan || 'explorer'
+    let subscriptionStatus = data?.subscription_status || null
+    const periodEnd = data?.period_end || null
+
+    // Auto-expire check
+    const expired = await checkAndExpireSubscription(uid, currentPlan, subscriptionStatus, periodEnd)
+    if (expired) {
+      currentPlan = expired.plan
+      subscriptionStatus = expired.status
+    }
+
     return {
       userId: uid,
-      currentPlan: data?.current_plan || 'explorer',
-      subscriptionStatus: data?.subscription_status || null,
+      currentPlan,
+      subscriptionStatus,
       freeCreditsUsed: data?.free_ai_credits_used || 0,
       liteBonusCredits: data?.lite_bonus_credits || 0,
-      lectureAllowance: data?.lecture_allowance || 0,
+      lectureAllowance: expired ? 0 : (data?.lecture_allowance || 0),
       lecturesUsed: data?.lectures_used || 0,
-      periodEnd: data?.period_end || null,
+      periodEnd,
       planLocked: data?.plan_locked || false,
     }
   } catch (err) {
@@ -73,13 +121,13 @@ export const isActivePaidPlan = (access: AccessInfo) =>
 export const isPremiumPlan = (access: AccessInfo) =>
   access.currentPlan === 'valedictorian' && access.subscriptionStatus === 'active'
 
-// isUnlimitedPlan — single definition, used by Recording, Dashboard, Notes etc.
+// Single definition — used everywhere
 export const isUnlimitedPlan = isActivePaidPlan
 
 export const explorerLecturesRemaining = (access: AccessInfo) =>
   Math.max(0, EXPLORER_LIFETIME_LIMIT - (access.freeCreditsUsed || 0))
 
-// freeCreditsRemaining — alias for Recording.tsx compatibility
+// Alias for backward compatibility with Recording.tsx and other pages
 export const freeCreditsRemaining = explorerLecturesRemaining
 
 export const paidLecturesRemaining = (access: AccessInfo) =>
@@ -112,12 +160,10 @@ export type AccessResult =
   | { allowed: false; reason: 'explorer_locked' | 'no_lectures_left' | 'needs_premium' }
 
 export const checkAccess = (access: AccessInfo, feature: FeatureType): AccessResult => {
-  // Explorer permanently locked
   if (access.planLocked) {
     return { allowed: false, reason: 'explorer_locked' }
   }
 
-  // Active paid subscription (Excellence or Valedictorian)
   if (isActivePaidPlan(access)) {
     if (feature === 'premium' && !isPremiumPlan(access)) {
       if (access.liteBonusCredits > 0) return { allowed: true, source: 'bonus' }
@@ -128,13 +174,9 @@ export const checkAccess = (access: AccessInfo, feature: FeatureType): AccessRes
     return { allowed: false, reason: 'no_lectures_left' }
   }
 
-  // Achiever bonus credits from paid sessions
   if (access.liteBonusCredits > 0) return { allowed: true, source: 'bonus' }
-
-  // Explorer free lectures (lifetime, never resets)
   if (explorerLecturesRemaining(access) > 0) return { allowed: true, source: 'explorer_free' }
 
-  // Locked out
   return { allowed: false, reason: 'explorer_locked' }
 }
 
@@ -144,7 +186,6 @@ export const consumeCredit = async (
 ): Promise<void> => {
   if (!access.userId) return
 
-  // Fire referral verify on first action
   fetch('/api/referral', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -174,13 +215,15 @@ export const consumeCredit = async (
         .update({ lectures_used: access.lecturesUsed + 1 })
         .eq('auth_id', access.userId)
     }
-    // achiever_session: no stored credit to consume — per-session paid
   } catch (err) {
     console.error('Failed to consume credit:', err)
   }
 }
 
-export const grantLiteBonusCredit = async (userId: string, currentBonusCredits: number): Promise<void> => {
+export const grantLiteBonusCredit = async (
+  userId: string,
+  currentBonusCredits: number
+): Promise<void> => {
   try {
     const client = await getSupabase()
     await client
