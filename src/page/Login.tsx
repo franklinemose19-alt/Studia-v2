@@ -4,6 +4,7 @@ import { ArrowLeft, Loader, Eye, EyeOff } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../lib/AuthContext'
+import { toast } from '../lib/toast'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -15,7 +16,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [errorMsg, setErrorMsg] = useState('')
 
   useEffect(() => {
     if (!loading && signedIn) {
@@ -26,31 +27,47 @@ export default function Login() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    setSubmitting(true)
-    setError('')
+    setErrorMsg('')
 
+    if (!email || !password) {
+      setErrorMsg('Please enter your email and password')
+      return
+    }
+
+    setSubmitting(true)
     try {
-      if (!email || !password) {
-        setError('Please enter email and password')
-        setSubmitting(false)
-        return
-      }
       await supabase.signIn(email, password)
-      // AuthContext onAuthStateChange handles redirect automatically
+      toast.success('Welcome back! 🎓')
+      // AuthContext handles redirect via useEffect above
     } catch (err: any) {
-      setError(err.message || 'An error occurred during login')
+      const msg = err.message || 'An error occurred during login'
+
+      // Friendly error messages
+      if (msg.includes('Invalid login') || msg.includes('invalid_grant')) {
+        setErrorMsg('Incorrect email or password. Please try again.')
+      } else if (msg.includes('Invalid API key') || msg.includes('apikey')) {
+        setErrorMsg('Configuration error. Please contact support or try refreshing the page.')
+        toast.error('API configuration error — please check Vercel environment variables.')
+      } else if (msg.includes('Email not confirmed')) {
+        setErrorMsg('Please confirm your email before signing in.')
+      } else if (msg.includes('Too many requests')) {
+        setErrorMsg('Too many attempts. Please wait a moment and try again.')
+      } else {
+        setErrorMsg(msg)
+      }
+
       setSubmitting(false)
     }
   }
 
   const handleGoogleLogin = async () => {
     setGoogleLoading(true)
-    setError('')
+    setErrorMsg('')
     try {
       await supabase.signInWithGoogle()
-      // Browser redirects to Google — no further action needed here
+      // Redirect to Google happens — no further action
     } catch (err: any) {
-      setError(err.message || 'Google sign-in failed')
+      toast.error(err.message || 'Google sign-in failed. Please try again.')
       setGoogleLoading(false)
     }
   }
@@ -86,13 +103,6 @@ export default function Login() {
           <h1 className="font-sora font-bold text-3xl text-navy mb-1">Welcome back</h1>
           <p className="text-gray-500 text-sm mb-8">Sign in to continue to your dashboard</p>
 
-          {error && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-              className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
-              <p className="text-sm text-red-600">{error}</p>
-            </motion.div>
-          )}
-
           {/* Google Sign In */}
           <button
             onClick={handleGoogleLogin}
@@ -102,11 +112,11 @@ export default function Login() {
             {googleLoading ? (
               <Loader size={18} className="animate-spin" />
             ) : (
-              <svg width="18" height="18" viewBox="0 0 18 18">
-                <path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 002.38-5.88c0-.57-.05-.66-.15-1.18z"/>
-                <path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 01-7.18-2.54H1.83v2.07A8 8 0 008.98 17z"/>
-                <path fill="#FBBC05" d="M4.5 10.52a4.8 4.8 0 010-3.04V5.41H1.83a8 8 0 000 7.18l2.67-2.07z"/>
-                <path fill="#EA4335" d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 001.83 5.4L4.5 7.49a4.77 4.77 0 014.48-3.3z"/>
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                <path d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 002.38-5.88c0-.57-.05-.66-.15-1.18z" fill="#4285F4"/>
+                <path d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 01-7.18-2.54H1.83v2.07A8 8 0 008.98 17z" fill="#34A853"/>
+                <path d="M4.5 10.52a4.8 4.8 0 010-3.04V5.41H1.83a8 8 0 000 7.18l2.67-2.07z" fill="#FBBC05"/>
+                <path d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 001.83 5.4L4.5 7.49a4.77 4.77 0 014.48-3.3z" fill="#EA4335"/>
               </svg>
             )}
             {googleLoading ? 'Redirecting to Google...' : 'Continue with Google'}
@@ -118,6 +128,13 @@ export default function Login() {
             <div className="flex-1 h-px bg-gray-200" />
           </div>
 
+          {errorMsg && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+              className="bg-red-50 border border-red-200 rounded-xl p-4 mb-5">
+              <p className="text-sm text-red-600">{errorMsg}</p>
+            </motion.div>
+          )}
+
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-navy mb-2">Email</label>
@@ -125,7 +142,7 @@ export default function Login() {
                 type="email"
                 placeholder="you@example.com"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={e => setEmail(e.target.value)}
                 disabled={submitting || googleLoading}
                 autoComplete="email"
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-navy placeholder-gray-400 outline-none focus:border-indigo-premium transition disabled:opacity-50 text-base"
@@ -139,7 +156,7 @@ export default function Login() {
                   type={showPassword ? 'text' : 'password'}
                   placeholder="••••••••"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={e => setPassword(e.target.value)}
                   disabled={submitting || googleLoading}
                   autoComplete="current-password"
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 pr-12 text-navy placeholder-gray-400 outline-none focus:border-indigo-premium transition disabled:opacity-50 text-base"
@@ -151,9 +168,14 @@ export default function Login() {
               </div>
             </div>
 
-            <button type="submit" disabled={submitting || googleLoading}
-              className="w-full bg-indigo-premium text-white font-bold py-3.5 rounded-xl hover:bg-purple-premium transition disabled:opacity-50 flex items-center justify-center gap-2">
-              {submitting ? <><Loader className="animate-spin" size={20} /> Signing in...</> : 'Sign In'}
+            <button
+              type="submit"
+              disabled={submitting || googleLoading}
+              className="w-full bg-indigo-premium text-white font-bold py-3.5 rounded-xl hover:bg-purple-premium transition disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {submitting ? (
+                <><Loader className="animate-spin" size={20} /> Signing in...</>
+              ) : 'Sign In'}
             </button>
           </form>
 
