@@ -8,7 +8,7 @@ const SUPABASE_URL =
 
 const SUPABASE_ANON_KEY =
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRtcWpoaGJqaHp6eWlueG5ibGdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQyODEzMTAsImV4cCI6MjA1OTg1NzMxMH0.up7DFUefMqAPUkZk76mMt0dBtSSGvRyGVvJRMqSqfmo'
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRtcWpoaGJqaHp6eWlueG5ibGdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyNDkwNzMsImV4cCI6MjA5NjgyNTA3M30.SEGicDknNe-iNewG7FHbO5nWKoJj0im6kBWTtR9_4uc'
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error('❌ STUDIA: Missing Supabase configuration. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel settings.')
