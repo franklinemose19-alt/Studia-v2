@@ -1,18 +1,18 @@
 import { useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Home, Mic, BookOpen, FlaskConical, Zap } from 'lucide-react'
+import { Home, Mic, BookOpen, FlaskConical, Brain } from 'lucide-react'
 
 const TABS = [
   { path: '/dashboard', icon: Home, label: 'Home' },
   { path: '/recording', icon: Mic, label: 'Record' },
   { path: '/notes', icon: BookOpen, label: 'Notes' },
   { path: '/quiz', icon: FlaskConical, label: 'Test' },
-  { path: '/ai-tools', icon: Zap, label: 'AI Tools' },
+  { path: '/sage', icon: Brain, label: 'SAGE' },
 ]
 
 const SHOW_ON = [
-  '/dashboard', '/recording', '/notes', '/quiz', '/ai-tools',
-  '/summarize', '/exam-countdown', '/study-planner',
+  '/dashboard', '/recording', '/notes', '/quiz', '/sage',
+  '/ai-tools', '/exam-countdown', '/study-planner',
   '/adaptive-learning', '/offline-vault', '/units',
   '/unit-management', '/payments',
 ]
@@ -42,7 +42,7 @@ export default function BottomNav() {
           const Icon = tab.icon
           const isActive =
             location.pathname === tab.path ||
-            (tab.path === '/notes' && location.pathname === '/summarize')
+            (tab.path === '/sage' && location.pathname === '/ai-tools')
           return (
             <button
               key={tab.path}
