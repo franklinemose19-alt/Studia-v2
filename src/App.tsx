@@ -20,13 +20,18 @@ const UnitManagement = lazy(() => import('./page/UnitManagement'))
 const Pricing = lazy(() => import('./page/Pricing'))
 const Checkout = lazy(() => import('./page/Checkout'))
 const PaymentDashboard = lazy(() => import('./page/PaymentDashboard'))
-const AITools = lazy(() => import('./page/AITools'))
+const SageAITutor = lazy(() => import('./page/SageAITutor'))
 const AdminDashboard = lazy(() => import('./page/AdminDashboard'))
 
 function PageLoader() {
   return (
     <div className="min-h-screen bg-surface-base flex items-center justify-center">
-      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-brand-blue" />
+      <div className="flex flex-col items-center gap-4">
+        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-premium to-purple-premium flex items-center justify-center">
+          <span className="text-white font-bold text-xl">S</span>
+        </div>
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-brand-blue" />
+      </div>
     </div>
   )
 }
@@ -42,11 +47,13 @@ export default function App() {
             <Route path="/signup" element={<Signup />} />
             <Route path="/pricing" element={<Pricing />} />
 
+            {/* Redirects */}
             <Route path="/summarize" element={<Navigate to="/notes?tab=summarize" replace />} />
+            <Route path="/ai-tools" element={<Navigate to="/sage" replace />} />
 
             <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
             <Route path="/checkout" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
-            <Route path="/ai-tools" element={<ProtectedRoute><AITools /></ProtectedRoute>} />
+            <Route path="/sage" element={<ProtectedRoute><SageAITutor /></ProtectedRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/recording" element={<ProtectedRoute><Recording /></ProtectedRoute>} />
             <Route path="/quiz" element={<ProtectedRoute><Quiz /></ProtectedRoute>} />
