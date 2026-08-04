@@ -464,19 +464,7 @@ export default function SageAITutor() {
         </div>
 
         {/* Access status */}
-        {accessLoaded && (
-          <p className="text-xs text-brand-blue">
-            {isUnlimitedPlan(access)
-              ? `✨ ${access.currentPlan} plan · Unlimited AI`
-              : access.planLocked
-              ? '🔒 Explorer locked — '
-              : `🎓 ${explorerLecturesRemaining(access)} free AI credits`}
-            {access.planLocked && (
-              <button onClick={() => navigate('/pricing')} className="text-red-400 hover:text-red-300 underline ml-1">upgrade to continue →</button>
-            )}
-            {!access.planLocked && <span className="text-[#4A5568] ml-2">· Powered by GPT-4o mini</span>}
-          </p>
-        )}
+       
 
         {/* Tab navigation */}
         <div className="flex gap-1 overflow-x-auto pb-1">
