@@ -32,7 +32,7 @@ export default async function handler(req, res) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENAI_API_KEY}` },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model: 'gpt-5-mini',
           max_tokens: 700,
           messages: [
             { role: 'system', content: system },
@@ -56,7 +56,7 @@ export default async function handler(req, res) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENAI_API_KEY}` },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model: 'gpt-5-mini',
           max_tokens: 2000,
           response_format: { type: 'json_object' },
           messages: [
@@ -97,7 +97,7 @@ Make flashcards that test real understanding. Include definitions, concepts, app
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENAI_API_KEY}` },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model: 'gpt-5-mini',
           max_tokens: 3000,
           response_format: { type: 'json_object' },
           messages: [
@@ -148,29 +148,28 @@ Return ONLY valid JSON:
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENAI_API_KEY}` },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model: 'gpt-5-mini',
           max_tokens: 2000,
           response_format: { type: 'json_object' },
           messages: [
             {
               role: 'system',
               content: `You are SAGE AI Tutor performing a Knowledge Gap Analysis for a Kenyan university student.
-Compare the lecture transcript with the captured notes to detect gaps, weak explanations, and missing concepts.
 Return ONLY valid JSON:
 {
   "knowledgeCoverage": 75,
   "examReadiness": 65,
   "understandingScore": 70,
   "confidenceScore": 60,
-  "coveredConcepts": ["concept 1", "concept 2"],
-  "missingConcepts": ["concept A", "concept B"],
-  "weakAreas": ["area 1", "area 2"],
-  "strongAreas": ["area 1", "area 2"],
-  "recommendations": ["Study X topic", "Revise Y concept"],
-  "studyNext": "The most important concept to focus on next",
-  "examTips": ["Tip 1", "Tip 2", "Tip 3"],
-  "topicsMastered": ["topic 1", "topic 2"],
-  "summary": "2-sentence assessment of the student understanding"
+  "coveredConcepts": ["concept 1"],
+  "missingConcepts": ["concept A"],
+  "weakAreas": ["area 1"],
+  "strongAreas": ["area 1"],
+  "recommendations": ["Study X"],
+  "studyNext": "Most important concept",
+  "examTips": ["Tip 1"],
+  "topicsMastered": ["topic 1"],
+  "summary": "2-sentence assessment"
 }`,
             },
             {
@@ -199,35 +198,35 @@ Return ONLY valid JSON:
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENAI_API_KEY}` },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model: 'gpt-5-mini',
           max_tokens: 3000,
           response_format: { type: 'json_object' },
           messages: [
             {
               role: 'system',
-              content: `You are SAGE AI Tutor. Create comprehensive, exam-ready deep notes for a Kenyan university student.
+              content: `You are SAGE AI Tutor. Create comprehensive deep notes for a Kenyan university student.
 Return ONLY valid JSON:
 {
   "title": "Topic title",
-  "subject": "Subject name",
+  "subject": "Subject",
   "overview": "2-3 sentence overview",
   "sections": [
     {
-      "heading": "Section heading",
+      "heading": "Section",
       "explanation": "Detailed explanation",
-      "simpleExplanation": "Explain simply",
-      "examples": ["Example 1", "Example 2"],
-      "definitions": [{"term": "Term", "definition": "Definition"}],
-      "memoryTrick": "Mnemonic or memory trick",
+      "simpleExplanation": "Simple version",
+      "examples": ["Example 1"],
+      "definitions": [{"term": "T", "definition": "D"}],
+      "memoryTrick": "Mnemonic",
       "commonMistakes": ["Mistake 1"],
-      "examTips": ["Exam tip 1"],
+      "examTips": ["Tip 1"],
       "relatedConcepts": ["Concept 1"],
       "realWorldApplication": "Real world use"
     }
   ],
   "formulasAndKeyFacts": ["Formula 1"],
-  "quickRevision": ["Point 1", "Point 2"],
-  "predictedExamQuestions": ["Question 1?"]
+  "quickRevision": ["Point 1"],
+  "predictedExamQuestions": ["Question?"]
 }`,
             },
             {
@@ -250,7 +249,6 @@ Return ONLY valid JSON:
     if (mode === 'snapsolve') {
       if (!image && !text) return res.status(400).json({ error: 'No image or text provided' })
 
-      const model = image ? 'gpt-4o' : 'gpt-4o-mini'
       const content = image
         ? [
             { type: 'image_url', image_url: { url: image } },
@@ -266,7 +264,7 @@ Return JSON only: {"question":"extracted question","answer":"detailed step-by-st
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENAI_API_KEY}` },
         body: JSON.stringify({
-          model,
+          model: 'gpt-5-mini',
           messages: [{ role: 'user', content }],
           max_tokens: 2000,
         }),
@@ -284,7 +282,6 @@ Return JSON only: {"question":"extracted question","answer":"detailed step-by-st
     if (mode === 'pastpapers') {
       if (!image && !text) return res.status(400).json({ error: 'No content provided' })
 
-      const model = image ? 'gpt-4o' : 'gpt-4o-mini'
       const content = image
         ? [
             { type: 'image_url', image_url: { url: image } },
@@ -298,7 +295,11 @@ Return JSON only: {"question":"extracted question","answer":"detailed step-by-st
       const ppRes = await fetchWithRetry('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENAI_API_KEY}` },
-        body: JSON.stringify({ model, messages: [{ role: 'user', content }], max_tokens: 3000 }),
+        body: JSON.stringify({
+          model: 'gpt-5-mini',
+          messages: [{ role: 'user', content }],
+          max_tokens: 3000,
+        }),
       })
       const ppData = await ppRes.json()
       const raw = ppData.choices?.[0]?.message?.content?.replace(/```json|```/g, '').trim() || '{}'
