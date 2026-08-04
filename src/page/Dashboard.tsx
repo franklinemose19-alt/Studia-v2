@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import {
-  LogOut, Mic, BookOpen, BarChart3, Calendar, Zap, Award, Clock,
+  LogOut, Mic, BookOpen, BarChart3, Calendar, Zap,
   ChevronRight, Search, TrendingUp, Lock, CreditCard,
   Sparkles, AlertTriangle, Crown,
 } from 'lucide-react'
@@ -18,9 +18,52 @@ import { DashboardSkeleton } from '../components/SkeletonLoader'
 import UpgradeModal from '../components/UpgradeModal'
 import NotificationBell from '../components/NotificationBell'
 
+// ── Circular stat (WhatsApp-style) ────────────────────────────────────────
+
+function CircleStat({
+  value, label, color, strokeColor, percentage = 100,
+}: {
+  value: string | number
+  label: string
+  color: string
+  strokeColor: string
+  percentage?: number
+}) {
+  const r = 24
+  const circ = 2 * Math.PI * r
+  const offset = circ - (Math.min(100, Math.max(0, percentage)) / 100) * circ
+
+  return (
+    <div className="flex flex-col items-center gap-1.5">
+      <div className="relative w-14 h-14">
+        {/* Track */}
+        <svg className="w-14 h-14 -rotate-90 absolute inset-0" viewBox="0 0 56 56">
+          <circle cx="28" cy="28" r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="3.5" />
+          <circle
+            cx="28" cy="28" r={r} fill="none"
+            stroke={strokeColor}
+            strokeWidth="3.5"
+            strokeDasharray={circ}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+            className="transition-all duration-700"
+          />
+        </svg>
+        {/* Value */}
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className={`font-sora font-bold text-sm leading-none ${color}`}>{value}</span>
+        </div>
+      </div>
+      <span className="text-[10px] text-[#8B97B5] text-center leading-tight max-w-[56px]">{label}</span>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { userId } = useAuth()
+  const { userId, user } = useAuth()
   const { installPrompt, isInstalled, isInstalling, install } = usePWAInstall()
 
   const [stats, setStats] = useState({ lectures: 0, quizzes: 0, avgScore: 0, streak: 0 })
@@ -30,9 +73,17 @@ export default function Dashboard() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [upgradeReason, setUpgradeReason] = useState<'explorer_locked' | 'no_lectures_left' | 'needs_premium'>('explorer_locked')
 
+  // Derive first name from auth user
+  const rawName =
+    user?.user_metadata?.full_name ||
+    user?.user_metadata?.name ||
+    user?.email?.split('@')[0] ||
+    ''
+  const firstName = rawName.split(' ')[0] || 'there'
+
   useEffect(() => {
     const init = async () => {
-      // Load stats
+      // Stats
       let lectures = 0
       let quizResults: any[] = []
       try { lectures = JSON.parse(localStorage.getItem('recordingsMetadata') || '[]').length } catch {}
@@ -43,11 +94,10 @@ export default function Dashboard() {
           : 0
         const activeDates = new Set<string>()
         try {
-          JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')
-            .forEach((r: any) => {
-              const d = new Date(r.timestamp || r.date)
-              if (!isNaN(d.getTime())) activeDates.add(d.toISOString().slice(0, 10))
-            })
+          JSON.parse(localStorage.getItem('recordingsMetadata') || '[]').forEach((r: any) => {
+            const d = new Date(r.timestamp || r.date)
+            if (!isNaN(d.getTime())) activeDates.add(d.toISOString().slice(0, 10))
+          })
         } catch {}
         quizResults.forEach((q: any) => {
           const d = new Date(q.date)
@@ -60,17 +110,16 @@ export default function Dashboard() {
         setStats({ lectures, quizzes: quizResults.length, avgScore: avg, streak })
       } catch {}
 
-      // Load access
+      // Access
       const a = await loadAccess(userId)
       setAccess(a)
 
-      // Show upgrade modal automatically if locked
       if (a.planLocked) {
         setUpgradeReason('explorer_locked')
         setShowUpgradeModal(true)
       }
 
-      // Check admin
+      // Admin check
       if (userId) {
         try {
           const client = await getSupabase()
@@ -85,17 +134,11 @@ export default function Dashboard() {
 
       setPageLoading(false)
     }
-
     init()
   }, [userId])
 
   const handleSignOut = async () => {
-    try {
-      await signOut()
-      toast.info('Signed out successfully')
-    } catch {
-      toast.error('Sign out failed')
-    }
+    try { await signOut(); toast.info('Signed out') } catch { toast.error('Sign out failed') }
     navigate('/')
   }
 
@@ -127,7 +170,7 @@ export default function Dashboard() {
     { icon: Mic, title: 'Record Lecture', desc: 'Smart AI recording', path: '/recording', color: 'from-indigo-premium' },
     { icon: BookOpen, title: 'My Notes', desc: 'Notes & summaries', path: '/notes', color: 'from-purple-premium' },
     { icon: BarChart3, title: 'Test Yourself', desc: 'AI practice tests', path: '/quiz', color: 'from-mint' },
-    { icon: Sparkles, title: 'AI Tools', desc: 'SnapSolve & more', path: '/ai-tools', color: 'from-indigo-premium' },
+    { icon: Sparkles, title: 'SAGE AI Tutor', desc: 'Your AI tutor', path: '/sage', color: 'from-indigo-premium' },
     { icon: Calendar, title: 'Exam Countdown', desc: 'Track your exams', path: '/exam-countdown', color: 'from-warning' },
     { icon: TrendingUp, title: 'Adaptive Learning', desc: 'Weak topic analysis', path: '/adaptive-learning', color: 'from-mint' },
     { icon: Lock, title: 'Offline Vault', desc: 'Study anywhere', path: '/offline-vault', color: 'from-light-blue' },
@@ -136,17 +179,41 @@ export default function Dashboard() {
     { icon: Calendar, title: 'Study Planner', desc: 'Weekly schedule', path: '/study-planner', color: 'from-light-blue' },
   ]
 
-  const statCards = [
-    { icon: Mic, label: 'Lectures', value: stats.lectures, color: 'indigo' },
-    { icon: Award, label: 'Quizzes', value: stats.quizzes, color: 'purple' },
-    { icon: Zap, label: 'Avg Score', value: `${stats.avgScore}%`, color: 'mint' },
-    { icon: Clock, label: 'Streak', value: `${stats.streak}d`, color: 'indigo' },
+  // Circular stat data
+  const circleStats = [
+    {
+      value: stats.lectures,
+      label: 'Lectures',
+      strokeColor: '#4F46E5',
+      color: 'text-indigo-400',
+      percentage: Math.min(100, stats.lectures * 10),
+    },
+    {
+      value: stats.quizzes,
+      label: 'Quizzes',
+      strokeColor: '#6D5EF7',
+      color: 'text-purple-400',
+      percentage: Math.min(100, stats.quizzes * 10),
+    },
+    {
+      value: `${stats.avgScore}%`,
+      label: 'Avg Score',
+      strokeColor: '#2EE59D',
+      color: 'text-mint',
+      percentage: stats.avgScore,
+    },
+    {
+      value: `${stats.streak}d`,
+      label: 'Streak',
+      strokeColor: '#F59E0B',
+      color: 'text-warning',
+      percentage: Math.min(100, stats.streak * 14),
+    },
   ]
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-white via-surface-light to-white">
 
-      {/* Upgrade Modal */}
       <UpgradeModal
         isOpen={showUpgradeModal}
         onClose={() => setShowUpgradeModal(false)}
@@ -189,10 +256,7 @@ export default function Dashboard() {
               <Search size={16} className="text-gray-400 shrink-0" />
               <input type="text" placeholder="Search..." className="bg-transparent text-navy outline-none w-full text-sm" />
             </div>
-
-            {/* Real notification bell */}
             <NotificationBell userId={userId} />
-
             <button onClick={handleSignOut}
               className="flex items-center gap-1.5 text-navy hover:text-indigo-premium transition pl-2 sm:pl-3 border-l border-gray-200 ml-1">
               <LogOut size={18} />
@@ -203,33 +267,51 @@ export default function Dashboard() {
       </nav>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
-
-        {/* Skeleton while loading */}
         {pageLoading ? (
           <DashboardSkeleton />
         ) : (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8 sm:space-y-10">
 
-            {/* Welcome */}
+            {/* Welcome — real name, no emoji */}
             <div>
-              <h1 className="font-sora font-bold text-4xl sm:text-5xl text-navy mb-2">Welcome back! 👋</h1>
-              <p className="text-gray-600">
+              <h1 className="font-sora font-bold text-4xl sm:text-5xl text-navy mb-2">
+                Welcome back, {firstName}.
+              </h1>
+              <p className="text-gray-500 text-sm sm:text-base">
                 {stats.streak > 0 ? (
-                  <>You're on a <span className="font-bold text-indigo-premium">{stats.streak}-day streak</span> 🔥 Keep it up!</>
+                  <>You're on a <span className="font-bold text-indigo-premium">{stats.streak}-day streak</span> — keep it up!</>
                 ) : (
-                  'Record a lecture or take a quiz today to start your streak!'
+                  'Record a lecture or take a quiz today to start your streak.'
                 )}
               </p>
             </div>
 
-            {/* Plan + usage */}
-            <div className={`rounded-2xl p-5 sm:p-6 border-2 cursor-pointer transition-all ${
-              isLocked ? 'bg-red-50 border-red-300 hover:border-red-400'
-              : plan === 'valedictorian' ? 'bg-gradient-to-r from-warning/10 to-red-500/10 border-warning/40'
-              : plan === 'excellence' ? 'bg-gradient-to-r from-mint/10 to-light-blue/10 border-mint/30'
-              : plan === 'achiever' ? 'bg-blue-50/50 border-light-blue/30'
-              : 'bg-gray-50 border-gray-200'
-            }`}
+            {/* Circular stats — WhatsApp style, compact single row */}
+            <div className="bg-white rounded-2xl border border-gray-200 px-6 py-5">
+              <div className="flex items-center justify-around gap-2">
+                {circleStats.map((s, i) => (
+                  <motion.div key={i} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.08 }}>
+                    <CircleStat
+                      value={s.value}
+                      label={s.label}
+                      strokeColor={s.strokeColor}
+                      color={s.color}
+                      percentage={s.percentage}
+                    />
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+
+            {/* Plan + usage card */}
+            <div
+              className={`rounded-2xl p-5 sm:p-6 border-2 cursor-pointer transition-all ${
+                isLocked ? 'bg-red-50 border-red-300 hover:border-red-400'
+                : plan === 'valedictorian' ? 'bg-gradient-to-r from-warning/10 to-red-500/10 border-warning/40'
+                : plan === 'excellence' ? 'bg-gradient-to-r from-mint/10 to-light-blue/10 border-mint/30'
+                : plan === 'achiever' ? 'bg-blue-50/50 border-light-blue/30'
+                : 'bg-gray-50 border-gray-200'
+              }`}
               onClick={() => {
                 if (isLocked) { setUpgradeReason('explorer_locked'); setShowUpgradeModal(true) }
                 else if (isPaidPlan && paidLeft === 0) { setUpgradeReason('no_lectures_left'); setShowUpgradeModal(true) }
@@ -252,7 +334,7 @@ export default function Dashboard() {
                   {isLocked ? (
                     <div className="flex items-start gap-2">
                       <AlertTriangle size={16} className="text-red-500 shrink-0 mt-0.5" />
-                      <p className="text-sm text-red-700">All 3 free lectures used. Tap to unlock AI features →</p>
+                      <p className="text-sm text-red-700">All 3 free lectures used. Tap to unlock AI features.</p>
                     </div>
                   ) : isExplorer ? (
                     <div className="space-y-2">
@@ -286,34 +368,20 @@ export default function Dashboard() {
 
                 {(isLocked || (isPaidPlan && paidLeft <= 3)) && (
                   <button
-                    onClick={(e) => {
+                    onClick={e => {
                       e.stopPropagation()
                       setUpgradeReason(isLocked ? 'explorer_locked' : 'no_lectures_left')
                       setShowUpgradeModal(true)
                     }}
                     className="bg-indigo-premium text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-purple-premium transition whitespace-nowrap shrink-0"
                   >
-                    {isLocked ? '🔓 Unlock Now' : '➕ Get More'}
+                    {isLocked ? 'Unlock Now' : 'Get More'}
                   </button>
                 )}
               </div>
             </div>
 
-            {/* Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-              {statCards.map((stat, i) => (
-                <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-                  className="bg-white rounded-2xl p-4 sm:p-6 border border-gray-200 hover:border-indigo-premium/50 hover:shadow-lg transition group">
-                  <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-${stat.color}/10 flex items-center justify-center text-${stat.color} mb-3 sm:mb-4 group-hover:scale-110 transition`}>
-                    <stat.icon size={22} />
-                  </div>
-                  <p className="text-2xl sm:text-3xl font-bold text-navy mb-1">{stat.value}</p>
-                  <p className="text-xs sm:text-sm text-gray-600">{stat.label}</p>
-                </motion.div>
-              ))}
-            </div>
-
-            {/* Refer and Earn — permanent card */}
+            {/* Refer and Earn */}
             <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
               className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border-2 border-purple-500/20 rounded-2xl p-5 sm:p-6">
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
@@ -321,11 +389,9 @@ export default function Dashboard() {
                   🎁
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                    <p className="font-sora font-bold text-navy text-base">Refer and Earn — Free AI Credits</p>
-                  </div>
+                  <p className="font-sora font-bold text-navy text-base mb-0.5">Refer and Earn — Free AI Credits</p>
                   <p className="text-gray-600 text-sm">
-                    Invite classmates and earn up to <span className="font-semibold text-purple-600">150+ bonus AI credits</span>. They get 2 bonus credits too.
+                    Invite classmates and earn up to <span className="font-semibold text-purple-600">150+ bonus credits</span>. They get 2 bonus credits too.
                   </p>
                 </div>
                 <button
@@ -345,7 +411,7 @@ export default function Dashboard() {
                   <motion.button key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.04 }}
                     onClick={() => {
-                      if (isLocked && !['payments', 'pricing'].includes(card.path.slice(1))) {
+                      if (isLocked && !['payments'].includes(card.path.slice(1))) {
                         setUpgradeReason('explorer_locked')
                         setShowUpgradeModal(true)
                         return
@@ -362,6 +428,9 @@ export default function Dashboard() {
                       </div>
                       <h3 className="font-sora font-bold text-navy text-xs sm:text-sm mb-0.5 break-words">{card.title}</h3>
                       <p className="text-xs text-gray-600 hidden sm:block">{card.desc}</p>
+                      <div className="hidden sm:flex items-center gap-1 text-indigo-premium text-xs font-medium opacity-0 group-hover:opacity-100 transition mt-2">
+                        Open <ChevronRight size={12} />
+                      </div>
                     </div>
                   </motion.button>
                 ))}
@@ -373,9 +442,9 @@ export default function Dashboard() {
               className="bg-gradient-to-r from-indigo-premium to-purple-premium rounded-3xl p-6 sm:p-8 text-white overflow-hidden relative">
               <div className="absolute -right-20 -top-20 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
               <div className="relative z-10">
-                <h2 className="font-sora font-bold text-2xl sm:text-3xl mb-3">Pro Tip 💡</h2>
+                <h2 className="font-sora font-bold text-2xl sm:text-3xl mb-3">Pro Tip</h2>
                 <p className="text-white/90 mb-6 max-w-2xl text-sm sm:text-base">
-                  Record your lectures, summarize key concepts, and take quizzes regularly. STUDIA automates all of this.
+                  Record your lectures, summarize key concepts, then let SAGE AI Tutor quiz you on what matters most.
                 </p>
                 <button onClick={() => navigate('/pricing')}
                   className="bg-white text-indigo-premium px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition text-sm sm:text-base">
