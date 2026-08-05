@@ -1,74 +1,45 @@
 import { fetchWithRetry } from './_utils/openaiRetry.js'
+import { logTokenUsage } from './_utils/tokenLogger.js'
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' })
-  }
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   try {
-    const { text, image } = req.body
-
-    if ((!text || text.trim().length === 0) && !image) {
-      return res.status(400).json({ error: 'No text or image provided' })
-    }
+    const { text, image, userId } = req.body
+    if (!text?.trim() && !image) return res.status(400).json({ error: 'No content provided' })
 
     const apiKey = process.env.OPENAI_API_KEY
-    if (!apiKey) {
-      return res.status(500).json({ error: 'API key not configured' })
-    }
+    if (!apiKey) return res.status(500).json({ error: 'API key not configured' })
 
-    let messages
-
-    if (image) {
-      messages = [
-        {
-          role: 'system',
-          content: 'You are a helpful study assistant for Kenyan university students. Read the handwritten or printed lecture notes in the image and summarize them into clear, concise key points. Keep it under 300 words. Use bullet points for clarity.',
-        },
-        {
+    const messages = image
+      ? [{
           role: 'user',
           content: [
-            { type: 'text', text: 'Please summarize the lecture notes shown in this image.' },
+            { type: 'text', text: 'Summarize the lecture notes in this image into clear bullet points. Keep it under 300 words.' },
             { type: 'image_url', image_url: { url: image } },
           ],
-        },
-      ]
-    } else {
-      messages = [
-        {
+        }]
+      : [{
           role: 'system',
-          content: 'You are a helpful study assistant for Kenyan university students. Summarize the lecture notes provided by the user into clear, concise key points. Keep it under 300 words. Use bullet points for clarity.',
-        },
-        {
+          content: 'You are a study assistant for Kenyan university students. Summarize the lecture notes into clear, concise key points under 300 words. Use bullet points.',
+        }, {
           role: 'user',
-          content: `Please summarize these lecture notes:\n\n${text}`,
-        },
-      ]
-    }
+          content: `Summarize these notes:\n\n${text}`,
+        }]
 
     const response = await fetchWithRetry('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-5-mini',
-        messages,
-        temperature: 0.7,
-        max_tokens: 500,
-      }),
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model: 'gpt-5-mini', messages, max_tokens: 500 }),
     })
 
     const data = await response.json()
-    if (!response.ok) {
-      console.error('OpenAI Error:', data)
-      return res.status(response.status).json({ error: data.error?.message || 'Summarization failed' })
-    }
+    if (!response.ok) return res.status(response.status).json({ error: data.error?.message || 'Summarization failed' })
 
-    const summary = data.choices?.[0]?.message?.content || 'No summary generated'
-    return res.status(200).json({ summary })
+    logTokenUsage(userId, 'summarize', 'gpt-5-mini', data.usage)
+
+    return res.status(200).json({ summary: data.choices?.[0]?.message?.content || '' })
   } catch (error) {
-    console.error('Summarization error:', error)
+    console.error('Summarize error:', error)
     return res.status(500).json({ error: error.message || 'Internal server error' })
   }
 }
