@@ -1,67 +1,40 @@
 import { fetchWithRetry } from './_utils/openaiRetry.js'
+import { logTokenUsage } from './_utils/tokenLogger.js'
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' })
-  }
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   try {
-    const { image } = req.body
-    const OPENAI_API_KEY = process.env.OPENAI_API_KEY
-    if (!OPENAI_API_KEY) {
-      return res.status(500).json({ error: 'API key not configured' })
-    }
-    if (!image) {
-      return res.status(400).json({ error: 'No image provided' })
-    }
+    const { image, userId } = req.body
+    const apiKey = process.env.OPENAI_API_KEY
+    if (!apiKey) return res.status(500).json({ error: 'API key not configured' })
+    if (!image) return res.status(400).json({ error: 'No image provided' })
 
     const response = await fetchWithRetry('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-      },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
         model: 'gpt-5-mini',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'image_url', image_url: { url: image } },
-              {
-                type: 'text',
-                text: `You are a student note-taking assistant. Look at this image of lecture notes, a textbook page, or a whiteboard.
-Extract and structure the content into clean, well-organized notes.
-Respond with a JSON object in this exact format:
-{
-  "title": "A short descriptive title for these notes",
-  "course": "The subject/course if you can identify it, otherwise empty string",
-  "content": "The full structured notes with headings, bullet points, and key concepts clearly laid out"
-}
-Only respond with the JSON object, nothing else.`,
-              },
-            ],
-          },
-        ],
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: image } },
+            { type: 'text', text: `Extract and structure the content from this image into clean notes.
+Return JSON only: {"title":"Short title","course":"Subject if identifiable or empty","content":"Full structured notes"}` },
+          ],
+        }],
         max_tokens: 1500,
       }),
     })
 
     const data = await response.json()
     if (!data.choices?.[0]?.message?.content) {
-      console.error('OpenAI error:', JSON.stringify(data))
-      return res.status(500).json({ error: data.error?.message || 'Failed to generate notes' })
+      return res.status(500).json({ error: 'Failed to generate notes' })
     }
+
+    logTokenUsage(userId, 'snap_generate_notes', 'gpt-5-mini', data.usage)
 
     const raw = data.choices[0].message.content.replace(/```json|```/g, '').trim()
-
-    let parsed
-    try {
-      parsed = JSON.parse(raw)
-    } catch (parseErr) {
-      console.error('JSON parse error:', parseErr, 'Raw:', raw)
-      return res.status(500).json({ error: 'AI response could not be parsed. Please try again.' })
-    }
-
+    const parsed = JSON.parse(raw)
     return res.status(200).json({
       title: parsed.title || 'Untitled Notes',
       course: parsed.course || '',
