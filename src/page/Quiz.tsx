@@ -1,466 +1,466 @@
-import { useAuth } from '../lib/AuthContext'
 import { useState, useEffect, useRef } from 'react'
-import { motion } from 'framer-motion'
-import { ArrowLeft, Loader, RotateCcw, Save, Check, BookOpen, Upload, FileText, Lock } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { ArrowLeft, Loader, Upload, FileText, ClipboardList, Check, X, RotateCcw, BookOpen } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { loadAccess, checkAccess, consumeCredit, freeCreditsRemaining, isUnlimitedPlan, type AccessInfo, emptyAccess } from '../lib/access'
+import { useAuth } from '../lib/AuthContext'
+import {
+  loadAccess, checkAccess, consumeCredit, explorerLecturesRemaining,
+  isUnlimitedPlan, type AccessInfo, emptyAccess,
+} from '../lib/access'
+import { getAllRecordings } from '../lib/lectureContext'
+import { toast } from '../lib/toast'
 
 interface Question {
   question: string
   options: string[]
   correct: number
-  topic?: string
+  topic: string
 }
 
-interface Unit {
-  id: string
-  course: string
-  unitName: string
-  topics: string[]
-}
-
-interface NoteItem {
-  id: string
-  title: string
-  content: string
-  course?: string
-  date: string
-}
-
-interface RecordingItem {
-  id: string
-  name: string
-  course?: string
-  unit?: string
-  notes?: string
-  transcript?: string
-}
-
-const selectClass = "w-full bg-surface-base border border-white/10 rounded-xl p-3 text-white outline-none focus:border-brand-blue/40 text-sm [&>option]:bg-[#0d1526] [&>option]:text-white"
+type InputMode = 'lecture' | 'paste' | 'pdf'
+type Screen = 'setup' | 'quiz' | 'results'
 
 export default function Quiz() {
   const navigate = useNavigate()
-const { userId } = useAuth()
-  const [units, setUnits] = useState<Unit[]>([])
-  const [notes, setNotes] = useState<NoteItem[]>([])
-  const [recordings, setRecordings] = useState<RecordingItem[]>([])
-
-  const [selectedCourse, setSelectedCourse] = useState('')
-  const [selectedUnit, setSelectedUnit] = useState('')
-
-  const [manualNotes, setManualNotes] = useState('')
-  const [quizzes, setQuizzes] = useState<Question[]>([])
-  const [answers, setAnswers] = useState<number[]>([])
-  const [loading, setLoading] = useState(false)
-  const [submitted, setSubmitted] = useState(false)
-  const [savedToVault, setSavedToVault] = useState(false)
-  const [isPdfLoading, setIsPdfLoading] = useState(false)
+  const { userId } = useAuth()
+  const fileRef = useRef<HTMLInputElement>(null)
 
   const [access, setAccess] = useState<AccessInfo>(emptyAccess)
   const [accessLoaded, setAccessLoaded] = useState(false)
-  const [blocked, setBlocked] = useState(false)
 
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [screen, setScreen] = useState<Screen>('setup')
+  const [inputMode, setInputMode] = useState<InputMode>('lecture')
+  const [selectedLectureId, setSelectedLectureId] = useState('')
+  const [pastedText, setPastedText] = useState('')
+  const [pdfBase64, setPdfBase64] = useState<string | null>(null)
+  const [pdfName, setPdfName] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const [questions, setQuestions] = useState<Question[]>([])
+  const [answers, setAnswers] = useState<Record<number, number>>({})
+  const [currentQ, setCurrentQ] = useState(0)
+  const [submitted, setSubmitted] = useState(false)
+  const [score, setScore] = useState(0)
+
+  const [recordings] = useState(() => getAllRecordings())
 
   useEffect(() => {
-    try { setUnits(JSON.parse(localStorage.getItem('units') || '[]')) } catch { setUnits([]) }
-    try { setNotes(JSON.parse(localStorage.getItem('notes') || '[]')) } catch { setNotes([]) }
-    try { setRecordings(JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')) } catch { setRecordings([]) }
+    loadAccess(userId).then(a => { setAccess(a); setAccessLoaded(true) })
+  }, [userId])
 
-    const init = async () => {
-      const a = await loadAccess(userId)
-      setAccess(a)
-      setAccessLoaded(true)
-    }
-    init()
-  }, [])
-
-  const courseNames = Array.from(new Set(units.map((u) => u.course))).filter(Boolean)
-  const filteredUnits = units.filter((u) => u.course === selectedCourse)
-  const selectedUnitData = units.find((u) => u.id === selectedUnit)
-
-  const relevantNotes = selectedCourse ? notes.filter((n) => n.course === selectedCourse) : []
-  const relevantRecordings = selectedUnitData
-    ? recordings.filter((r) => r.course === selectedCourse && r.unit === selectedUnitData.unitName && (r.notes || r.transcript))
-    : []
-
-  const buildUnitContent = (): string => {
-    if (!selectedUnitData) return ''
-    let content = `Course: ${selectedCourse}\nUnit: ${selectedUnitData.unitName}\nSyllabus Topics: ${selectedUnitData.topics.join(', ')}\n\n`
-    if (relevantNotes.length > 0) {
-      content += '--- Saved Notes ---\n'
-      relevantNotes.forEach((n) => { content += `${n.title}\n${n.content}\n\n` })
-    }
-    if (relevantRecordings.length > 0) {
-      content += '--- Lecture Notes ---\n'
-      relevantRecordings.forEach((r) => { content += `${r.name}\n${r.notes || r.transcript || ''}\n\n` })
-    }
-    return content.slice(0, 10000)
+  const handlePDFUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.name.endsWith('.pdf')) { toast.error('Please upload a PDF file'); return }
+    setPdfName(file.name)
+    const reader = new FileReader()
+    reader.onload = ev => setPdfBase64((ev.target?.result as string).split(',')[1])
+    reader.readAsDataURL(file)
+    e.target.value = ''
   }
 
-  const runGenerateQuiz = async (text: string, source: 'unlimited' | 'free' | 'lite') => {
+  const getSourceContent = () => {
+    if (inputMode === 'lecture') {
+      const rec = recordings.find(r => r.id === selectedLectureId)
+      if (!rec) return null
+      return { text: (rec.notes || '') + '\n\n' + (rec.transcript || ''), course: rec.course }
+    }
+    if (inputMode === 'paste') return { text: pastedText, course: '' }
+    if (inputMode === 'pdf') return { text: '', course: '', pdf: pdfBase64 }
+    return null
+  }
+
+  const generateQuiz = async () => {
+    const source = getSourceContent()
+    if (!source) { toast.error('Please select a lecture or provide content first'); return }
+    if (inputMode === 'lecture' && !source.text.trim()) { toast.error('This lecture has no notes or transcript yet. Record and process it first.'); return }
+    if (inputMode === 'paste' && !pastedText.trim()) { toast.error('Please paste your lecture notes'); return }
+    if (inputMode === 'pdf' && !pdfBase64) { toast.error('Please upload a PDF past paper'); return }
+
+    const result = checkAccess(access, 'core')
+    if (!result.allowed) {
+      if (result.reason === 'explorer_locked') {
+        toast.error('Free AI credits used up — upgrade to continue.')
+      } else {
+        toast.error('No AI credits remaining — upgrade your plan.')
+      }
+      navigate('/pricing')
+      return
+    }
+
     setLoading(true)
     try {
+      const body: any = { userId }
+      if (inputMode === 'pdf') {
+        body.pdfBase64 = pdfBase64
+        body.courseContext = ''
+      } else {
+        body.text = source.text
+        body.courseContext = source.course || ''
+      }
+
       const res = await fetch('/api/quiz', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify(body),
       })
-      const data = await res.json()
-      if (data.quizzes && data.quizzes.length > 0) {
-        setQuizzes(data.quizzes)
-        setAnswers(new Array(data.quizzes.length).fill(-1))
-        setSubmitted(false)
-        setSavedToVault(false)
-        await consumeCredit(access, source)
-        setAccess((prev) => ({
-          ...prev,
-          freeCreditsUsed: source === 'free' ? prev.freeCreditsUsed + 1 : prev.freeCreditsUsed,
-          liteBonusCredits: source === 'lite' ? Math.max(0, prev.liteBonusCredits - 1) : prev.liteBonusCredits,
-        }))
-      } else {
-        alert('Error: ' + (data.error || 'Failed to generate quiz'))
+
+      if (!res.ok) {
+        const err = await res.json()
+        toast.error(err.error || 'Failed to generate quiz')
+        return
       }
-    } catch (err) {
-      alert('Error: ' + (err instanceof Error ? err.message : 'Unknown error'))
+
+      const data = await res.json()
+      if (!data.quizzes?.length) { toast.error('Could not generate quiz from this content. Try adding more detailed notes.'); return }
+
+      setQuestions(data.quizzes)
+      setAnswers({})
+      setCurrentQ(0)
+      setSubmitted(false)
+      setScore(0)
+      setScreen('quiz')
+
+      await consumeCredit(access, result.source)
+      setAccess(prev => ({
+        ...prev,
+        freeCreditsUsed: result.source === 'explorer_free' ? prev.freeCreditsUsed + 1 : prev.freeCreditsUsed,
+        liteBonusCredits: result.source === 'bonus' ? Math.max(0, prev.liteBonusCredits - 1) : prev.liteBonusCredits,
+      }))
+    } catch (err: any) {
+      toast.error('Failed to generate quiz — check your connection.')
     } finally {
       setLoading(false)
     }
   }
 
-  const generateFromUnit = () => {
-    if (!selectedUnit) { alert('Please select a unit first'); return }
-    const result = checkAccess(access, 'core')
-    if (!result.allowed) { setBlocked(true); return }
-    const content = buildUnitContent()
-    if (!content.trim() || (relevantNotes.length === 0 && relevantRecordings.length === 0)) {
-      alert('No notes or recordings found for this unit yet. Try pasting notes manually below, or record/save notes first.')
-      return
-    }
-    runGenerateQuiz(content, result.source)
-  }
-
-  const generateFromManual = () => {
-    if (!manualNotes.trim()) { alert('Please paste your lecture notes'); return }
-    const result = checkAccess(access, 'core')
-    if (!result.allowed) { setBlocked(true); return }
-    runGenerateQuiz(manualNotes, result.source)
-  }
-
-  const uploadPastPaper = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (file.type !== 'application/pdf') {
-      alert('Please upload a PDF file.')
-      return
-    }
-    const result = checkAccess(access, 'core')
-    if (!result.allowed) { setBlocked(true); return }
-
-    setIsPdfLoading(true)
-    const reader = new FileReader()
-    reader.onload = async () => {
-      const base64 = (reader.result as string).split(',')[1]
-      const courseContext = selectedUnitData ? `${selectedCourse} — ${selectedUnitData.unitName}` : undefined
-
-      setLoading(true)
-      try {
-        const res = await fetch('/api/quiz', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pdfBase64: base64, courseContext }),
-        })
-        const data = await res.json()
-        if (data.quizzes && data.quizzes.length > 0) {
-          setQuizzes(data.quizzes)
-          setAnswers(new Array(data.quizzes.length).fill(-1))
-          setSubmitted(false)
-          setSavedToVault(false)
-          await consumeCredit(access, result.source)
-          setAccess((prev) => ({
-            ...prev,
-            freeCreditsUsed: result.source === 'free' ? prev.freeCreditsUsed + 1 : prev.freeCreditsUsed,
-            liteBonusCredits: result.source === 'lite' ? Math.max(0, prev.liteBonusCredits - 1) : prev.liteBonusCredits,
-          }))
-        } else {
-          alert('Error: ' + (data.error || 'Could not extract questions from this paper'))
-        }
-      } catch (err) {
-        alert('Error: ' + (err instanceof Error ? err.message : 'Unknown error'))
-      } finally {
-        setLoading(false)
-        setIsPdfLoading(false)
-      }
-    }
-    reader.onerror = () => {
-      setIsPdfLoading(false)
-      alert('Failed to read PDF file.')
-    }
-    reader.readAsDataURL(file)
-    e.target.value = ''
-  }
-
-  const saveQuizResult = () => {
-    try {
-      let correct = 0
-      quizzes.forEach((q, i) => { if (answers[i] === q.correct) correct++ })
-      const results = JSON.parse(localStorage.getItem('quizResults') || '[]')
-      const subject = selectedUnitData ? `${selectedCourse} — ${selectedUnitData.unitName}` : (selectedCourse || 'General')
-      const attempt = {
-        id: `attempt-${Date.now()}`,
-        subject,
-        score: correct,
-        total: quizzes.length,
-        date: new Date().toISOString(),
-        questions: quizzes.map((q, i) => ({
-          topic: q.topic || subject,
-          correct: answers[i] === q.correct,
-        })),
-      }
-      localStorage.setItem('quizResults', JSON.stringify([attempt, ...results]))
-    } catch (err) {
-      console.error('Failed to save quiz result', err)
-    }
+  const selectAnswer = (qIdx: number, ansIdx: number) => {
+    if (submitted) return
+    setAnswers(prev => ({ ...prev, [qIdx]: ansIdx }))
   }
 
   const submitQuiz = () => {
-    if (answers.some((a) => a === -1)) { alert('Please answer all questions'); return }
+    const correct = questions.filter((q, i) => answers[i] === q.correct).length
+    setScore(correct)
     setSubmitted(true)
-    saveQuizResult()
-  }
+    setScreen('results')
 
-  const calculateScore = () => {
-    let correct = 0
-    quizzes.forEach((q, i) => { if (answers[i] === q.correct) correct++ })
-    return { correct, total: quizzes.length, percentage: Math.round((correct / quizzes.length) * 100) }
+    // Save to history
+    try {
+      const rec = recordings.find(r => r.id === selectedLectureId)
+      const results = JSON.parse(localStorage.getItem('quizResults') || '[]')
+      results.push({
+        score: correct,
+        total: questions.length,
+        subject: rec?.course || 'General',
+        date: new Date().toISOString(),
+        source: inputMode === 'pdf' ? 'past_paper' : 'notes',
+      })
+      localStorage.setItem('quizResults', JSON.stringify(results))
+    } catch {}
+
+    const pct = Math.round((correct / questions.length) * 100)
+    if (pct >= 80) toast.success(`Excellent! ${correct}/${questions.length} — ${pct}% 🎉`)
+    else if (pct >= 60) toast.info(`Good effort! ${correct}/${questions.length} — ${pct}%`)
+    else toast.info(`${correct}/${questions.length} — Review your notes and try again 📚`)
   }
 
   const resetQuiz = () => {
-    setQuizzes([])
-    setAnswers([])
+    setScreen('setup')
+    setQuestions([])
+    setAnswers({})
     setSubmitted(false)
-    setManualNotes('')
-    setSavedToVault(false)
+    setScore(0)
+    setPastedText('')
+    setPdfBase64(null)
+    setPdfName('')
   }
 
-  const saveQuizToVault = () => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('savedQuizzes') || '[]')
-      const newQuiz = {
-        id: `quiz-${Date.now()}`,
-        title: selectedUnitData ? `${selectedUnitData.unitName} Quiz` : `Quiz - ${new Date().toLocaleDateString()}`,
-        questions: quizzes,
-        date: new Date().toLocaleDateString(),
-      }
-      localStorage.setItem('savedQuizzes', JSON.stringify([newQuiz, ...saved]))
-      setSavedToVault(true)
-    } catch {
-      alert('Could not save quiz.')
-    }
-  }
-
-  const score = submitted ? calculateScore() : null
-  const remaining = freeCreditsRemaining(access)
+  const pct = questions.length > 0 ? Math.round((score / questions.length) * 100) : 0
+  const remaining = explorerLecturesRemaining(access)
 
   return (
-    <div className="min-h-screen bg-surface-base">
-      <nav className="border-b border-white/5 bg-surface-elevated/50 backdrop-blur-md">
+    <div className="min-h-screen bg-gradient-to-br from-white via-surface-light to-white">
+      <input ref={fileRef} type="file" accept=".pdf" className="hidden" onChange={handlePDFUpload} />
+
+      <nav className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <button onClick={() => navigate('/dashboard')} className="flex items-center gap-2 text-sm text-[#8B97B5] hover:text-white">
-            <ArrowLeft size={16} /> Back
+          <button onClick={() => screen !== 'setup' ? setScreen('setup') : navigate('/dashboard')}
+            className="flex items-center gap-2 text-navy hover:text-indigo-premium transition">
+            <ArrowLeft size={20} />
+            <span className="hidden sm:inline font-medium">{screen !== 'setup' ? 'Back to Setup' : 'Back'}</span>
           </button>
-          <div className="flex items-center gap-1">
-            <span className="font-sora font-bold text-xl text-white">STUDIA</span>
-            <sup className="text-brand-blue text-xs">β</sup>
-          </div>
+          <span className="font-sora font-bold text-lg text-navy">Test Yourself</span>
           <div className="w-20" />
         </div>
       </nav>
 
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-12">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
-          <div>
-          <h1 className="font-sora font-bold text-4xl text-white mb-2">Test Yourself</h1>
-<p className="text-[#8B97B5]">Pick a unit, upload a past paper, or paste notes — STUDIA builds your practice test.</p>
-            {accessLoaded && (
-              <p className="text-sm mt-2">
-                {isUnlimitedPlan(access) ? (
-                  <span className="text-green-400">✨ Unlimited — {access.currentPlan} plan</span>
-                ) : remaining > 0 ? (
-                  <span className="text-brand-blue">🎓 {remaining} free AI credit{remaining !== 1 ? 's' : ''} left</span>
-                ) : access.liteBonusCredits > 0 ? (
-                  <span className="text-brand-blue">💳 {access.liteBonusCredits} bonus credit{access.liteBonusCredits !== 1 ? 's' : ''} available</span>
-                ) : (
-                  <span className="text-brand-blue">💳 Free credits used — subscribe to continue</span>
-                )}
-              </p>
-            )}
-          </div>
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 space-y-6">
 
-          {blocked ? (
-            <div className="bg-surface-elevated border border-white/5 rounded-2xl p-12 text-center space-y-4">
-              <Lock size={32} className="mx-auto text-brand-blue" />
-              <p className="text-white font-semibold">You've used your free AI credits</p>
-              <p className="text-sm text-[#8B97B5]">Subscribe to a plan to keep generating quizzes — or record a Lite-paid lecture to earn a bonus credit.</p>
-              <button onClick={() => navigate('/pricing')} className="bg-brand-blue text-white font-medium px-6 py-3 rounded-xl hover:bg-brand-blue/90">
-                See Plans
-              </button>
-            </div>
-          ) : quizzes.length === 0 ? (
-            <div className="space-y-6">
-              <div className="bg-surface-elevated border border-white/5 rounded-2xl p-6 space-y-4">
-                <h2 className="font-sora font-bold text-xl text-white flex items-center gap-2">
-                  <BookOpen size={20} className="text-brand-blue" /> Generate From Your Units
-                </h2>
-
-                {units.length === 0 ? (
-                  <div className="bg-surface-base rounded-xl p-5 text-center space-y-3">
-                    <p className="text-sm text-[#8B97B5]">No units yet. Add your courses and units in Unit Management first.</p>
-                    <button onClick={() => navigate('/units')} className="bg-brand-blue text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-blue/90">
-                      Go to Unit Management
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <div>
-                      <label className="block text-sm text-white mb-2">Select Course</label>
-                      <select value={selectedCourse} onChange={(e) => { setSelectedCourse(e.target.value); setSelectedUnit('') }} className={selectClass}>
-                        <option value="">Choose a course…</option>
-                        {courseNames.map((name) => <option key={name} value={name}>{name}</option>)}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm text-white mb-2">Select Unit</label>
-                      <select value={selectedUnit} onChange={(e) => setSelectedUnit(e.target.value)} className={selectClass} disabled={!selectedCourse}>
-                        <option value="">Choose a unit…</option>
-                        {filteredUnits.map((u) => <option key={u.id} value={u.id}>{u.unitName}</option>)}
-                      </select>
-                    </div>
-
-                    {selectedUnitData && (
-                      <div className="bg-surface-base rounded-xl p-4 text-sm text-[#8B97B5] space-y-1">
-                        <p>📝 {relevantNotes.length} saved note{relevantNotes.length !== 1 ? 's' : ''} for {selectedCourse}</p>
-                        <p>🎙️ {relevantRecordings.length} lecture recording{relevantRecordings.length !== 1 ? 's' : ''} for {selectedUnitData.unitName}</p>
-                        <p className="text-xs pt-1 border-t border-white/5 mt-2">Syllabus topics: {selectedUnitData.topics.join(', ')}</p>
-                      </div>
-                    )}
-
-                    <button
-                      onClick={generateFromUnit}
-                      disabled={loading || !selectedUnit}
-                      className="w-full bg-brand-blue text-white font-medium py-3 rounded-xl hover:bg-brand-blue/90 disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                      {loading ? (<><Loader className="w-4 h-4 animate-spin" /> Generating Quiz...</>) : 'Generate Quiz From This Unit'}
-                    </button>
-                  </>
-                )}
-              </div>
-
-              <div className="bg-gradient-to-r from-purple-500/10 to-indigo-500/10 border border-purple-500/20 rounded-2xl p-6 space-y-4">
-                <h2 className="font-sora font-bold text-lg text-white flex items-center gap-2">
-                  <FileText size={20} className="text-purple-400" /> Generate From a Past Paper
-                </h2>
-                <p className="text-sm text-[#8B97B5]">Upload a real past exam paper PDF — STUDIA extracts the actual questions and converts them into a practice quiz matching the real exam style.</p>
-
-                <input ref={fileInputRef} type="file" accept="application/pdf" onChange={uploadPastPaper} className="hidden" />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={loading || isPdfLoading}
-                  className="w-full bg-purple-500/20 text-purple-300 border border-purple-500/30 font-medium py-3 rounded-xl hover:bg-purple-500/30 disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {isPdfLoading ? (<><Loader className="w-4 h-4 animate-spin" /> Analyzing past paper...</>) : (<><Upload size={18} /> Upload Past Paper (PDF)</>)}
-                </button>
-              </div>
-
-              <div className="bg-surface-elevated border border-white/5 rounded-2xl p-6 space-y-4">
-                <h2 className="font-sora font-bold text-lg text-white">Or Paste Notes Manually</h2>
-                <textarea
-                  value={manualNotes}
-                  onChange={(e) => setManualNotes(e.target.value)}
-                  placeholder="Paste lecture notes here..."
-                  className="w-full h-48 bg-surface-base border border-white/10 rounded-xl p-4 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40 resize-none"
-                />
-                <button
-                  onClick={generateFromManual}
-                  disabled={loading || !manualNotes.trim()}
-                  className="w-full bg-surface-base border border-brand-blue/30 text-brand-blue font-medium py-3 rounded-xl hover:bg-surface-base/80 disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {loading ? (<><Loader className="w-4 h-4 animate-spin" /> Generating...</>) : 'Generate From Pasted Notes'}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {!submitted ? (
-                <>
-                  {quizzes.map((q, i) => (
-                    <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}
-                      className="bg-surface-elevated border border-white/5 rounded-2xl p-6">
-                      <p className="text-white font-medium mb-4">Q{i + 1}. {q.question}</p>
-                      <div className="space-y-2">
-                        {q.options.map((option, j) => (
-                          <label key={j} className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-surface-base transition-all">
-                            <input type="radio" name={`q${i}`} checked={answers[i] === j}
-                              onChange={() => { const a = [...answers]; a[i] = j; setAnswers(a) }}
-                              className="w-4 h-4 accent-brand-blue cursor-pointer" />
-                            <span className="text-[#8B97B5] text-sm">{option}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </motion.div>
-                  ))}
-
-                  <div className="flex gap-3">
-                    <button onClick={submitQuiz} className="flex-1 bg-brand-blue text-white font-medium py-3 rounded-xl hover:bg-brand-blue/90">
-                      Submit Quiz
-                    </button>
-                    <button onClick={saveQuizToVault} disabled={savedToVault}
-                      className="flex items-center gap-2 bg-surface-elevated border border-white/10 text-white px-5 py-3 rounded-xl hover:border-brand-blue/40 disabled:opacity-60 text-sm font-medium">
-                      {savedToVault ? (<><Check size={16} className="text-green-400" /> Saved</>) : (<><Save size={16} /> Save to Vault</>)}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="space-y-6">
-                  <div className="bg-gradient-to-r from-brand-blue/10 to-brand-blue/5 border border-brand-blue/20 rounded-2xl p-8 text-center">
-                    <p className="text-6xl font-bold text-brand-blue mb-2">{score?.percentage}%</p>
-                    <p className="text-xl text-white font-sora font-bold mb-1">{score?.correct} out of {score?.total} correct</p>
-                    <p className="text-[#8B97B5]">Great effort! Keep studying to improve your score.</p>
-                  </div>
-
-                  {quizzes.map((q, i) => (
-                    <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}
-                      className={`rounded-2xl p-6 border ${answers[i] === q.correct ? 'bg-brand-green/10 border-brand-green/30' : 'bg-red-500/10 border-red-500/30'}`}>
-                      <p className="text-white font-medium mb-3">Q{i + 1}. {q.question}</p>
-                      <div className="space-y-2">
-                        {q.options.map((option, j) => (
-                          <div key={j} className={`p-3 rounded-lg text-sm ${
-                            j === q.correct ? 'bg-brand-green/20 text-brand-green border border-brand-green/30'
-                            : j === answers[i] ? 'bg-red-500/20 text-red-500 border border-red-500/30'
-                            : 'bg-surface-base text-[#8B97B5]'
-                          }`}>
-                            {option}
-                          </div>
-                        ))}
-                      </div>
-                    </motion.div>
-                  ))}
-
-                  <div className="flex gap-3">
-                    <button onClick={resetQuiz} className="flex-1 bg-brand-blue text-white font-medium py-3 rounded-xl hover:bg-brand-blue/90 flex items-center justify-center gap-2">
-                      <RotateCcw size={16} /> Try Another Quiz
-                    </button>
-                    <button onClick={saveQuizToVault} disabled={savedToVault}
-                      className="flex items-center gap-2 bg-surface-elevated border border-white/10 text-white px-5 py-3 rounded-xl hover:border-brand-blue/40 disabled:opacity-60 text-sm font-medium">
-                      {savedToVault ? (<><Check size={16} className="text-green-400" /> Saved</>) : (<><Save size={16} /> Save to Vault</>)}
-                    </button>
-                  </div>
-                </motion.div>
+        {/* ── SETUP ──────────────────────────────────────────────────── */}
+        {screen === 'setup' && (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+            <div>
+              <h1 className="font-sora font-bold text-3xl sm:text-4xl text-navy mb-2">Test Yourself</h1>
+              <p className="text-gray-500">Generate AI practice questions from your lecture, notes, or a past paper PDF.</p>
+              {accessLoaded && (
+                <p className="text-sm mt-2">
+                  {isUnlimitedPlan(access) ? (
+                    <span className="text-mint">✨ {access.currentPlan} plan · Unlimited AI</span>
+                  ) : remaining > 0 ? (
+                    <span className="text-indigo-premium">🎓 {remaining} free AI credits remaining</span>
+                  ) : access.liteBonusCredits > 0 ? (
+                    <span className="text-brand-blue">💳 {access.liteBonusCredits} bonus credits available</span>
+                  ) : (
+                    <span className="text-red-500">🔒 No credits left — <button onClick={() => navigate('/pricing')} className="underline">upgrade</button></span>
+                  )}
+                </p>
               )}
             </div>
-          )}
-        </motion.div>
+
+            {/* Input mode selector */}
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { id: 'lecture', label: '🎙️ My Lecture', desc: 'From recordings' },
+                { id: 'paste', label: '📝 Paste Notes', desc: 'Type or paste' },
+                { id: 'pdf', label: '📄 Past Paper', desc: 'Upload PDF' },
+              ] as { id: InputMode; label: string; desc: string }[]).map(opt => (
+                <button key={opt.id} onClick={() => setInputMode(opt.id)}
+                  className={`p-3 rounded-2xl border-2 transition text-left ${
+                    inputMode === opt.id ? 'border-indigo-premium bg-indigo-premium/5' : 'border-gray-200 hover:border-gray-300'
+                  }`}>
+                  <p className="font-semibold text-navy text-sm">{opt.label}</p>
+                  <p className="text-xs text-gray-500">{opt.desc}</p>
+                </button>
+              ))}
+            </div>
+
+            {/* Content input */}
+            <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4">
+              {inputMode === 'lecture' && (
+                <>
+                  <label className="block text-sm font-medium text-navy mb-2">Select a recording</label>
+                  {recordings.length === 0 ? (
+                    <div className="text-center py-8">
+                      <BookOpen size={32} className="mx-auto text-gray-300 mb-2" />
+                      <p className="text-gray-500 text-sm mb-3">No recordings yet</p>
+                      <button onClick={() => navigate('/recording')} className="bg-indigo-premium text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-purple-premium transition">
+                        Record a Lecture
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-56 overflow-y-auto">
+                      {recordings.map(rec => (
+                        <button key={rec.id} onClick={() => setSelectedLectureId(rec.id)}
+                          className={`w-full text-left px-4 py-3 rounded-xl border-2 transition ${
+                            selectedLectureId === rec.id ? 'border-indigo-premium bg-indigo-premium/5' : 'border-gray-200 hover:border-gray-300'
+                          }`}>
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="font-medium text-navy text-sm">{rec.name}</p>
+                              <p className="text-xs text-gray-500">
+                                {rec.course && `${rec.course} · `}
+                                {rec.notes ? '✓ Notes' : '—'}
+                                {rec.transcript ? ' ✓ Transcript' : ''}
+                              </p>
+                            </div>
+                            {selectedLectureId === rec.id && <Check size={16} className="text-indigo-premium shrink-0" />}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {inputMode === 'paste' && (
+                <>
+                  <label className="block text-sm font-medium text-navy mb-2">Paste your notes</label>
+                  <textarea
+                    value={pastedText}
+                    onChange={e => setPastedText(e.target.value)}
+                    placeholder="Paste your lecture notes, textbook excerpts, or any study material here..."
+                    className="w-full h-48 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-navy placeholder-gray-400 outline-none focus:border-indigo-premium transition resize-none text-sm"
+                  />
+                </>
+              )}
+
+              {inputMode === 'pdf' && (
+                <>
+                  <label className="block text-sm font-medium text-navy mb-2">Upload a past paper PDF</label>
+                  {pdfBase64 ? (
+                    <div className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <FileText size={18} className="text-indigo-premium" />
+                        <p className="text-navy text-sm font-medium truncate">{pdfName}</p>
+                      </div>
+                      <button onClick={() => { setPdfBase64(null); setPdfName('') }} className="text-gray-400 hover:text-red-500 transition">
+                        <X size={18} />
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => fileRef.current?.click()}
+                      className="w-full h-32 border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center gap-2 text-gray-400 hover:border-indigo-premium/50 hover:text-indigo-premium transition">
+                      <Upload size={24} />
+                      <span className="text-sm font-medium">Click to upload PDF</span>
+                      <span className="text-xs">Past papers, exam papers, textbook PDFs</span>
+                    </button>
+                  )}
+                </>
+              )}
+
+              <button onClick={generateQuiz} disabled={loading}
+                className="w-full bg-indigo-premium text-white font-bold py-3.5 rounded-xl hover:bg-purple-premium transition disabled:opacity-50 flex items-center justify-center gap-2">
+                {loading ? (
+                  <><Loader className="animate-spin" size={20} /> Generating questions...</>
+                ) : (
+                  <><ClipboardList size={20} /> Generate Quiz</>
+                )}
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ── QUIZ ───────────────────────────────────────────────────── */}
+        {screen === 'quiz' && questions.length > 0 && (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h2 className="font-sora font-bold text-2xl text-navy">Quiz</h2>
+                <p className="text-gray-500 text-sm">Question {currentQ + 1} of {questions.length}</p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setCurrentQ(Math.max(0, currentQ - 1))} disabled={currentQ === 0}
+                  className="px-3 py-2 rounded-xl border border-gray-200 text-navy text-sm hover:bg-gray-50 disabled:opacity-30 transition">← Prev</button>
+                <button onClick={() => setCurrentQ(Math.min(questions.length - 1, currentQ + 1))} disabled={currentQ === questions.length - 1}
+                  className="px-3 py-2 rounded-xl border border-gray-200 text-navy text-sm hover:bg-gray-50 disabled:opacity-30 transition">Next →</button>
+              </div>
+            </div>
+
+            {/* Progress */}
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div className="bg-indigo-premium h-2 rounded-full transition-all" style={{ width: `${((currentQ + 1) / questions.length) * 100}%` }} />
+            </div>
+
+            {/* Question */}
+            <AnimatePresence mode="wait">
+              <motion.div key={currentQ} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
+                className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4">
+                <div className="flex items-start gap-3">
+                  <span className="w-8 h-8 rounded-full bg-indigo-premium/10 text-indigo-premium font-bold text-sm flex items-center justify-center shrink-0">{currentQ + 1}</span>
+                  <p className="font-semibold text-navy text-base">{questions[currentQ]?.question}</p>
+                </div>
+
+                <div className="space-y-2">
+                  {questions[currentQ]?.options.map((opt, j) => {
+                    const selected = answers[currentQ] === j
+                    return (
+                      <button key={j} onClick={() => selectAnswer(currentQ, j)}
+                        className={`w-full text-left px-4 py-3 rounded-xl border-2 transition text-sm font-medium ${
+                          selected ? 'border-indigo-premium bg-indigo-premium/5 text-indigo-premium' : 'border-gray-200 text-navy hover:border-indigo-premium/40 hover:bg-indigo-premium/3'
+                        }`}>
+                        <span className="font-bold mr-2">{String.fromCharCode(65 + j)}.</span>{opt}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {questions[currentQ]?.topic && (
+                  <p className="text-xs text-gray-400">Topic: {questions[currentQ].topic}</p>
+                )}
+              </motion.div>
+            </AnimatePresence>
+
+            {/* Answer tracker */}
+            <div className="bg-white rounded-2xl border border-gray-200 p-4">
+              <p className="text-xs text-gray-500 mb-3 font-medium">Questions answered: {Object.keys(answers).length}/{questions.length}</p>
+              <div className="flex flex-wrap gap-2">
+                {questions.map((_, i) => (
+                  <button key={i} onClick={() => setCurrentQ(i)}
+                    className={`w-8 h-8 rounded-lg text-xs font-bold transition ${
+                      i === currentQ ? 'bg-indigo-premium text-white'
+                      : answers[i] !== undefined ? 'bg-mint/20 text-mint'
+                      : 'bg-gray-100 text-gray-400'
+                    }`}>
+                    {i + 1}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={submitQuiz}
+              disabled={Object.keys(answers).length < questions.length}
+              className="w-full bg-indigo-premium text-white font-bold py-3.5 rounded-xl hover:bg-purple-premium transition disabled:opacity-50"
+            >
+              {Object.keys(answers).length < questions.length
+                ? `Answer all questions (${questions.length - Object.keys(answers).length} remaining)`
+                : 'Submit Quiz'}
+            </button>
+          </motion.div>
+        )}
+
+        {/* ── RESULTS ────────────────────────────────────────────────── */}
+        {screen === 'results' && (
+          <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} className="space-y-6">
+            {/* Score card */}
+            <div className={`rounded-3xl p-8 text-center text-white ${
+              pct >= 80 ? 'bg-gradient-to-br from-mint to-green-500'
+              : pct >= 60 ? 'bg-gradient-to-br from-indigo-premium to-purple-premium'
+              : 'bg-gradient-to-br from-warning to-red-500'
+            }`}>
+              <p className="text-6xl font-bold mb-2">{pct}%</p>
+              <p className="text-white/90 text-xl font-semibold">{score} out of {questions.length} correct</p>
+              <p className="text-white/70 mt-1">
+                {pct >= 80 ? 'Excellent work! 🎉' : pct >= 60 ? 'Good effort! Keep practicing 💪' : 'Review your notes and try again 📚'}
+              </p>
+            </div>
+
+            {/* Answer review */}
+            <div className="space-y-3">
+              <h3 className="font-sora font-bold text-xl text-navy">Review Answers</h3>
+              {questions.map((q, i) => {
+                const userAnswer = answers[i]
+                const isCorrect = userAnswer === q.correct
+                return (
+                  <div key={i} className={`bg-white rounded-2xl border-2 p-5 ${isCorrect ? 'border-mint/40' : 'border-red-200'}`}>
+                    <div className="flex items-start gap-3 mb-3">
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${isCorrect ? 'bg-mint/20' : 'bg-red-100'}`}>
+                        {isCorrect ? <Check size={14} className="text-mint" /> : <X size={14} className="text-red-500" />}
+                      </div>
+                      <p className="text-navy font-semibold text-sm">{q.question}</p>
+                    </div>
+                    <div className="space-y-1.5 ml-10">
+                      {q.options.map((opt, j) => (
+                        <div key={j} className={`px-3 py-2 rounded-lg text-xs font-medium ${
+                          j === q.correct ? 'bg-mint/15 text-green-700 border border-mint/30'
+                          : j === userAnswer && !isCorrect ? 'bg-red-50 text-red-600 border border-red-200'
+                          : 'text-gray-500'
+                        }`}>
+                          <span className="font-bold mr-1">{String.fromCharCode(65 + j)}.</span>{opt}
+                          {j === q.correct && <span className="ml-2 text-mint font-bold">✓ Correct</span>}
+                          {j === userAnswer && !isCorrect && <span className="ml-2 text-red-500 font-bold">✗ Your answer</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Actions */}
+            <div className="grid sm:grid-cols-2 gap-3">
+              <button onClick={resetQuiz}
+                className="flex items-center justify-center gap-2 bg-indigo-premium text-white font-bold py-3.5 rounded-xl hover:bg-purple-premium transition">
+                <RotateCcw size={18} /> New Quiz
+              </button>
+              <button onClick={() => navigate('/sage')}
+                className="flex items-center justify-center gap-2 bg-gradient-to-r from-brand-blue to-purple-500 text-white font-bold py-3.5 rounded-xl hover:opacity-90 transition">
+                🧠 Ask SAGE about this
+              </button>
+            </div>
+          </motion.div>
+        )}
       </div>
     </div>
   )
