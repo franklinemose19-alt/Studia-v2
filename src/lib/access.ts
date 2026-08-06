@@ -21,15 +21,14 @@ export const emptyAccess: AccessInfo = {
   lecturesUsed: 0, periodEnd: null, planLocked: false,
 }
 
-// Raised from 3 to 5 — gives new students more breathing room
-const EXPLORER_LIFETIME_LIMIT = 5
+const EXPLORER_LIFETIME_LIMIT = 3
 
-async function checkAndExpireSubscription(uid, plan, status, periodEnd) {
+async function checkAndExpireSubscription(
+  uid: string, plan: string | null, status: string | null, periodEnd: string | null
+) {
   if (!['excellence', 'valedictorian'].includes(plan || '')) return null
-  if (status !== 'active') return null
-  if (!periodEnd) return null
+  if (status !== 'active' || !periodEnd) return null
   if (new Date() <= new Date(periodEnd)) return null
-
   try {
     const client = await getSupabase()
     await client.from('users').update({
@@ -54,7 +53,7 @@ export const loadAccess = async (cachedUserId?: string | null): Promise<AccessIn
 
     const { data } = await client
       .from('users')
-      .select('current_plan, subscription_status, free_ai_credits_used, lite_bonus_credits, lecture_allowance, lectures_used, period_end, plan_locked')
+      .select('current_plan,subscription_status,free_ai_credits_used,lite_bonus_credits,lecture_allowance,lectures_used,period_end,plan_locked')
       .eq('auth_id', uid)
       .maybeSingle()
 
@@ -142,7 +141,6 @@ export const consumeCredit = async (
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'verify', userId: access.userId }),
   }).catch(() => {})
-
   try {
     const client = await getSupabase()
     if (source === 'explorer_free') {
@@ -163,7 +161,7 @@ export const consumeCredit = async (
   } catch (err) { console.error('consumeCredit failed:', err) }
 }
 
-export const grantLiteBonusCredit = async (userId: string, currentBonusCredits: number): Promise<void> => {
+export const grantLiteBonusCredit = async (userId: string, currentBonusCredits: number) => {
   try {
     const client = await getSupabase()
     await client.from('users').update({ lite_bonus_credits: currentBonusCredits + 1 }).eq('auth_id', userId)
