@@ -2,11 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Brain, MessageCircle, BookOpen, FileText, Search,
-  Volume2, Camera, Send, Loader, ArrowLeft,
-  ChevronDown, ChevronUp, RefreshCw, Play, Pause,
-  RotateCcw, RotateCw, CheckCircle, XCircle, Zap,
-  Target, TrendingUp, ChevronLeft, ChevronRight,
-  Clock, Star, ClipboardList,
+  Camera, Send, Loader, ArrowLeft, ChevronDown, ChevronUp,
+  RefreshCw, CheckCircle, XCircle, Zap, Target, TrendingUp,
+  ChevronLeft, ChevronRight, Clock, Star, ClipboardList,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
@@ -22,7 +20,7 @@ import { sageCache } from '../lib/sageCache'
 import { buildStudentContext, formatContextForAI } from '../lib/studentContext'
 import { toast } from '../lib/toast'
 
-type Tab = 'chat' | 'deepnotes' | 'flashcards' | 'quiz' | 'pastpapers' | 'knowledgegap' | 'voice' | 'snapsolve'
+type Tab = 'chat' | 'deepnotes' | 'flashcards' | 'quiz' | 'pastpapers' | 'knowledgegap' | 'snapsolve'
 
 interface Message { role: 'user' | 'assistant'; content: string }
 
@@ -63,7 +61,6 @@ const TABS: { id: Tab; label: string; icon: any }[] = [
   { id: 'quiz', label: 'Mock Exam', icon: ClipboardList },
   { id: 'pastpapers', label: 'Past Papers', icon: FileText },
   { id: 'knowledgegap', label: 'Knowledge Gap', icon: Search },
-  { id: 'voice', label: 'Voice', icon: Volume2 },
   { id: 'snapsolve', label: 'SnapSolve', icon: Camera },
 ]
 
@@ -122,12 +119,6 @@ export default function SageAITutor() {
   const [knowledgeGap, setKnowledgeGap] = useState<KnowledgeGap | null>(null)
   const [knowledgeGapLoading, setKnowledgeGapLoading] = useState(false)
 
-  // Voice
-  const [isReading, setIsReading] = useState(false)
-  const [readingSpeed, setReadingSpeed] = useState(1.0)
-  const [readingText, setReadingText] = useState<'notes' | 'summary'>('notes')
-  const [speechSupported] = useState(() => 'speechSynthesis' in window)
-
   // SnapSolve
   const [snapImage, setSnapImage] = useState<string | null>(null)
   const [snapText, setSnapText] = useState('')
@@ -148,17 +139,11 @@ export default function SageAITutor() {
     if (!selectedLectureId) return
     const packet = getLecturePacket(selectedLectureId)
     setLecturePacket(packet)
-    setDeepNotes(null)
-    setFlashcards([])
-    setMockExam(null)
-    setKnowledgeGap(null)
-    setExamAnswers({})
-    setExamSubmitted(false)
+    setDeepNotes(null); setFlashcards([]); setMockExam(null); setKnowledgeGap(null)
+    setExamAnswers({}); setExamSubmitted(false)
   }, [selectedLectureId])
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [chatMessages])
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [chatMessages])
 
   useEffect(() => {
     if (!mockExam || !examTimeLeft || examSubmitted) return
@@ -167,17 +152,14 @@ export default function SageAITutor() {
     return () => clearTimeout(t)
   }, [examTimeLeft, examSubmitted])
 
-  const lectureContent = lecturePacket
-    ? (lecturePacket.notes || '') + '\n\n' + (lecturePacket.transcript || '')
-    : ''
-
+  const lectureContent = lecturePacket ? (lecturePacket.notes || '') + '\n\n' + (lecturePacket.transcript || '') : ''
   const studentCtx = formatContextForAI(buildStudentContext(access.currentPlan))
 
   const callSage = async (body: any) => {
     const res = await fetch('/api/ai-tools', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, userId }),
     })
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
@@ -196,18 +178,14 @@ export default function SageAITutor() {
     setChatLoading(true)
     try {
       const data = await callSage({
-        mode: 'chat',
-        chatMessages: newMessages,
+        mode: 'chat', chatMessages: newMessages,
         documentContext: buildLecturePromptContext(lecturePacket),
-        studentContext: studentCtx,
-        chatMode: 'general',
+        studentContext: studentCtx, chatMode: 'general',
       })
       setChatMessages(prev => [...prev, { role: 'assistant', content: data.reply }])
     } catch (err: any) {
       toast.error('SAGE error: ' + (err.message || 'Please try again'))
-    } finally {
-      setChatLoading(false)
-    }
+    } finally { setChatLoading(false) }
   }
 
   // ── Deep Notes ────────────────────────────────────────────────────────
@@ -222,9 +200,7 @@ export default function SageAITutor() {
       sageCache.set('deepnotes', lectureContent, data)
     } catch (err: any) {
       toast.error('Failed to generate deep notes: ' + err.message)
-    } finally {
-      setDeepNotesLoading(false)
-    }
+    } finally { setDeepNotesLoading(false) }
   }
 
   // ── Flashcards ────────────────────────────────────────────────────────
@@ -237,20 +213,17 @@ export default function SageAITutor() {
       const data = await callSage({ mode: 'flashcards', lectureContent, subject: lecturePacket?.course })
       setFlashcards(data.flashcards || [])
       sageCache.set('flashcards', lectureContent, data.flashcards)
-      setCurrentCard(0)
-      setCardFlipped(false)
+      setCurrentCard(0); setCardFlipped(false)
     } catch (err: any) {
       toast.error('Failed to generate flashcards: ' + err.message)
-    } finally {
-      setFlashcardsLoading(false)
-    }
+    } finally { setFlashcardsLoading(false) }
   }
 
   const markCard = (status: 'known' | 'learning') => {
     const card = flashcards[currentCard]
     if (!card) return
     setCardProgress(prev => ({ ...prev, [card.id]: status }))
-    if (currentCard < flashcards.length - 1) { setCurrentCard(prev => prev + 1); setCardFlipped(false) }
+    if (currentCard < flashcards.length - 1) { setCurrentCard(p => p + 1); setCardFlipped(false) }
     else toast.success('🎉 Deck complete!')
   }
 
@@ -264,22 +237,19 @@ export default function SageAITutor() {
       const data = await callSage({ mode: 'mockexam', lectureContent, subject: lecturePacket?.course, numQuestions: 10 })
       setMockExam(data)
       sageCache.set('mockexam', lectureContent, data)
-      setExamAnswers({})
-      setExamSubmitted(false)
+      setExamAnswers({}); setExamSubmitted(false)
       setExamTimeLeft(parseInt(data.timeAllowed) * 60 || 1800)
     } catch (err: any) {
       toast.error('Failed to generate mock exam: ' + err.message)
-    } finally {
-      setMockExamLoading(false)
-    }
+    } finally { setMockExamLoading(false) }
   }
 
   const submitExam = () => {
-    setExamSubmitted(true)
-    setExamTimeLeft(null)
+    setExamSubmitted(true); setExamTimeLeft(null)
     const correct = mockExam?.questions.filter(q => examAnswers[q.id] === q.correct).length || 0
     const total = mockExam?.questions.length || 0
-    toast.success(`Exam done! ${correct}/${total} (${Math.round((correct / total) * 100)}%)`)
+    const pct = Math.round((correct / total) * 100)
+    toast.success(`Exam done! ${correct}/${total} — ${pct}%`)
     try {
       const results = JSON.parse(localStorage.getItem('quizResults') || '[]')
       results.push({ score: correct, total, subject: lecturePacket?.course || 'General', date: new Date().toISOString(), source: 'mock_exam' })
@@ -289,7 +259,7 @@ export default function SageAITutor() {
 
   // ── Knowledge Gap ─────────────────────────────────────────────────────
   const analyzeKnowledgeGap = async () => {
-    if (!lecturePacket?.transcript && !lecturePacket?.notes) { toast.error('Select a lecture with transcript or notes'); return }
+    if (!lecturePacket?.transcript && !lecturePacket?.notes) { toast.error('Select a lecture with notes or transcript'); return }
     const cacheContent = (lecturePacket.transcript || '') + (lecturePacket.notes || '')
     const cached = sageCache.get('knowledgegap', cacheContent)
     if (cached) { setKnowledgeGap(cached); return }
@@ -300,67 +270,33 @@ export default function SageAITutor() {
       sageCache.set('knowledgegap', cacheContent, data)
     } catch (err: any) {
       toast.error('Analysis failed: ' + err.message)
-    } finally {
-      setKnowledgeGapLoading(false)
-    }
+    } finally { setKnowledgeGapLoading(false) }
   }
-
-  // ── Voice ─────────────────────────────────────────────────────────────
-  const getVoiceText = () => {
-    if (!lecturePacket) return ''
-    return readingText === 'notes' ? (lecturePacket.notes || lecturePacket.transcript || '') : (lecturePacket.summary || lecturePacket.notes || '')
-  }
-
-  const startReading = () => {
-    if (!speechSupported) { toast.error('Text-to-speech not supported in this browser'); return }
-    const text = getVoiceText()
-    if (!text.trim()) { toast.error('No text available to read'); return }
-    window.speechSynthesis.cancel()
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.rate = readingSpeed
-    utterance.lang = 'en-US'
-    utterance.onend = () => { setIsReading(false); toast.info('✓ Reading complete') }
-    utterance.onerror = () => setIsReading(false)
-    window.speechSynthesis.speak(utterance)
-    setIsReading(true)
-  }
-
-  const stopReading = () => { window.speechSynthesis.cancel(); setIsReading(false) }
-  const pauseReading = () => { window.speechSynthesis.pause(); setIsReading(false) }
-  const resumeReading = () => { window.speechSynthesis.resume(); setIsReading(true) }
 
   // ── SnapSolve ─────────────────────────────────────────────────────────
   const handleSnapFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const file = e.target.files?.[0]; if (!file) return
     const reader = new FileReader()
     reader.onload = ev => setSnapImage(ev.target?.result as string)
-    reader.readAsDataURL(file)
-    e.target.value = ''
+    reader.readAsDataURL(file); e.target.value = ''
   }
 
   const solveSnap = async () => {
     if (!snapImage && !snapText.trim()) { toast.error('Add an image or type a question'); return }
-    setSnapLoading(true)
-    setSnapResult(null)
+    setSnapLoading(true); setSnapResult(null)
     try {
       const data = await callSage({ mode: 'snapsolve', image: snapImage, text: snapText })
       setSnapResult(data.result)
-    } catch (err: any) {
-      toast.error('SnapSolve failed: ' + err.message)
-    } finally {
-      setSnapLoading(false)
-    }
+    } catch (err: any) { toast.error('SnapSolve failed: ' + err.message) }
+    finally { setSnapLoading(false) }
   }
 
   // ── Past Papers ───────────────────────────────────────────────────────
   const handlePPFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const file = e.target.files?.[0]; if (!file) return
     const reader = new FileReader()
     reader.onload = ev => setPastPaperImage(ev.target?.result as string)
-    reader.readAsDataURL(file)
-    e.target.value = ''
+    reader.readAsDataURL(file); e.target.value = ''
   }
 
   const analyzePastPaper = async () => {
@@ -369,16 +305,12 @@ export default function SageAITutor() {
     try {
       const data = await callSage({ mode: 'pastpapers', image: pastPaperImage, text: pastPaperText })
       setPastPaperResult(data.result)
-    } catch (err: any) {
-      toast.error('Past paper analysis failed: ' + err.message)
-    } finally {
-      setPastPaperLoading(false)
-    }
+    } catch (err: any) { toast.error('Past paper analysis failed: ' + err.message) }
+    finally { setPastPaperLoading(false) }
   }
 
   const scoreColor = (s: number) => s >= 75 ? 'text-green-400' : s >= 50 ? 'text-yellow-400' : 'text-red-400'
   const scoreBg = (s: number) => s >= 75 ? 'from-green-500' : s >= 50 ? 'from-yellow-500' : 'from-red-500'
-
   const formatTimer = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
 
   return (
@@ -437,22 +369,14 @@ export default function SageAITutor() {
                 <div className="px-4 py-3 max-h-56 overflow-y-auto space-y-1">
                   {recordings.length === 0 ? (
                     <div className="py-6 text-center text-[#8B97B5] text-sm">
-                      No recordings yet.{' '}
-                      <button onClick={() => navigate('/recording')} className="text-brand-blue underline">Record a lecture</button>
+                      No recordings yet. <button onClick={() => navigate('/recording')} className="text-brand-blue underline">Record a lecture</button>
                     </div>
                   ) : recordings.map(rec => (
-                    <button key={rec.id}
-                      onClick={() => { setSelectedLectureId(rec.id); setShowLectureSelector(false) }}
-                      className={`w-full text-left px-3 py-2.5 rounded-xl transition-colors flex items-center gap-3 ${
-                        selectedLectureId === rec.id ? 'bg-brand-blue/15 border border-brand-blue/30' : 'hover:bg-surface-base'
-                      }`}>
+                    <button key={rec.id} onClick={() => { setSelectedLectureId(rec.id); setShowLectureSelector(false) }}
+                      className={`w-full text-left px-3 py-2.5 rounded-xl transition flex items-center gap-3 ${selectedLectureId === rec.id ? 'bg-brand-blue/15 border border-brand-blue/30' : 'hover:bg-surface-base'}`}>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm text-white truncate">{rec.name}</p>
-                        <p className="text-xs text-[#8B97B5]">
-                          {rec.course && `${rec.course} · `}
-                          {rec.notes ? '✓ Notes' : '— No notes'}
-                          {rec.transcript ? ' ✓ Transcript' : ''}
-                        </p>
+                        <p className="text-xs text-[#8B97B5]">{rec.course && `${rec.course} · `}{rec.notes ? '✓ Notes' : '— No notes'}{rec.transcript ? ' ✓ Transcript' : ''}</p>
                       </div>
                       {selectedLectureId === rec.id && <CheckCircle size={14} className="text-brand-blue shrink-0" />}
                     </button>
@@ -464,19 +388,25 @@ export default function SageAITutor() {
         </div>
 
         {/* Access status */}
-       
+        {accessLoaded && (
+          <p className="text-xs text-brand-blue">
+            {isUnlimitedPlan(access)
+              ? `✨ ${access.currentPlan} plan · Unlimited AI`
+              : access.planLocked
+              ? <>🔒 Explorer locked — <button onClick={() => navigate('/pricing')} className="text-red-400 hover:text-red-300 underline">upgrade to continue →</button></>
+              : `🎓 ${explorerLecturesRemaining(access)} free AI credits remaining`}
+          </p>
+        )}
 
-        {/* Tab navigation */}
+        {/* Tabs */}
         <div className="flex gap-1 overflow-x-auto pb-1">
           {TABS.map(tab => {
             const Icon = tab.icon
             const active = activeTab === tab.id
             return (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all shrink-0 ${
-                  active
-                    ? 'bg-brand-blue/20 border border-brand-blue/40 text-brand-blue'
-                    : 'text-[#8B97B5] hover:text-white hover:bg-surface-elevated'
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition shrink-0 ${
+                  active ? 'bg-brand-blue/20 border border-brand-blue/40 text-brand-blue' : 'text-[#8B97B5] hover:text-white hover:bg-surface-elevated'
                 }`}>
                 <Icon size={13} /> {tab.label}
               </button>
@@ -487,7 +417,7 @@ export default function SageAITutor() {
         {/* Tab content */}
         <div className="bg-surface-elevated border border-white/5 rounded-2xl overflow-hidden min-h-96">
 
-          {/* ── AI CHAT ──────────────────────────────────────────── */}
+          {/* ── CHAT ──────────────────────────────────────────────── */}
           {activeTab === 'chat' && (
             <div className="flex flex-col h-[560px]">
               {chatMessages.length === 0 && (
@@ -497,9 +427,7 @@ export default function SageAITutor() {
                   </div>
                   <p className="text-white font-sora font-bold text-lg mb-2">SAGE is ready</p>
                   <p className="text-[#8B97B5] text-sm max-w-sm mb-6">
-                    {lecturePacket
-                      ? `Ask me anything about "${lecturePacket.name}" — I have the notes and transcript.`
-                      : 'Ask me any academic question. Select a lecture above for personalized help.'}
+                    {lecturePacket ? `Ask me anything about "${lecturePacket.name}" — I have the notes and transcript.` : 'Ask me any academic question. Select a lecture above for personalized help.'}
                   </p>
                   <div className="flex flex-wrap gap-2 justify-center">
                     {(lecturePacket
@@ -536,9 +464,7 @@ export default function SageAITutor() {
                       <Brain size={12} className="text-white" />
                     </div>
                     <div className="bg-surface-base rounded-2xl px-4 py-3 flex gap-1.5">
-                      {[0, 150, 300].map(d => (
-                        <span key={d} className="w-1.5 h-1.5 bg-brand-blue rounded-full animate-bounce" style={{ animationDelay: `${d}ms` }} />
-                      ))}
+                      {[0, 150, 300].map(d => <span key={d} className="w-1.5 h-1.5 bg-brand-blue rounded-full animate-bounce" style={{ animationDelay: `${d}ms` }} />)}
                     </div>
                   </div>
                 )}
@@ -558,7 +484,7 @@ export default function SageAITutor() {
             </div>
           )}
 
-          {/* ── DEEP NOTES ──────────────────────────────────────── */}
+          {/* ── DEEP NOTES ─────────────────────────────────────────── */}
           {activeTab === 'deepnotes' && (
             <div className="p-5 space-y-5">
               <div className="flex items-center justify-between flex-wrap gap-3">
@@ -669,7 +595,7 @@ export default function SageAITutor() {
             </div>
           )}
 
-          {/* ── FLASHCARDS ──────────────────────────────────────── */}
+          {/* ── FLASHCARDS ─────────────────────────────────────────── */}
           {activeTab === 'flashcards' && (
             <div className="p-5 space-y-5">
               <div className="flex items-center justify-between flex-wrap gap-3">
@@ -687,7 +613,7 @@ export default function SageAITutor() {
               {flashcardsLoading && (
                 <div className="py-16 flex flex-col items-center gap-3">
                   <Loader size={28} className="animate-spin text-brand-blue" />
-                  <p className="text-sm text-[#8B97B5]">SAGE is creating your flashcard deck...</p>
+                  <p className="text-sm text-[#8B97B5]">Creating your flashcard deck...</p>
                 </div>
               )}
 
@@ -721,38 +647,26 @@ export default function SageAITutor() {
                   </div>
 
                   <div className="flex items-center justify-between gap-3">
-                    <button onClick={() => { if (currentCard > 0) { setCurrentCard(p => p - 1); setCardFlipped(false) } }}
-                      disabled={currentCard === 0}
+                    <button onClick={() => { if (currentCard > 0) { setCurrentCard(p => p - 1); setCardFlipped(false) } }} disabled={currentCard === 0}
                       className="p-2.5 rounded-xl bg-surface-base border border-white/10 text-[#8B97B5] hover:text-white disabled:opacity-30">
                       <ChevronLeft size={18} />
                     </button>
                     {cardFlipped ? (
                       <div className="flex gap-2 flex-1 justify-center">
-                        <button onClick={() => markCard('learning')}
-                          className="flex-1 max-w-[130px] bg-yellow-500/20 border border-yellow-500/40 text-yellow-300 py-2 rounded-xl text-xs font-semibold hover:bg-yellow-500/30 transition">
-                          Still Learning
-                        </button>
-                        <button onClick={() => markCard('known')}
-                          className="flex-1 max-w-[130px] bg-green-500/20 border border-green-500/40 text-green-300 py-2 rounded-xl text-xs font-semibold hover:bg-green-500/30 transition">
-                          Got It! ✓
-                        </button>
+                        <button onClick={() => markCard('learning')} className="flex-1 max-w-[130px] bg-yellow-500/20 border border-yellow-500/40 text-yellow-300 py-2 rounded-xl text-xs font-semibold hover:bg-yellow-500/30 transition">Still Learning</button>
+                        <button onClick={() => markCard('known')} className="flex-1 max-w-[130px] bg-green-500/20 border border-green-500/40 text-green-300 py-2 rounded-xl text-xs font-semibold hover:bg-green-500/30 transition">Got It! ✓</button>
                       </div>
                     ) : (
-                      <button onClick={() => setCardFlipped(true)}
-                        className="flex-1 max-w-[200px] bg-brand-blue text-white py-2 rounded-xl text-sm font-semibold hover:bg-brand-blue/90 transition">
-                        Show Answer
-                      </button>
+                      <button onClick={() => setCardFlipped(true)} className="flex-1 max-w-[200px] bg-brand-blue text-white py-2 rounded-xl text-sm font-semibold hover:bg-brand-blue/90 transition">Show Answer</button>
                     )}
-                    <button onClick={() => { if (currentCard < flashcards.length - 1) { setCurrentCard(p => p + 1); setCardFlipped(false) } }}
-                      disabled={currentCard === flashcards.length - 1}
+                    <button onClick={() => { if (currentCard < flashcards.length - 1) { setCurrentCard(p => p + 1); setCardFlipped(false) } }} disabled={currentCard === flashcards.length - 1}
                       className="p-2.5 rounded-xl bg-surface-base border border-white/10 text-[#8B97B5] hover:text-white disabled:opacity-30">
                       <ChevronRight size={18} />
                     </button>
                   </div>
 
                   <div className="w-full bg-surface-base rounded-full h-1.5">
-                    <div className="bg-brand-blue h-1.5 rounded-full transition-all"
-                      style={{ width: `${((currentCard + 1) / flashcards.length) * 100}%` }} />
+                    <div className="bg-brand-blue h-1.5 rounded-full transition-all" style={{ width: `${((currentCard + 1) / flashcards.length) * 100}%` }} />
                   </div>
                 </>
               )}
@@ -766,7 +680,7 @@ export default function SageAITutor() {
             </div>
           )}
 
-          {/* ── MOCK EXAM ────────────────────────────────────────── */}
+          {/* ── MOCK EXAM ──────────────────────────────────────────── */}
           {activeTab === 'quiz' && (
             <div className="p-5 space-y-5">
               <div className="flex items-center justify-between flex-wrap gap-3">
@@ -787,9 +701,7 @@ export default function SageAITutor() {
                         <Clock size={13} />{formatTimer(examTimeLeft)}
                       </div>
                     )}
-                    <button onClick={submitExam} className="bg-brand-blue text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-brand-blue/90 transition">
-                      Submit
-                    </button>
+                    <button onClick={submitExam} className="bg-brand-blue text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-brand-blue/90 transition">Submit</button>
                   </div>
                 ) : (
                   <button onClick={() => { setMockExam(null); setExamAnswers({}); setExamSubmitted(false) }}
@@ -814,9 +726,8 @@ export default function SageAITutor() {
                         {mockExam.questions.filter(q => examAnswers[q.id] === q.correct).length}/{mockExam.questions.length}
                       </p>
                       <p className="text-[#8B97B5] text-sm">
-                        {Math.round((mockExam.questions.filter(q => examAnswers[q.id] === q.correct).length / mockExam.questions.length) * 100)}% — {
-                          mockExam.questions.filter(q => examAnswers[q.id] === q.correct).length / mockExam.questions.length >= 0.7 ? 'Great work! 🎉' : 'Keep studying 📚'
-                        }
+                        {Math.round((mockExam.questions.filter(q => examAnswers[q.id] === q.correct).length / mockExam.questions.length) * 100)}%
+                        {' — '}{mockExam.questions.filter(q => examAnswers[q.id] === q.correct).length / mockExam.questions.length >= 0.7 ? 'Great work! 🎉' : 'Keep studying 📚'}
                       </p>
                     </div>
                   )}
@@ -826,14 +737,10 @@ export default function SageAITutor() {
                       const isCorrect = examAnswers[q.id] === q.correct
                       const answered = examAnswers[q.id] !== undefined
                       return (
-                        <div key={q.id} className={`bg-surface-base rounded-xl border p-4 ${
-                          examSubmitted ? (isCorrect ? 'border-green-500/40' : answered ? 'border-red-500/40' : 'border-white/5') : 'border-white/5'
-                        }`}>
+                        <div key={q.id} className={`bg-surface-base rounded-xl border p-4 ${examSubmitted ? (isCorrect ? 'border-green-500/40' : answered ? 'border-red-500/40' : 'border-white/5') : 'border-white/5'}`}>
                           <div className="flex items-start justify-between gap-2 mb-3">
                             <p className="text-sm text-white font-medium">Q{i + 1}. {q.question}</p>
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full shrink-0 ${DIFF_COLORS[q.difficulty as keyof typeof DIFF_COLORS] || DIFF_COLORS.medium}`}>
-                              {q.difficulty}
-                            </span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full shrink-0 ${DIFF_COLORS[q.difficulty as keyof typeof DIFF_COLORS] || DIFF_COLORS.medium}`}>{q.difficulty}</span>
                           </div>
                           <div className="grid sm:grid-cols-2 gap-2">
                             {q.options.map((opt, j) => {
@@ -841,16 +748,10 @@ export default function SageAITutor() {
                               if (examSubmitted) {
                                 if (j === q.correct) cls = 'border-green-500/60 bg-green-500/10 text-green-300'
                                 else if (examAnswers[q.id] === j) cls = 'border-red-500/60 bg-red-500/10 text-red-300'
-                              } else if (examAnswers[q.id] === j) {
-                                cls = 'border-brand-blue bg-brand-blue/10 text-brand-blue'
-                              }
+                              } else if (examAnswers[q.id] === j) { cls = 'border-brand-blue bg-brand-blue/10 text-brand-blue' }
                               return (
-                                <button key={j}
-                                  onClick={() => !examSubmitted && setExamAnswers(prev => ({ ...prev, [q.id]: j }))}
-                                  disabled={examSubmitted}
-                                  className={`text-left px-3 py-2 rounded-lg border text-xs transition-all ${cls}`}>
-                                  {opt}
-                                </button>
+                                <button key={j} onClick={() => !examSubmitted && setExamAnswers(prev => ({ ...prev, [q.id]: j }))} disabled={examSubmitted}
+                                  className={`text-left px-3 py-2 rounded-lg border text-xs transition-all ${cls}`}>{opt}</button>
                               )
                             })}
                           </div>
@@ -876,12 +777,12 @@ export default function SageAITutor() {
             </div>
           )}
 
-          {/* ── PAST PAPERS ──────────────────────────────────────── */}
+          {/* ── PAST PAPERS ────────────────────────────────────────── */}
           {activeTab === 'pastpapers' && (
             <div className="p-5 space-y-5">
               <div>
                 <h2 className="font-sora font-bold text-white text-lg">Past Papers</h2>
-                <p className="text-[#8B97B5] text-xs">Upload a past paper — SAGE will extract questions and model answers</p>
+                <p className="text-[#8B97B5] text-xs">Upload a past paper — SAGE extracts questions and provides model answers</p>
               </div>
 
               <div className="grid sm:grid-cols-2 gap-4">
@@ -889,8 +790,7 @@ export default function SageAITutor() {
                   {pastPaperImage ? (
                     <div className="relative rounded-xl overflow-hidden">
                       <img src={pastPaperImage} className="w-full rounded-xl object-cover max-h-40" alt="Past paper" />
-                      <button onClick={() => setPastPaperImage(null)}
-                        className="absolute top-2 right-2 bg-black/60 text-white rounded-full p-1 hover:bg-black">
+                      <button onClick={() => setPastPaperImage(null)} className="absolute top-2 right-2 bg-black/60 text-white rounded-full p-1">
                         <XCircle size={16} />
                       </button>
                     </div>
@@ -901,11 +801,9 @@ export default function SageAITutor() {
                     </button>
                   )}
                 </div>
-                <div>
-                  <textarea value={pastPaperText} onChange={e => setPastPaperText(e.target.value)}
-                    placeholder="Or paste the past paper questions here..."
-                    className="w-full h-32 bg-surface-base border border-white/10 rounded-xl p-3 text-white placeholder-[#4A5568] text-xs outline-none focus:border-brand-blue/40 resize-none" />
-                </div>
+                <textarea value={pastPaperText} onChange={e => setPastPaperText(e.target.value)}
+                  placeholder="Or paste the past paper questions here..."
+                  className="w-full h-32 bg-surface-base border border-white/10 rounded-xl p-3 text-white placeholder-[#4A5568] text-xs outline-none focus:border-brand-blue/40 resize-none" />
               </div>
 
               <button onClick={analyzePastPaper} disabled={pastPaperLoading || (!pastPaperImage && !pastPaperText.trim())}
@@ -950,13 +848,13 @@ export default function SageAITutor() {
             </div>
           )}
 
-          {/* ── KNOWLEDGE GAP ────────────────────────────────────── */}
+          {/* ── KNOWLEDGE GAP ──────────────────────────────────────── */}
           {activeTab === 'knowledgegap' && (
             <div className="p-5 space-y-5">
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
                   <h2 className="font-sora font-bold text-white text-lg">Knowledge Gap Analysis</h2>
-                  <p className="text-[#8B97B5] text-xs">Detects what you missed and your exam readiness</p>
+                  <p className="text-[#8B97B5] text-xs">Works with notes only, transcript only, or both</p>
                 </div>
                 <button onClick={analyzeKnowledgeGap}
                   disabled={knowledgeGapLoading || (!lecturePacket?.transcript && !lecturePacket?.notes)}
@@ -969,7 +867,7 @@ export default function SageAITutor() {
               {knowledgeGapLoading && (
                 <div className="py-16 flex flex-col items-center gap-3">
                   <Loader size={28} className="animate-spin text-brand-blue" />
-                  <p className="text-sm text-[#8B97B5]">SAGE is analyzing your knowledge gaps...</p>
+                  <p className="text-sm text-[#8B97B5]">Analyzing your knowledge gaps...</p>
                 </div>
               )}
 
@@ -1032,90 +930,13 @@ export default function SageAITutor() {
               {!knowledgeGap && !knowledgeGapLoading && (
                 <div className="py-16 text-center text-[#8B97B5]">
                   <Search size={32} className="mx-auto mb-3 opacity-40" />
-                  <p className="text-sm">Analyze what you know vs what you missed in this lecture</p>
+                  <p className="text-sm">Analyze what you know vs what you missed — works with notes or transcript alone</p>
                 </div>
               )}
             </div>
           )}
 
-          {/* ── VOICE ─────────────────────────────────────────────── */}
-          {activeTab === 'voice' && (
-            <div className="p-5 space-y-5">
-              <div>
-                <h2 className="font-sora font-bold text-white text-lg">Voice Learning</h2>
-                <p className="text-[#8B97B5] text-xs">Let SAGE read your notes aloud while you listen</p>
-              </div>
-
-              {!speechSupported ? (
-                <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
-                  <p className="text-red-400 text-sm">⚠️ Text-to-speech is not supported in this browser. Try Chrome or Edge.</p>
-                </div>
-              ) : (
-                <>
-                  <div className="flex bg-surface-base rounded-xl p-1 gap-1">
-                    {(['notes', 'summary'] as const).map(t => (
-                      <button key={t} onClick={() => { stopReading(); setReadingText(t) }}
-                        className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${readingText === t ? 'bg-brand-blue text-white' : 'text-[#8B97B5] hover:text-white'}`}>
-                        {t === 'notes' ? '📝 Notes' : '✨ Summary'}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="bg-surface-base border border-white/5 rounded-xl p-4 max-h-40 overflow-y-auto">
-                    {getVoiceText()
-                      ? <p className="text-xs text-[#C5CCDE] leading-relaxed">{getVoiceText().slice(0, 600)}{getVoiceText().length > 600 ? '...' : ''}</p>
-                      : <p className="text-xs text-[#4A5568]">No {readingText} available for this lecture yet.</p>
-                    }
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs text-white font-medium">Reading Speed</p>
-                      <p className="text-xs text-brand-blue font-bold">{readingSpeed}×</p>
-                    </div>
-                    <input type="range" min="0.5" max="2" step="0.25" value={readingSpeed}
-                      onChange={e => { setReadingSpeed(parseFloat(e.target.value)); stopReading() }}
-                      className="w-full accent-brand-blue" />
-                  </div>
-
-                  <div className="flex items-center justify-center gap-3">
-                    <button onClick={stopReading} className="p-3 rounded-xl bg-surface-base border border-white/10 text-[#8B97B5] hover:text-white transition">
-                      <RotateCcw size={20} />
-                    </button>
-                    {!isReading ? (
-                      <button onClick={window.speechSynthesis.paused ? resumeReading : startReading} disabled={!getVoiceText()}
-                        className="flex items-center gap-2 bg-brand-blue text-white px-8 py-3.5 rounded-xl font-semibold text-sm hover:bg-brand-blue/90 disabled:opacity-50 transition">
-                        <Play size={18} /> {window.speechSynthesis.paused ? 'Resume' : 'Start Reading'}
-                      </button>
-                    ) : (
-                      <button onClick={pauseReading}
-                        className="flex items-center gap-2 bg-warning text-white px-8 py-3.5 rounded-xl font-semibold text-sm hover:bg-warning/90 transition">
-                        <Pause size={18} /> Pause
-                      </button>
-                    )}
-                    <button onClick={() => { stopReading(); setTimeout(startReading, 100) }} disabled={!getVoiceText()}
-                      className="p-3 rounded-xl bg-surface-base border border-white/10 text-[#8B97B5] hover:text-white disabled:opacity-30 transition">
-                      <RotateCw size={20} />
-                    </button>
-                  </div>
-
-                  {isReading && (
-                    <div className="flex items-center justify-center gap-2 text-brand-blue text-sm">
-                      <div className="flex gap-1">
-                        {[0, 1, 2].map(i => (
-                          <motion.div key={i} animate={{ scaleY: [1, 2.5, 1] }} transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.2 }}
-                            className="w-1 h-4 bg-brand-blue rounded-full" />
-                        ))}
-                      </div>
-                      Reading {readingText}...
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-
-          {/* ── SNAPSOLVE ─────────────────────────────────────────── */}
+          {/* ── SNAPSOLVE ──────────────────────────────────────────── */}
           {activeTab === 'snapsolve' && (
             <div className="p-5 space-y-5">
               <div>
@@ -1128,8 +949,7 @@ export default function SageAITutor() {
                   {snapImage ? (
                     <div className="relative rounded-xl overflow-hidden">
                       <img src={snapImage} className="w-full rounded-xl object-cover max-h-40" alt="Question" />
-                      <button onClick={() => setSnapImage(null)}
-                        className="absolute top-2 right-2 bg-black/60 text-white rounded-full p-1">
+                      <button onClick={() => setSnapImage(null)} className="absolute top-2 right-2 bg-black/60 text-white rounded-full p-1">
                         <XCircle size={16} />
                       </button>
                     </div>
@@ -1140,11 +960,9 @@ export default function SageAITutor() {
                     </button>
                   )}
                 </div>
-                <div>
-                  <textarea value={snapText} onChange={e => setSnapText(e.target.value)}
-                    placeholder="Or type your question here..."
-                    className="w-full h-32 bg-surface-base border border-white/10 rounded-xl p-3 text-white placeholder-[#4A5568] text-sm outline-none focus:border-brand-blue/40 resize-none" />
-                </div>
+                <textarea value={snapText} onChange={e => setSnapText(e.target.value)}
+                  placeholder="Or type your question here..."
+                  className="w-full h-32 bg-surface-base border border-white/10 rounded-xl p-3 text-white placeholder-[#4A5568] text-sm outline-none focus:border-brand-blue/40 resize-none" />
               </div>
 
               <button onClick={solveSnap} disabled={snapLoading || (!snapImage && !snapText.trim())}
@@ -1178,4 +996,3 @@ export default function SageAITutor() {
     </div>
   )
 }
-  
