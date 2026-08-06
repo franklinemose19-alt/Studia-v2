@@ -1,66 +1,46 @@
-export interface StudentContextData {
-  units: string[]
-  recentWeakTopics: string[]
-  recentQuizScores: { subject: string; percentage: number }[]
-  totalLectures: number
-  totalQuizzes: number
+export interface StudentContext {
   currentPlan: string | null
+  quizHistory: { score: number; total: number; subject: string }[]
+  weakTopics: string[]
+  strongTopics: string[]
+  studiedSubjects: string[]
+  totalLectures: number
+  averageScore: number
 }
 
-export function buildStudentContext(currentPlan?: string | null): StudentContextData {
-  let units: any[] = []
-  let quizResults: any[] = []
-  let recordings: any[] = []
+export function buildStudentContext(currentPlan: string | null): StudentContext {
+  let quizHistory: any[] = []
+  let totalLectures = 0
 
-  try { units = JSON.parse(localStorage.getItem('units') || '[]') } catch {}
-  try { quizResults = JSON.parse(localStorage.getItem('quizResults') || '[]') } catch {}
-  try { recordings = JSON.parse(localStorage.getItem('recordingsMetadata') || '[]') } catch {}
+  try { quizHistory = JSON.parse(localStorage.getItem('quizResults') || '[]') } catch {}
+  try { totalLectures = JSON.parse(localStorage.getItem('recordingsMetadata') || '[]').length } catch {}
 
-  const topicStats: Record<string, { correct: number; total: number }> = {}
-  quizResults.forEach((q: any) => {
-    if (Array.isArray(q.questions)) {
-      q.questions.forEach((ques: any) => {
-        if (!ques.topic) return
-        if (!topicStats[ques.topic]) topicStats[ques.topic] = { correct: 0, total: 0 }
-        topicStats[ques.topic].total++
-        if (ques.correct) topicStats[ques.topic].correct++
-      })
-    }
+  const averageScore = quizHistory.length > 0
+    ? Math.round(quizHistory.reduce((s, q) => s + (q.total > 0 ? (q.score / q.total) * 100 : 0), 0) / quizHistory.length)
+    : 0
+
+  const subjectScores: Record<string, { total: number; count: number }> = {}
+  quizHistory.forEach(q => {
+    if (!q.subject) return
+    if (!subjectScores[q.subject]) subjectScores[q.subject] = { total: 0, count: 0 }
+    subjectScores[q.subject].total += q.total > 0 ? (q.score / q.total) * 100 : 0
+    subjectScores[q.subject].count++
   })
 
-  const weakTopics = Object.entries(topicStats)
-    .filter(([, s]) => s.total >= 2 && s.correct / s.total < 0.6)
-    .sort((a, b) => (a[1].correct / a[1].total) - (b[1].correct / b[1].total))
-    .slice(0, 5)
-    .map(([topic]) => topic)
+  const subjectAvgs = Object.entries(subjectScores).map(([s, d]) => ({ subject: s, avg: Math.round(d.total / d.count) }))
+  const weakTopics = subjectAvgs.filter(s => s.avg < 60).map(s => s.subject)
+  const strongTopics = subjectAvgs.filter(s => s.avg >= 80).map(s => s.subject)
+  const studiedSubjects = [...new Set(quizHistory.map(q => q.subject).filter(Boolean))]
 
-  const recentScores = quizResults.slice(0, 5).map((q: any) => ({
-    subject: q.subject || 'General',
-    percentage: q.total > 0 ? Math.round((q.score / q.total) * 100) : 0,
-  }))
-
-  return {
-    units: units.map((u: any) => `${u.course} — ${u.unitName}`).slice(0, 8),
-    recentWeakTopics: weakTopics,
-    recentQuizScores: recentScores,
-    totalLectures: recordings.length,
-    totalQuizzes: quizResults.length,
-    currentPlan: currentPlan || null,
-  }
+  return { currentPlan, quizHistory: quizHistory.slice(-10), weakTopics, strongTopics, studiedSubjects, totalLectures, averageScore }
 }
 
-export function formatContextForAI(ctx: StudentContextData): string {
-  if (!ctx.units.length && !ctx.totalLectures && !ctx.totalQuizzes) return ''
-
-  const lines: string[] = ['[Student Learning Profile]']
-  if (ctx.currentPlan) lines.push(`Plan: ${ctx.currentPlan}`)
-  if (ctx.units.length) lines.push(`Currently studying: ${ctx.units.slice(0, 5).join(', ')}`)
-  if (ctx.recentWeakTopics.length) lines.push(`Known weak topics: ${ctx.recentWeakTopics.join(', ')}`)
-  if (ctx.recentQuizScores.length) {
-    const avg = Math.round(ctx.recentQuizScores.reduce((s, q) => s + q.percentage, 0) / ctx.recentQuizScores.length)
-    lines.push(`Recent quiz average: ${avg}% across ${ctx.totalQuizzes} quiz${ctx.totalQuizzes !== 1 ? 'zes' : ''}`)
-  }
-  if (ctx.totalLectures) lines.push(`Lectures recorded: ${ctx.totalLectures}`)
-  lines.push('[End Profile]')
-  return lines.join('\n')
+export function formatContextForAI(ctx: StudentContext): string {
+  const parts: string[] = []
+  if (ctx.currentPlan) parts.push(`Student plan: ${ctx.currentPlan}`)
+  if (ctx.totalLectures > 0) parts.push(`Lectures recorded: ${ctx.totalLectures}`)
+  if (ctx.averageScore > 0) parts.push(`Average quiz score: ${ctx.averageScore}%`)
+  if (ctx.weakTopics.length > 0) parts.push(`Weak subjects: ${ctx.weakTopics.join(', ')}`)
+  if (ctx.strongTopics.length > 0) parts.push(`Strong subjects: ${ctx.strongTopics.join(', ')}`)
+  return parts.join('\n')
 }
