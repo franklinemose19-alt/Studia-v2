@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Brain, MessageCircle, BookOpen, FileText, search,
+  Brain, MessageCircle, BookOpen, FileText, Search,
   Camera, Send, Loader, ArrowLeft, ChevronDown, ChevronUp,
   RefreshCw, CheckCircle, XCircle, Zap, Target, TrendingUp,
   ChevronLeft, ChevronRight, Clock, Star, ClipboardList,
