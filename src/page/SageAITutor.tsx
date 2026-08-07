@@ -19,7 +19,6 @@ import {
 import { sageCache } from '../lib/sageCache'
 import { buildStudentContext, formatContextForAI } from '../lib/studentContext'
 import { toast } from '../lib/toast'
-
 type Tab = 'chat' | 'deepnotes' | 'flashcards' | 'quiz' | 'pastpapers' | 'knowledgegap' | 'snapsolve'
 
 interface Message { role: 'user' | 'assistant'; content: string }
