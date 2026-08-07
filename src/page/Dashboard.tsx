@@ -18,7 +18,7 @@ import { DashboardSkeleton } from '../components/SkeletonLoader'
 import UpgradeModal from '../components/UpgradeModal'
 import NotificationBell from '../components/NotificationBell'
 import OnboardingModal from '../components/OnboardingModal'
-
+import CommunityCard from '../components/CommunityCard'
 function CircleStat({ value, label, strokeColor, textColor, percentage = 100 }: {
   value: string | number; label: string; strokeColor: string; textColor: string; percentage?: number
 }) {
@@ -276,6 +276,9 @@ export default function Dashboard() {
                 </button>
               </div>
             </div>
+
+            {/* Community card */}
+            <CommunityCard variant="light" />
 
             {/* Quick Actions */}
             <div>
