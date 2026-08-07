@@ -1,54 +1,144 @@
-{/* Community Section */}
-<div className="mt-6 space-y-4">
+import { Bug, Megaphone, ChevronRight } from 'lucide-react'
 
-  {/* STUDIA Channel */}
-  <div className="rounded-2xl border border-green-200 bg-white p-5">
-    <div className="flex items-center gap-3 mb-3">
-      <ExternalLink className="w-6 h-6 text-green-600" />
-      <h3 className="text-xl font-bold text-gray-900">
-        📢 STUDIA Channel
-      </h3>
-    </div>
+const GROUP_LINK =
+  'https://chat.whatsapp.com/HgWYXeqcuCqEgr8ScsvM0W'
 
-    <p className="text-gray-600 leading-relaxed">
-      Follow the official STUDIA Channel to receive announcements about new
-      features, updates, releases, maintenance notices, study tips, and
-      important news.
-    </p>
+const CHANNEL_LINK =
+  'https://whatsapp.com/channel/0029Vb7zmZhLdQedTssbhB3B'
 
-    <a
-      href={CHANNEL}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="mt-4 inline-flex items-center justify-center rounded-xl bg-green-500 px-5 py-3 font-semibold text-white hover:bg-green-600 transition"
+interface Props {
+  variant?: 'light' | 'dark'
+}
+
+export default function CommunityCard({
+  variant = 'light',
+}: Props) {
+  const dark = variant === 'dark'
+
+  return (
+    <div
+      className={[
+        'rounded-2xl border-2 overflow-hidden',
+        dark
+          ? 'bg-[#128C7E]/10 border-[#25D366]/20'
+          : 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-200',
+      ].join(' ')}
     >
-      Follow Channel
-    </a>
-  </div>
+      {/* Header */}
+      <div className="px-5 py-5 sm:px-6">
+        <h3
+          className={[
+            'font-sora font-bold text-xl',
+            dark ? 'text-white' : 'text-navy',
+          ].join(' ')}
+        >
+          Join the STUDIA Community
+        </h3>
 
-  {/* STUDIA Group */}
-  <div className="rounded-2xl border border-green-200 bg-white p-5">
-    <div className="flex items-center gap-3 mb-3">
-      <MessageCircle className="w-6 h-6 text-green-600" />
-      <h3 className="text-xl font-bold text-gray-900">
-        💬 STUDIA Group
-      </h3>
+        <p
+          className={[
+            'mt-2 text-sm',
+            dark ? 'text-[#8B97B5]' : 'text-gray-600',
+          ].join(' ')}
+        >
+          Stay connected with other students and the STUDIA team.
+        </p>
+      </div>
+
+      {/* Links */}
+      <div
+        className={
+          dark
+            ? 'border-t border-white/10'
+            : 'border-t border-green-200'
+        }
+      >
+        <a
+          href={GROUP_LINK}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={[
+            'flex items-center gap-3 px-5 py-4 transition',
+            dark ? 'hover:bg-white/5' : 'hover:bg-white/40',
+          ].join(' ')}
+        >
+          <div className="w-10 h-10 rounded-xl bg-[#25D366]/15 flex items-center justify-center">
+            <Bug size={18} className="text-[#25D366]" />
+          </div>
+
+          <div className="flex-1">
+            <p
+              className={[
+                'font-semibold',
+                dark ? 'text-white' : 'text-navy',
+              ].join(' ')}
+            >
+              Report Bugs & Get Help
+            </p>
+
+            <p
+              className={[
+                'text-xs',
+                dark ? 'text-[#8B97B5]' : 'text-gray-500',
+              ].join(' ')}
+            >
+              Join the WhatsApp Group
+            </p>
+          </div>
+
+          <ChevronRight
+            size={18}
+            className={dark ? 'text-white' : 'text-gray-400'}
+          />
+        </a>
+
+        <div
+          className={
+            dark
+              ? 'border-t border-white/10'
+              : 'border-t border-green-200'
+          }
+        />
+
+        <a
+          href={CHANNEL_LINK}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={[
+            'flex items-center gap-3 px-5 py-4 transition',
+            dark ? 'hover:bg-white/5' : 'hover:bg-white/40',
+          ].join(' ')}
+        >
+          <div className="w-10 h-10 rounded-xl bg-[#25D366]/15 flex items-center justify-center">
+            <Megaphone size={18} className="text-[#25D366]" />
+          </div>
+
+          <div className="flex-1">
+            <p
+              className={[
+                'font-semibold',
+                dark ? 'text-white' : 'text-navy',
+              ].join(' ')}
+            >
+              New Features & Updates
+            </p>
+
+            <p
+              className={[
+                'text-xs',
+                dark ? 'text-[#8B97B5]' : 'text-gray-500',
+              ].join(' ')}
+            >
+              Follow the WhatsApp Channel
+            </p>
+          </div>
+
+          <ChevronRight
+            size={18}
+            className={dark ? 'text-white' : 'text-gray-400'}
+          />
+        </a>
+      </div>
     </div>
-
-    <p className="text-gray-600 leading-relaxed">
-      Join the STUDIA Group to ask questions, report bugs, request new
-      features, receive study help, share notes, and interact with other
-      students and the STUDIA team.
-    </p>
-
-    <a
-      href={GROUP}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="mt-4 inline-flex items-center justify-center rounded-xl bg-green-500 px-5 py-3 font-semibold text-white hover:bg-green-600 transition"
-    >
-      Join Group
-    </a>
-  </div>
-
-</div>
+  )
+}
