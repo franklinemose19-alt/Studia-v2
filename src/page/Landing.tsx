@@ -4,7 +4,7 @@ import { Mic, BookOpen, Zap, Image, Calendar, Lock, Check, Star } from 'lucide-r
 import { useNavigate } from 'react-router-dom'
 import { usePWAInstall } from '../hooks/usePWAInstall'
 import { useAuth } from '../lib/AuthContext'
-
+import CommunityCard from '../components/CommunityCard'
 export default function Landing() {
   const navigate = useNavigate()
   const { installPrompt, isInstalled, isInstalling, install } = usePWAInstall()
@@ -291,6 +291,13 @@ export default function Landing() {
               {isInstalling ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Installing...</> : <>📲 Install STUDIA AI App</>}
             </button>
           )}
+        </div>
+      </section>
+
+      {/* Community section */}
+      <section className="py-12 px-4 sm:px-6 bg-white border-t border-gray-100">
+        <div className="max-w-3xl mx-auto">
+          <CommunityCard variant="light" />
         </div>
       </section>
 
