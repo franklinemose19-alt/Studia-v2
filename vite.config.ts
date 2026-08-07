@@ -9,15 +9,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       manifest: false,
       workbox: {
-        globPatterns: ['**/*.{js,css,html}'],
+        globPatterns: ['**/*.{js,css,html,ico}'],
         navigateFallbackDenylist: [/^\/api/, /^\/icon/, /^\/manifest/],
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/fonts\.googleapis\.com/,
-            handler: 'StaleWhileRevalidate',
-            options: { cacheName: 'google-fonts' },
-          },
-        ],
       },
       includeAssets: ['icon-192.png', 'icon-512.png', 'icon-maskable.png'],
     }),
