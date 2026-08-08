@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from '../lib/toast'
-
+import { exportNoteAsPDF } from '../lib/pdfExport'
 // IndexedDB helpers — same as Recording.tsx
 const openDB = (): Promise<IDBDatabase> =>
   new Promise((resolve, reject) => {
@@ -116,25 +116,13 @@ export default function OfflineVault() {
     toast.success('Note downloaded as text file')
   }
 
-  const downloadNoteAsPDF = async (note: any) => {
+ const downloadNoteAsPDF = async (note: any) => {
     try {
-      const { jsPDF } = await import('jspdf')
-      const doc = new jsPDF()
-      doc.setFontSize(18)
-      doc.text(note.title, 14, 20)
-      doc.setFontSize(11)
-      doc.setTextColor(100)
-      if (note.course) doc.text(`Course: ${note.course}`, 14, 30)
-      doc.text(`Date: ${note.date}`, 14, note.course ? 37 : 30)
-      doc.setTextColor(0)
-      doc.setFontSize(11)
-      const lines = doc.splitTextToSize(note.content, 180)
-      doc.text(lines, 14, note.course ? 47 : 40)
-      doc.save(`${note.title.replace(/\s+/g, '_')}.pdf`)
+      await exportNoteAsPDF({ title: note.title, content: note.content, course: note.course, date: note.date })
       toast.success('Note exported as PDF')
-    } catch {
-      toast.error('PDF export failed. Downloading as text instead.')
-      downloadNote(note)
+    } catch (err) {
+      console.error('PDF export failed:', err)
+      toast.error('PDF export failed — please try the text download instead.')
     }
   }
 
