@@ -1,3 +1,4 @@
+import { exportNoteAsPDF } from '../lib/pdfExport'
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -101,7 +102,15 @@ export default function NotesLibrary() {
     URL.revokeObjectURL(url)
     toast.success('Note downloaded')
   }
-
+const downloadNoteAsPDF = async (note: Note) => {
+  try {
+    await exportNoteAsPDF({ title: note.title, content: note.content, course: note.course, date: note.date })
+    toast.success('Note exported as PDF')
+  } catch (err) {
+    console.error('PDF export failed:', err)
+    toast.error('PDF export failed — try the text download instead.')
+  }
+}
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -292,8 +301,14 @@ export default function NotesLibrary() {
                         </div>
                       </button>
                       <div className="flex items-center gap-1 shrink-0">
-                        <button onClick={() => downloadNote(note)} className="p-2 rounded-lg text-gray-400 hover:text-indigo-premium hover:bg-indigo-premium/10 transition" title="Download">
+                        <button onClick={() => downloadNoteAsPDF(note)} className="p-2 rounded-lg text-gray-400 hover:text-indigo-premium hover:bg-indigo-premium/10 transition" title="Download PDF">
+                          <FileText size={15} />
+                        </button>
+                        <button onClick={() => downloadNote(note)} className="p-2 rounded-lg text-gray-400 hover:text-indigo-premium hover:bg-indigo-premium/10 transition" title="Download text">
                           <Download size={15} />
+                        </button>
+                        <button onClick={() => deleteNote(note.id)} className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition">
+                          <Trash2 size={15} />
                         </button>
                         <button onClick={() => deleteNote(note.id)} className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition">
                           <Trash2 size={15} />
@@ -310,14 +325,19 @@ export default function NotesLibrary() {
                           className="overflow-hidden border-t border-gray-100">
                           <div className="px-5 py-4">
                             <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{note.content}</p>
-                            <div className="flex gap-2 mt-4">
+                           
+                           <div className="flex gap-2 mt-4 flex-wrap">
                               <button onClick={() => navigate(`/sage`)}
                                 className="flex items-center gap-1.5 bg-indigo-premium/10 text-indigo-premium px-4 py-2 rounded-xl text-xs font-semibold hover:bg-indigo-premium/20 transition">
                                 🧠 Ask SAGE
                               </button>
+                              <button onClick={() => downloadNoteAsPDF(note)}
+                                className="flex items-center gap-1.5 border border-gray-200 text-navy px-4 py-2 rounded-xl text-xs font-semibold hover:bg-gray-50 transition">
+                                <FileText size={13} /> Download PDF
+                              </button>
                               <button onClick={() => downloadNote(note)}
                                 className="flex items-center gap-1.5 border border-gray-200 text-navy px-4 py-2 rounded-xl text-xs font-semibold hover:bg-gray-50 transition">
-                                <Download size={13} /> Download
+                                <Download size={13} /> Download Text
                               </button>
                             </div>
                           </div>
