@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
+import ChatMessage from '../components/ChatMessage'
+  import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Brain, MessageCircle, BookOpen, FileText, Search,
@@ -450,10 +451,10 @@ export default function SageAITutor() {
                         <Brain size={12} className="text-white" />
                       </div>
                     )}
-                    <div className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed break-words ${
+           <div className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm break-words ${
                       msg.role === 'user' ? 'bg-brand-blue text-white rounded-br-sm' : 'bg-surface-base text-[#C5CCDE] rounded-bl-sm'
                     }`}>
-                      {msg.content}
+                      <ChatMessage content={msg.content} />
                     </div>
                   </div>
                 ))}
@@ -975,14 +976,14 @@ export default function SageAITutor() {
                     <p className="text-[10px] text-[#8B97B5] font-semibold mb-1">QUESTION</p>
                     <p className="text-sm text-white">{snapResult.question}</p>
                   </div>
-                  <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4">
+              <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4">
                     <p className="text-[10px] text-green-400 font-semibold mb-1">ANSWER</p>
-                    <p className="text-sm text-[#C5CCDE] whitespace-pre-wrap">{snapResult.answer}</p>
+                    <div className="text-sm text-[#C5CCDE]"><ChatMessage content={snapResult.answer} /></div>
                   </div>
                   {snapResult.explanation && (
                     <div className="bg-brand-blue/10 border border-brand-blue/20 rounded-xl p-4">
                       <p className="text-[10px] text-brand-blue font-semibold mb-1">KEY CONCEPTS</p>
-                      <p className="text-sm text-[#C5CCDE]">{snapResult.explanation}</p>
+                      <div className="text-sm text-[#C5CCDE]"><ChatMessage content={snapResult.explanation} /></div>
                     </div>
                   )}
                 </div>
