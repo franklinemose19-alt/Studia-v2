@@ -14,22 +14,22 @@ export default async function handler(req, res) {
       const { chatMessages, documentContext, studentContext, chatMode } = req.body
       if (!chatMessages || !Array.isArray(chatMessages)) return res.status(400).json({ error: 'chatMessages required' })
 
-      let system = `You are SAGE, an intelligent AI tutor for Kenyan university students. Be warm, encouraging, clear, and exam-focused. Keep replies concise — 2-3 paragraphs max.\n\n`
+      let system = `You are SAGE, an intelligent AI tutor for Kenyan university students built into STUDIA AI. Be warm, encouraging, clear, and exam-focused. Keep replies concise — 2-3 paragraphs max unless more detail is genuinely needed. When answering programming, coding, or IT/CS questions, write real working code inside proper markdown code fences (triple backticks with the language name, e.g. \`\`\`python) so it displays clearly, and briefly explain the logic.\n\n`
       if (studentContext) system += `${studentContext}\n\n`
       if (documentContext) system += `Lecture content:\n${documentContext}\n\n`
-      const modes = {
+      const modeInstructions = {
         notes: 'Help understand lecture notes. Explain clearly, give examples, highlight exam points.',
         quiz: 'Explain why answers were correct or wrong. Give reasoning and memory tricks.',
-        snapsolve: 'Continue tutoring. Go deeper, simplify if confused, suggest related practice.',
+        snapsolve: 'Continue tutoring on this problem. Go deeper, simplify if confused, suggest related practice.',
         general: 'Answer academic questions clearly. Be encouraging.',
       }
-      system += modes[chatMode] || modes.general
+      system += modeInstructions[chatMode] || modeInstructions.general
 
       const chatRes = await fetchWithRetry('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENAI_API_KEY}` },
         body: JSON.stringify({
-          model: 'gpt-5-mini', max_tokens: 700,
+          model: 'gpt-5-mini', max_tokens: 900,
           messages: [{ role: 'system', content: system }, ...chatMessages.map(m => ({ role: m.role, content: m.content }))],
         }),
       })
@@ -88,20 +88,15 @@ export default async function handler(req, res) {
     // ── Knowledge Gap — works with EITHER notes or transcript ─────────────
     if (mode === 'knowledgegap') {
       const { transcript, notes, subject } = req.body
-
-      // Fixed: gracefully degrade — only one source is needed
       const hasTranscript = !!(transcript?.trim())
       const hasNotes = !!(notes?.trim())
-
-      if (!hasTranscript && !hasNotes) {
-        return res.status(400).json({ error: 'At least notes or transcript is required' })
-      }
+      if (!hasTranscript && !hasNotes) return res.status(400).json({ error: 'At least notes or transcript is required' })
 
       const userContent = hasTranscript && hasNotes
         ? `Subject: ${subject || 'General'}\n\nTranscript:\n${transcript.slice(0, 3000)}\n\nStudent Notes:\n${notes.slice(0, 2000)}`
         : hasNotes
-        ? `Subject: ${subject || 'General'}\n\nStudent Notes (no transcript available — analyze notes alone):\n${notes.slice(0, 4000)}`
-        : `Subject: ${subject || 'General'}\n\nTranscript (no student notes — analyze lecture coverage):\n${transcript.slice(0, 4000)}`
+        ? `Subject: ${subject || 'General'}\n\nStudent Notes (no transcript — analyze notes alone):\n${notes.slice(0, 4000)}`
+        : `Subject: ${subject || 'General'}\n\nTranscript (no notes — estimate what should have been captured):\n${transcript.slice(0, 4000)}`
 
       const r = await fetchWithRetry('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -113,23 +108,9 @@ export default async function handler(req, res) {
             {
               role: 'system',
               content: `You are SAGE performing a Knowledge Gap Analysis for a Kenyan university student.
-${hasTranscript && hasNotes ? 'Compare the transcript with student notes to detect gaps.' : hasNotes ? 'Analyze the student notes to assess understanding and identify any gaps or missing concepts.' : 'Analyze the transcript to estimate what a student should have captured.'}
+${hasTranscript && hasNotes ? 'Compare the transcript with student notes to detect gaps.' : hasNotes ? 'Analyze the student notes to assess understanding and identify gaps.' : 'Analyze the transcript to estimate coverage.'}
 Return ONLY valid JSON:
-{
-  "knowledgeCoverage": 75,
-  "examReadiness": 65,
-  "understandingScore": 70,
-  "confidenceScore": 60,
-  "coveredConcepts": ["concept 1"],
-  "missingConcepts": ["concept A"],
-  "weakAreas": ["area 1"],
-  "strongAreas": ["area 1"],
-  "recommendations": ["Study X"],
-  "studyNext": "Most important concept to focus on",
-  "examTips": ["Tip 1"],
-  "topicsMastered": ["topic 1"],
-  "summary": "2-sentence assessment"
-}`,
+{"knowledgeCoverage":75,"examReadiness":65,"understandingScore":70,"confidenceScore":60,"coveredConcepts":["c1"],"missingConcepts":["cA"],"weakAreas":["a1"],"strongAreas":["a1"],"recommendations":["Study X"],"studyNext":"Most important concept","examTips":["Tip1"],"topicsMastered":["t1"],"summary":"2-sentence assessment"}`,
             },
             { role: 'user', content: userContent },
           ],
@@ -154,12 +135,9 @@ Return ONLY valid JSON:
           model: 'gpt-5-mini', max_tokens: 3000,
           response_format: { type: 'json_object' },
           messages: [
-            {
-              role: 'system',
-              content: `You are SAGE AI Tutor. Create comprehensive deep notes for a Kenyan university student.
+            { role: 'system', content: `You are SAGE AI Tutor. Create comprehensive deep notes for a Kenyan university student.
 Return ONLY valid JSON:
-{"title":"T","subject":"S","overview":"2-3 sentences","sections":[{"heading":"H","explanation":"E","simpleExplanation":"Simple","examples":["Ex"],"definitions":[{"term":"T","definition":"D"}],"memoryTrick":"M","commonMistakes":["M"],"examTips":["T"],"relatedConcepts":["C"],"realWorldApplication":"R"}],"formulasAndKeyFacts":["F"],"quickRevision":["P"],"predictedExamQuestions":["Q?"]}`,
-            },
+{"title":"T","subject":"S","overview":"2-3 sentences","sections":[{"heading":"H","explanation":"E","simpleExplanation":"Simple","examples":["Ex"],"definitions":[{"term":"T","definition":"D"}],"memoryTrick":"M","commonMistakes":["M"],"examTips":["T"],"relatedConcepts":["C"],"realWorldApplication":"R"}],"formulasAndKeyFacts":["F"],"quickRevision":["P"],"predictedExamQuestions":["Q?"]}` },
             { role: 'user', content: `Subject: ${subject || 'General'}\n\n${inputContent.slice(0, 4000)}` },
           ],
         }),
@@ -173,9 +151,10 @@ Return ONLY valid JSON:
     // ── SnapSolve ─────────────────────────────────────────────────────────
     if (mode === 'snapsolve') {
       if (!image && !text) return res.status(400).json({ error: 'No image or text provided' })
+      const codeNote = 'If this is a programming/coding question, write real working code inside markdown code fences (triple backticks with language name) as part of the answer.'
       const content = image
-        ? [{ type: 'image_url', image_url: { url: image } }, { type: 'text', text: `Analyze and solve. Return JSON only: {"question":"Q","answer":"step-by-step answer","explanation":"key concepts","revision_notes":"bullet points","quiz":[{"question":"MCQ","options":["A","B","C","D"],"answer":"A"}]}` }]
-        : `Solve: ${text}\nReturn JSON only: {"question":"Q","answer":"answer","explanation":"concepts","revision_notes":"bullets","quiz":[{"question":"MCQ","options":["A","B","C","D"],"answer":"A"}]}`
+        ? [{ type: 'image_url', image_url: { url: image } }, { type: 'text', text: `Analyze and solve. ${codeNote} Return JSON only: {"question":"Q","answer":"step-by-step answer","explanation":"key concepts","revision_notes":"bullet points","quiz":[{"question":"MCQ","options":["A","B","C","D"],"answer":"A"}]}` }]
+        : `Solve: ${text}\n${codeNote}\nReturn JSON only: {"question":"Q","answer":"answer","explanation":"concepts","revision_notes":"bullets","quiz":[{"question":"MCQ","options":["A","B","C","D"],"answer":"A"}]}`
 
       const r = await fetchWithRetry('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
