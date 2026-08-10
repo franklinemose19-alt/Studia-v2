@@ -67,22 +67,22 @@ export default function Landing() {
             </span>
           </motion.div>
 
-          <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+         <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
             className="font-sora font-bold text-5xl sm:text-6xl md:text-7xl text-navy mb-6 leading-[1.08] tracking-tight">
-            Record Once.<br />
+            Turn Every Lecture Into<br />
             <span className="bg-gradient-to-r from-indigo-premium to-purple-premium bg-clip-text text-transparent">
-              Revise Forever.
+              Your Personal AI Tutor.
             </span>
           </motion.h1>
 
           <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
             className="text-lg sm:text-xl text-gray-500 mb-4 max-w-2xl mx-auto">
-            Spend less time writing notes and more time mastering your courses.
+            Record once. Revise forever.
           </motion.p>
 
           <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
             className="text-base sm:text-lg text-gray-600 mb-10 max-w-xl mx-auto">
-            Turn every lecture into AI-powered notes, quizzes, summaries, and flashcards in minutes.
+            STUDIA transforms your lectures into notes, summaries, questions and deep study material — while SAGE connects your recordings and notes with AI knowledge to help you understand what you were taught and discover what you're missing.
           </motion.p>
 
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
@@ -213,8 +213,8 @@ export default function Landing() {
             {[
               { emoji: '🌍', plan: 'Explorer', price: 'Free', period: '', perks: ['3 lifetime AI lectures', 'Smart Ink notes', 'Quiz generation'] },
               { emoji: '🎯', plan: 'Achiever', price: 'KSh 49', period: '/lecture', perks: ['Pay as you go', 'Sketch Smart Ink', '1 bonus credit per lecture'], badge: '⭐ Popular' },
-              { emoji: '🚀', plan: 'Excellence', price: 'KSh 399', period: '/month', perks: ['25 AI lectures/month', 'Full color Smart Ink', 'SnapSolve + Past Papers'] },
-              { emoji: '🏆', plan: 'Valedictorian', price: 'KSh 1,200', period: '/semester', perks: ['80 AI lectures/semester', 'Premium gradient notes', 'Everything included'], badge: '🔥 Best Value', highlight: true },
+              { emoji: '🚀', plan: 'Excellence', price: 'KSh 399', period: '/month', perks: ['20 AI lectures/month', 'Full color Smart Ink', 'SnapSolve + Past Papers'] },
+              { emoji: '🏆', plan: 'Valedictorian', price: 'KSh 1,200', period: '/semester', perks: ['65 AI lectures/semester', 'Premium gradient notes', 'Everything included'], badge: '🔥 Best Value', highlight: true },
             ].map((plan, i) => (
               <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}
                 className={`rounded-2xl p-6 border relative ${plan.highlight ? 'bg-gradient-to-br from-warning/15 to-red-500/10 border-warning/40 shadow-xl' : 'bg-white border-gray-200 hover:shadow-md transition'}`}>
