@@ -1,3 +1,4 @@
+import pdfParse from 'pdf-parse'
 import { fetchWithRetry } from './_utils/openaiRetry.js'
 import { logTokenUsage } from './_utils/tokenLogger.js'
 
@@ -18,11 +19,11 @@ export default async function handler(req, res) {
 
 Formatting rules:
 - Programming/code: use markdown code fences with language name, e.g. \`\`\`python
-- Math: use $...$ for inline math and $$...$$ for a standalone equation (KaTeX syntax), kept on a single line
+- Math: use $...$ for inline math and $$...$$ for a standalone equation (KaTeX syntax)
 - Tabular data: use markdown pipe tables
-- Only if a chart genuinely helps (comparing values, trends), you may include ONE \`\`\`chart fenced block: {"type":"bar"|"line","title":"...","labels":["..."],"datasets":[{"name":"...","values":[...]}]}
-- Only if a process/flow diagram genuinely helps, you may include ONE \`\`\`diagram fenced block: {"title":"...","nodes":[{"id":"1","label":"..."}],"edges":[{"from":"1","to":"2"}]}
-Most answers need none of the chart/diagram blocks — use them sparingly.\n\n`
+- Only if a chart genuinely helps, include ONE \`\`\`chart fenced block: {"type":"bar"|"line","title":"...","labels":["..."],"datasets":[{"name":"...","values":[...]}]}
+- Only if a process/flow diagram genuinely helps, include ONE \`\`\`diagram fenced block: {"title":"...","nodes":[{"id":"1","label":"..."}],"edges":[{"from":"1","to":"2"}]}
+Most answers need none of the chart/diagram blocks.\n\n`
 
       if (subjectStructure) system += `For this subject, structure your answer as: ${subjectStructure}\n\n`
       if (studentContext) system += `${studentContext}\n\n`
@@ -32,6 +33,7 @@ Most answers need none of the chart/diagram blocks — use them sparingly.\n\n`
         notes: 'Help understand lecture notes. Explain clearly, give examples, highlight exam points.',
         quiz: 'Explain why answers were correct or wrong. Give reasoning and memory tricks.',
         snapsolve: 'Continue tutoring on this problem. Go deeper, simplify if confused, suggest related practice.',
+        developer: 'You are in Developer Mode — a focused coding assistant. Help with debugging, algorithms, code explanations, and CS/IT/ICT concepts. Always write real, working code in fenced blocks with the language name. Be technical and direct — no need to soften explanations for a programming audience.',
         general: 'Answer academic questions clearly, including programming/CS/IT questions with real working code. Be encouraging.',
       }
       system += modeInstructions[chatMode] || modeInstructions.general
@@ -73,7 +75,7 @@ Most answers need none of the chart/diagram blocks — use them sparingly.\n\n`
       catch { return res.status(500).json({ error: 'Failed to generate flashcards' }) }
     }
 
-    // ── Mock Exam (Exam Agent) ────────────────────────────────────────────
+    // ── Mock Exam ─────────────────────────────────────────────────────────
     if (mode === 'mockexam') {
       const { lectureContent, subject, numQuestions = 10 } = req.body
       if (!lectureContent) return res.status(400).json({ error: 'lectureContent required' })
@@ -96,7 +98,7 @@ Most answers need none of the chart/diagram blocks — use them sparingly.\n\n`
       catch { return res.status(500).json({ error: 'Failed to generate exam' }) }
     }
 
-    // ── Knowledge Gap (Gap Detector) ─────────────────────────────────────
+    // ── Knowledge Gap ─────────────────────────────────────────────────────
     if (mode === 'knowledgegap') {
       const { transcript, notes, subject } = req.body
       const hasTranscript = !!(transcript?.trim())
@@ -171,7 +173,7 @@ Return ONLY valid JSON:
           messages: [
             {
               role: 'system',
-              content: `You are SAGE's Study Coach for a Kenyan university student. Based on their study data, give a short, warm, honest status update and one specific, actionable recommendation. Don't inflate progress that isn't there.
+              content: `You are SAGE's Study Coach for a Kenyan university student. Give a short, warm, honest status update and one specific, actionable recommendation. Don't inflate progress that isn't there.
 Return ONLY valid JSON: {"message":"1-2 sentence honest status update","recommendation":"one specific actionable piece of advice","suggestedAction":"a concrete next step"}`,
             },
             { role: 'user', content: `${studentContext || 'No study data yet — this student is just getting started.'}\n\n${question ? `Student asked: ${question}` : 'Give a general progress check-in.'}` },
@@ -184,12 +186,12 @@ Return ONLY valid JSON: {"message":"1-2 sentence honest status update","recommen
       catch { return res.status(500).json({ error: 'Failed to generate coaching advice' }) }
     }
 
-    // ── SnapSolve (Camera, now context-aware) ──────────────────────────────
+    // ── SnapSolve (Camera, context-aware) ──────────────────────────────────
     if (mode === 'snapsolve') {
       if (!image && !text) return res.status(400).json({ error: 'No image or text provided' })
       const { documentContext } = req.body
       const codeNote = 'If this is a programming/coding question, write real working code inside markdown code fences with the language name. If math is involved, use $...$ / $$...$$ KaTeX syntax.'
-      const ctxNote = documentContext ? `The student has this lecture context available — use it if relevant, but this question may be unrelated to it, in which case ignore it:\n${documentContext.slice(0, 1500)}\n\n` : ''
+      const ctxNote = documentContext ? `The student has this lecture context available — use it if relevant, but ignore it if this question is unrelated:\n${documentContext.slice(0, 1500)}\n\n` : ''
       const content = image
         ? [{ type: 'image_url', image_url: { url: image } }, { type: 'text', text: `${ctxNote}Analyze and solve. ${codeNote} Return JSON only: {"question":"Q","answer":"step-by-step answer","explanation":"key concepts"}` }]
         : `${ctxNote}Solve: ${text}\n${codeNote}\nReturn JSON only: {"question":"Q","answer":"answer","explanation":"concepts"}`
@@ -206,12 +208,26 @@ Return ONLY valid JSON: {"message":"1-2 sentence honest status update","recommen
       catch { return res.status(500).json({ error: 'Failed to parse response' }) }
     }
 
-    // ── Past Papers (still available, not yet wired into unified camera flow) ──
+    // ── Past Papers (now accepts image, text, OR real PDF upload) ──────────
     if (mode === 'pastpapers') {
-      if (!image && !text) return res.status(400).json({ error: 'No content provided' })
+      const { pdfBase64 } = req.body
+      if (!image && !text && !pdfBase64) return res.status(400).json({ error: 'No content provided' })
+
+      let sourceText = text
+      if (pdfBase64) {
+        try {
+          const pdfData = await pdfParse(Buffer.from(pdfBase64, 'base64'))
+          sourceText = pdfData.text
+        } catch (e) {
+          return res.status(500).json({ error: 'Could not read the uploaded PDF' })
+        }
+      }
+
+      const promptInstructions = `Analyze this past paper. Extract real questions and give model answers. Return JSON only: {"paper_title":"T","questions":[{"number":"1","question":"Q","model_answer":"A","marks":"2","key_points":["P"]}],"common_themes":["T"],"exam_tips":["T"],"predicted_topics":["T"]}`
+
       const content = image
-        ? [{ type: 'image_url', image_url: { url: image } }, { type: 'text', text: `Analyze past paper. Return JSON only: {"paper_title":"T","questions":[{"number":"1","question":"Q","model_answer":"A","marks":"2","key_points":["P"]}],"common_themes":["T"],"exam_tips":["T"],"predicted_topics":["T"]}` }]
-        : `Analyze:\n${text}\nReturn JSON: {"paper_title":"T","questions":[{"number":"1","question":"Q","model_answer":"A","marks":"2","key_points":["P"]}],"common_themes":["T"],"exam_tips":["T"],"predicted_topics":["T"]}`
+        ? [{ type: 'image_url', image_url: { url: image } }, { type: 'text', text: promptInstructions }]
+        : `${promptInstructions}\n\nPast paper content:\n\n${(sourceText || '').slice(0, 9000)}`
 
       const r = await fetchWithRetry('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
