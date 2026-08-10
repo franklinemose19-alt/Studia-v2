@@ -19,8 +19,8 @@ const PLANS: Record<string, Plan> = {
   'achiever-1hr': { id: 'achiever-1hr', name: 'Achiever — 1 Hour', emoji: '🎯', price: 49, period: 'per lecture', description: 'Up to 1 hour of recording with AI notes' },
   'achiever-2hr': { id: 'achiever-2hr', name: 'Achiever — 2 Hours', emoji: '🎯', price: 79, period: 'per lecture', description: 'Up to 2 hours of recording with AI notes' },
   achiever: { id: 'achiever-1hr', name: 'Achiever — 1 Hour', emoji: '🎯', price: 49, period: 'per lecture', description: 'Up to 1 hour of recording with AI notes' },
-  excellence: { id: 'excellence', name: 'Excellence', emoji: '🚀', price: 399, period: '/month', description: '25 AI lectures every month' },
-  valedictorian: { id: 'valedictorian', name: 'Valedictorian', emoji: '🏆', price: 1200, period: '/semester', description: '80 AI lectures every semester' },
+  excellence: { id: 'excellence', name: 'Excellence', emoji: '🚀', price: 399, period: '/month', description: '20 AI lectures every month' },
+  valedictorian: { id: 'valedictorian', name: 'Valedictorian', emoji: '🏆', price: 1200, period: '/semester', description: '65 AI lectures every semester' },
 }
 
 export default function Checkout() {
