@@ -42,11 +42,10 @@ function getEndDate(planId) {
 }
 
 function getLectureAllowance(planId) {
-  if (planId === 'excellence') return 25
-  if (planId === 'valedictorian') return 80
+  if (planId === 'excellence') return 20      // was 25
+  if (planId === 'valedictorian') return 65   // was 80
   return 0
 }
-
 function getPlanDisplayName(planId) {
   const names = {
     'achiever-1hr': 'Achiever (1 Hour)',
