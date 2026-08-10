@@ -63,13 +63,13 @@ const PLANS = [
     name: 'Excellence',
     price: '399',
     period: '/month',
-    priceSub: '25 AI lectures every month',
+    priceSub: '20 AI lectures every month',
     description: 'For consistent studiers',
     badge: null,
     highlighted: false,
     cta: 'Choose Excellence',
     features: [
-      '25 AI lecture recordings/month',
+      '20 AI lecture recordings/month',
       'Full color Smart Ink notes',
       'Clean 2D diagrams',
       'Unlimited quiz generation',
@@ -88,13 +88,13 @@ const PLANS = [
     name: 'Valedictorian',
     price: '1,200',
     period: '/semester',
-    priceSub: '80 AI lectures every semester',
+    priceSub: '65 AI lectures every semester',
     description: 'The complete STUDIA experience',
     badge: '🔥 Best Value',
     highlighted: true,
     cta: 'Get Valedictorian',
     features: [
-      '80 AI lecture recordings/semester',
+      '65 AI lecture recordings/semester',
       'Premium gradient Smart Ink notes',
       'Premium gradient diagrams',
       'Full subject-aware color system',
@@ -111,7 +111,7 @@ const PLANS = [
 ]
 
 const COMPARISON = [
-  { feature: 'AI Lectures Included', values: ['3 lifetime', 'Pay/lecture', '25/month', '80/semester'] },
+  { feature: 'AI Lectures Included', values: ['3 lifetime', 'Pay/lecture', '20/month', '65/semester'] },
   { feature: 'Smart Ink Notes', values: ['Plain text', '✏️ Sketch', '🎨 Full color', '🌟 Premium gradient'] },
   { feature: 'AI Diagrams', values: ['✗', '✏️ Sketch 2D', '📊 Clean 2D', '🔷 Premium gradient'] },
   { feature: 'Quiz Generation', values: ['✓', '✓', '✓', '✓'] },
@@ -134,7 +134,7 @@ const FAQ = [
   },
   {
     q: 'Do Excellence and Valedictorian allowances reset?',
-    a: 'Excellence resets 25 lectures every month on your billing date. Valedictorian gives 80 lectures every 6 months. Unused lectures do not carry over.',
+    a: 'Excellence resets 20 lectures every month on your billing date. Valedictorian gives 65 lectures every 6 months. Unused lectures do not carry over.',
   },
   {
     q: 'Can I pay using M-Pesa?',
@@ -252,8 +252,8 @@ export default function Pricing() {
             {[
               { plan: 'Explorer', emoji: '🌍', value: '3', note: 'lifetime total', border: 'border-gray-200 bg-gray-50', text: 'text-gray-500' },
               { plan: 'Achiever', emoji: '🎯', value: 'Pay/session', note: 'KSh 49 or 79 each', border: 'border-light-blue/30 bg-blue-50/50', text: 'text-light-blue' },
-              { plan: 'Excellence', emoji: '🚀', value: '25', note: 'per month', border: 'border-mint/30 bg-green-50/50', text: 'text-mint' },
-              { plan: 'Valedictorian', emoji: '🏆', value: '80', note: 'per semester', border: 'border-warning/40 bg-amber-50/50', text: 'text-warning' },
+              { plan: 'Excellence', emoji: '🚀', value: '20', note: 'per month', border: 'border-mint/30 bg-green-50/50', text: 'text-mint' },
+              { plan: 'Valedictorian', emoji: '🏆', value: '65', note: 'per semester', border: 'border-warning/40 bg-amber-50/50', text: 'text-warning' },
             ].map((item, i) => (
               <div key={i} className={`rounded-2xl p-5 border-2 ${item.border} text-center`}>
                 <p className="text-3xl mb-2">{item.emoji}</p>
