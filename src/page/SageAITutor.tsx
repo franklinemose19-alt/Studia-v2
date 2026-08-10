@@ -1,35 +1,59 @@
 import { useState, useEffect, useRef } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Brain, ArrowLeft, BookOpen, ChevronDown, ChevronUp, Camera, Send, Loader, CheckCircle, X } from 'lucide-react'
+import { Brain, ArrowLeft, Menu, Plus, ArrowUp, BookOpen, ChevronDown, ChevronUp, CheckCircle, X, Code2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useAuth } from '../lib/AuthContext'
-import { loadAccess, checkAccess, consumeCredit, isUnlimitedPlan, explorerLecturesRemaining, type AccessInfo, emptyAccess } from '../lib/access'
+import { loadAccess, checkAccess, consumeCredit, type AccessInfo, emptyAccess } from '../lib/access'
 import { getAllRecordings, getLecturePacket, buildLecturePromptContext, type LecturePacket, type Recording } from '../lib/lectureContext'
 import { buildStudentContext, formatContextForAI } from '../lib/studentContext'
-import { detectIntent, getSubjectStructure } from '../lib/sageIntent'
+import { detectIntent, getSubjectStructure, type SageIntent } from '../lib/sageIntent'
+import { sageCache } from '../lib/sageCache'
+import {
+  listConversations, createConversation, renameConversation, deleteConversation,
+  loadMessages, saveMessage, generateTitle, type SageConversation,
+} from '../lib/sageConversations'
 import { toast } from '../lib/toast'
 import ChatMessage from '../components/ChatMessage'
+import UpgradeModal from '../components/UpgradeModal'
+import SageSidebar from '../components/sage/SageSidebar'
+import SageToolsMenu, { type SageTool } from '../components/sage/SageToolsMenu'
 import FlashcardInline from '../components/sage/FlashcardInline'
 import MockExamInline from '../components/sage/MockExamInline'
 import DeepNotesInline from '../components/sage/DeepNotesInline'
 import GapReportInline from '../components/sage/GapReportInline'
 import CoachCardInline from '../components/sage/CoachCardInline'
 import SnapSolveInline from '../components/sage/SnapSolveInline'
-import UpgradeModal from '../components/UpgradeModal'
+import PastPapersInline from '../components/sage/PastPapersInline'
 
-type ThreadKind = 'text' | 'flashcards' | 'mockexam' | 'deepnotes' | 'knowledgegap' | 'coach' | 'snapsolve'
+type ThreadKind = 'text' | 'flashcards' | 'mockexam' | 'deepnotes' | 'knowledgegap' | 'coach' | 'snapsolve' | 'pastpapers'
 interface ThreadItem { id: string; role: 'user' | 'assistant'; kind: ThreadKind; content?: string; image?: string; data?: any }
 
-const SUGGESTIONS = ['Explain the key concepts', 'Quiz me on this', 'Make flashcards', 'What am I missing?', 'How am I doing?', 'Go deeper on this topic']
+const SUGGESTIONS = ['Explain the key concepts', 'Quiz me on this', 'Make flashcards', 'What am I missing?', 'How am I doing?']
+
+function summarizeForStorage(kind: ThreadKind, data: any): string {
+  switch (kind) {
+    case 'flashcards': return `Generated ${data?.length || 0} flashcards`
+    case 'mockexam': return `Generated exam: ${data?.examTitle || 'Mock Exam'}`
+    case 'deepnotes': return `Deep notes: ${data?.title || 'Untitled'}`
+    case 'knowledgegap': return `Knowledge gap check — ${data?.examReadiness ?? '?'}% exam ready`
+    case 'coach': return data?.message || 'Study coach check-in'
+    case 'snapsolve': return `Answered: ${data?.question || 'a question'}`
+    case 'pastpapers': return `Analyzed past paper: ${data?.paper_title || 'document'}`
+    default: return ''
+  }
+}
 
 export default function SageAITutor() {
   const navigate = useNavigate()
   const { userId } = useAuth()
-  const fileRef = useRef<HTMLInputElement>(null)
+
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
+  const pdfInputRef = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const threadEndRef = useRef<HTMLDivElement>(null)
 
   const [access, setAccess] = useState<AccessInfo>(emptyAccess)
-  const [accessLoaded, setAccessLoaded] = useState(false)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [upgradeReason, setUpgradeReason] = useState<'explorer_locked' | 'no_lectures_left' | 'needs_premium'>('explorer_locked')
 
@@ -38,19 +62,39 @@ export default function SageAITutor() {
   const [lecturePacket, setLecturePacket] = useState<LecturePacket | null>(null)
   const [showLectureSelector, setShowLectureSelector] = useState(false)
 
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [toolsMenuOpen, setToolsMenuOpen] = useState(false)
+  const [conversations, setConversations] = useState<SageConversation[]>([])
+  const [conversationsLoading, setConversationsLoading] = useState(true)
+  const [activeConversationId, setActiveConversationId] = useState<number | null>(null)
+  const [threadLoading, setThreadLoading] = useState(false)
+
   const [thread, setThread] = useState<ThreadItem[]>([])
   const [composerText, setComposerText] = useState('')
   const [composerImage, setComposerImage] = useState<string | null>(null)
+  const [composerPdf, setComposerPdf] = useState<string | null>(null)
+  const [composerPdfName, setComposerPdfName] = useState('')
+  const [chatModeOverride, setChatModeOverride] = useState<'developer' | null>(null)
   const [sending, setSending] = useState(false)
 
   useEffect(() => {
+    if (!userId) return
+    const init = async () => {
+      const [a, convos] = await Promise.all([loadAccess(userId), listConversations(userId)])
+      setAccess(a)
+      setConversations(convos)
+      setConversationsLoading(false)
+      if (convos.length > 0) await handleSelectConversation(convos[0].id)
+    }
+    init()
+
     const recs = getAllRecordings()
     setRecordings(recs)
     if (recs.length > 0) {
       const sorted = [...recs].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       setSelectedLectureId(sorted[0].id)
     }
-    loadAccess(userId).then(a => { setAccess(a); setAccessLoaded(true) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId])
 
   useEffect(() => {
@@ -58,7 +102,14 @@ export default function SageAITutor() {
     setLecturePacket(getLecturePacket(selectedLectureId))
   }, [selectedLectureId])
 
+  useEffect(() => { textareaRef.current?.scrollIntoView }, [])
   useEffect(() => { threadEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [thread, sending])
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px'
+  }, [composerText])
 
   const lectureContent = lecturePacket ? (lecturePacket.notes || '') + '\n\n' + (lecturePacket.transcript || '') : ''
   const studentCtx = formatContextForAI(buildStudentContext(access.currentPlan))
@@ -76,7 +127,208 @@ export default function SageAITutor() {
     return res.json()
   }
 
-  const handleImageAttach = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Runs a gated generation call: cache-hit skips credit entirely; a cache-miss checks credit BEFORE calling OpenAI
+  const runGatedGeneration = async <T,>(opts: { cacheKind?: string; cacheContent?: string; apiCall: () => Promise<T> }): Promise<{ data: T | null; blocked: boolean }> => {
+    if (opts.cacheKind && opts.cacheContent) {
+      const cached = sageCache.get(opts.cacheKind, opts.cacheContent)
+      if (cached) return { data: cached, blocked: false }
+    }
+    const result = checkAccess(access, 'core')
+    if (!result.allowed) {
+      setUpgradeReason(access.planLocked ? 'explorer_locked' : 'no_lectures_left')
+      setShowUpgradeModal(true)
+      return { data: null, blocked: true }
+    }
+    const data = await opts.apiCall()
+    if (opts.cacheKind && opts.cacheContent) sageCache.set(opts.cacheKind, opts.cacheContent, data)
+    await consumeCredit(access, result.source)
+    setAccess(await loadAccess(userId))
+    return { data, blocked: false }
+  }
+
+  const handleSelectConversation = async (id: number) => {
+    if (id === activeConversationId) return
+    setThreadLoading(true)
+    setChatModeOverride(null)
+    try {
+      const rows = await loadMessages(id)
+      const items: ThreadItem[] = rows.map(r => ({
+        id: `db-${r.id}`,
+        role: r.role,
+        kind: (r.metadata?.kind as ThreadKind) || 'text',
+        content: r.content || undefined,
+        data: r.metadata?.data,
+      }))
+      setThread(items)
+      setActiveConversationId(id)
+    } catch {
+      toast.error('Could not load that conversation')
+    } finally {
+      setThreadLoading(false)
+    }
+  }
+
+  const handleNewChat = () => {
+    setThread([])
+    setActiveConversationId(null)
+    setChatModeOverride(null)
+    setComposerText('')
+    setComposerImage(null)
+    setComposerPdf(null)
+  }
+
+  const handleRenameConversation = async (id: number, title: string) => {
+    const ok = await renameConversation(id, title)
+    if (ok) setConversations(prev => prev.map(c => c.id === id ? { ...c, title } : c))
+  }
+
+  const handleDeleteConversation = async (id: number) => {
+    const ok = await deleteConversation(id)
+    if (ok) {
+      setConversations(prev => prev.filter(c => c.id !== id))
+      if (activeConversationId === id) { setThread([]); setActiveConversationId(null) }
+      toast.success('Conversation deleted')
+    } else {
+      toast.error('Could not delete conversation')
+    }
+  }
+
+  const runTurn = async (
+    displayText: string,
+    opts: { intent?: SageIntent; image?: string | null; pdfBase64?: string | null; pdfName?: string } = {}
+  ) => {
+    if (sending) return
+    if (access.planLocked) {
+      setUpgradeReason('explorer_locked')
+      setShowUpgradeModal(true)
+      return
+    }
+
+    const hasImage = !!opts.image
+    const hasPdf = !!opts.pdfBase64
+    const text = displayText.trim()
+    if (!text && !hasImage && !hasPdf) return
+
+    const intent: SageIntent = opts.intent || (hasPdf ? 'pastpapers' : detectIntent(text, hasImage))
+
+    let convoId = activeConversationId
+    if (!convoId) {
+      const created = await createConversation(userId!, generateTitle(text, hasImage || hasPdf))
+      if (!created) { toast.error('Could not start a new conversation'); return }
+      convoId = created.id
+      setActiveConversationId(created.id)
+      setConversations(prev => [created, ...prev])
+    }
+
+    const userItem: ThreadItem = {
+      id: `u-${Date.now()}`, role: 'user', kind: 'text',
+      content: text || (hasImage ? '📷 Photo' : hasPdf ? `📄 ${opts.pdfName || 'Document'}` : ''),
+      image: opts.image || undefined,
+    }
+    setThread(prev => [...prev, userItem])
+    setComposerText('')
+    setComposerImage(null)
+    setComposerPdf(null)
+    setComposerPdfName('')
+    setSending(true)
+
+    saveMessage(convoId, userId!, 'user', userItem.content || '', { hasImage, hasPdf, pdfName: opts.pdfName }).catch(() => {})
+
+    try {
+      let assistantKind: ThreadKind = 'text'
+      let assistantContent = ''
+      let assistantData: any = null
+
+      if (intent === 'snapsolve') {
+        const { data, blocked } = await runGatedGeneration({ apiCall: async () => (await callSage({ mode: 'snapsolve', image: opts.image, text, documentContext: buildLecturePromptContext(lecturePacket) })).result })
+        if (blocked) assistantContent = "You're out of AI credits right now — tap Upgrade to keep going."
+        else { assistantKind = 'snapsolve'; assistantData = data }
+
+      } else if (intent === 'pastpapers') {
+        const { data, blocked } = await runGatedGeneration({ apiCall: async () => (await callSage({ mode: 'pastpapers', pdfBase64: opts.pdfBase64 })).result })
+        if (blocked) assistantContent = "You're out of AI credits right now — tap Upgrade to keep going."
+        else { assistantKind = 'pastpapers'; assistantData = data }
+
+      } else if (intent === 'flashcards') {
+        if (!lectureContent.trim()) assistantContent = "I'll need a lecture with notes to build flashcards — select one above first."
+        else {
+          const { data, blocked } = await runGatedGeneration({
+            cacheKind: 'flashcards', cacheContent: lectureContent,
+            apiCall: async () => (await callSage({ mode: 'flashcards', lectureContent, subject: lecturePacket?.course })).flashcards,
+          })
+          if (blocked) assistantContent = "You're out of AI credits right now — tap Upgrade to keep going."
+          else { assistantKind = 'flashcards'; assistantData = data }
+        }
+
+      } else if (intent === 'mockexam') {
+        if (!lectureContent.trim()) assistantContent = "I'll need a lecture with notes or a transcript to build an exam — select one above first."
+        else {
+          const { data, blocked } = await runGatedGeneration({
+            cacheKind: 'mockexam', cacheContent: lectureContent,
+            apiCall: () => callSage({ mode: 'mockexam', lectureContent, subject: lecturePacket?.course, numQuestions: 8 }),
+          })
+          if (blocked) assistantContent = "You're out of AI credits right now — tap Upgrade to keep going."
+          else { assistantKind = 'mockexam'; assistantData = data }
+        }
+
+      } else if (intent === 'deepnotes') {
+        if (!lectureContent.trim()) assistantContent = "Select a lecture with notes first — I'll expand them into deep notes."
+        else {
+          const { data, blocked } = await runGatedGeneration({
+            cacheKind: 'deepnotes', cacheContent: lectureContent,
+            apiCall: () => callSage({ mode: 'deepnotes', content: lectureContent, subject: lecturePacket?.course }),
+          })
+          if (blocked) assistantContent = "You're out of AI credits right now — tap Upgrade to keep going."
+          else { assistantKind = 'deepnotes'; assistantData = data }
+        }
+
+      } else if (intent === 'knowledgegap') {
+        if (!lecturePacket?.transcript && !lecturePacket?.notes) assistantContent = "Select a lecture with notes or a transcript first — I'll check what you might be missing."
+        else {
+          const cacheKey = (lecturePacket.transcript || '') + (lecturePacket.notes || '')
+          const { data, blocked } = await runGatedGeneration({
+            cacheKind: 'knowledgegap', cacheContent: cacheKey,
+            apiCall: () => callSage({ mode: 'knowledgegap', transcript: lecturePacket!.transcript, notes: lecturePacket!.notes, subject: lecturePacket!.course }),
+          })
+          if (blocked) assistantContent = "You're out of AI credits right now — tap Upgrade to keep going."
+          else { assistantKind = 'knowledgegap'; assistantData = data }
+        }
+
+      } else if (intent === 'coach') {
+        const { data, blocked } = await runGatedGeneration({ apiCall: () => callSage({ mode: 'coach', studentContext: studentCtx, question: text }) })
+        if (blocked) assistantContent = "You're out of AI credits right now — tap Upgrade to keep going."
+        else { assistantKind = 'coach'; assistantData = data }
+
+      } else {
+        const history = thread.filter(t => t.kind === 'text' && t.content).slice(-8).map(t => ({ role: t.role, content: t.content }))
+        const data = await callSage({
+          mode: 'chat',
+          chatMessages: [...history, { role: 'user', content: text }],
+          documentContext: buildLecturePromptContext(lecturePacket),
+          studentContext: studentCtx,
+          chatMode: chatModeOverride === 'developer' ? 'developer' : 'general',
+          subjectStructure: getSubjectStructure(lecturePacket?.course || text),
+        })
+        assistantKind = 'text'
+        assistantContent = data.reply
+      }
+
+      const assistantItem: ThreadItem = { id: `a-${Date.now()}`, role: 'assistant', kind: assistantKind, content: assistantContent || undefined, data: assistantData }
+      setThread(prev => [...prev, assistantItem])
+      saveMessage(convoId, userId!, 'assistant', assistantContent || summarizeForStorage(assistantKind, assistantData), { kind: assistantKind, data: assistantData }).catch(() => {})
+
+    } catch (err: any) {
+      toast.error(err.message || 'SAGE had trouble responding — try again.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const handleComposerSend = () => {
+    runTurn(composerText, { image: composerImage, pdfBase64: composerPdf, pdfName: composerPdfName })
+  }
+
+  const handleFileAttach = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
@@ -85,109 +337,72 @@ export default function SageAITutor() {
     e.target.value = ''
   }
 
-  const handleSend = async () => {
-    const text = composerText.trim()
-    if (!text && !composerImage) return
-    if (sending) return
+  const handlePdfAttach = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.type !== 'application/pdf') { toast.error('Please select a PDF file'); return }
+    setComposerPdfName(file.name)
+    const reader = new FileReader()
+    reader.onload = ev => {
+      const result = ev.target?.result as string
+      setComposerPdf(result.split(',')[1] || result)
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
 
-    const intent = detectIntent(text, !!composerImage)
-    const needsCredit = intent !== 'chat'
-    let accessResult: ReturnType<typeof checkAccess> | null = null
-
-    if (needsCredit) {
-      accessResult = checkAccess(access, 'core')
-      if (!accessResult.allowed) {
-        setUpgradeReason(access.planLocked ? 'explorer_locked' : 'no_lectures_left')
-        setShowUpgradeModal(true)
-        return
-      }
-    } else if (access.planLocked) {
+  const handleToolSelect = (tool: SageTool) => {
+    setToolsMenuOpen(false)
+    if (access.planLocked) {
       setUpgradeReason('explorer_locked')
       setShowUpgradeModal(true)
       return
     }
-
-    const userItem: ThreadItem = { id: `u-${Date.now()}`, role: 'user', kind: 'text', content: text || '📷 Image attached', image: composerImage || undefined }
-    setThread(prev => [...prev, userItem])
-    setComposerText('')
-    const imageForRequest = composerImage
-    setComposerImage(null)
-    setSending(true)
-
-    try {
-      let assistantItem: ThreadItem
-
-      if (intent === 'snapsolve') {
-        const data = await callSage({ mode: 'snapsolve', image: imageForRequest, text, documentContext: buildLecturePromptContext(lecturePacket) })
-        assistantItem = { id: `a-${Date.now()}`, role: 'assistant', kind: 'snapsolve', data: data.result }
-
-      } else if (intent === 'flashcards') {
-        assistantItem = !lectureContent.trim()
-          ? { id: `a-${Date.now()}`, role: 'assistant', kind: 'text', content: "I'll need a lecture with notes to build flashcards from — select one above, or ask me a specific question instead." }
-          : { id: `a-${Date.now()}`, role: 'assistant', kind: 'flashcards', data: (await callSage({ mode: 'flashcards', lectureContent, subject: lecturePacket?.course })).flashcards }
-
-      } else if (intent === 'mockexam') {
-        assistantItem = !lectureContent.trim()
-          ? { id: `a-${Date.now()}`, role: 'assistant', kind: 'text', content: "I'll need a lecture with notes or a transcript to build a mock exam — select one above first." }
-          : { id: `a-${Date.now()}`, role: 'assistant', kind: 'mockexam', data: await callSage({ mode: 'mockexam', lectureContent, subject: lecturePacket?.course, numQuestions: 8 }) }
-
-      } else if (intent === 'deepnotes') {
-        assistantItem = !lectureContent.trim()
-          ? { id: `a-${Date.now()}`, role: 'assistant', kind: 'text', content: "Select a lecture with notes first — I'll expand them into deep notes." }
-          : { id: `a-${Date.now()}`, role: 'assistant', kind: 'deepnotes', data: await callSage({ mode: 'deepnotes', content: lectureContent, subject: lecturePacket?.course }) }
-
-      } else if (intent === 'knowledgegap') {
-        assistantItem = (!lecturePacket?.transcript && !lecturePacket?.notes)
-          ? { id: `a-${Date.now()}`, role: 'assistant', kind: 'text', content: "Select a lecture with notes or a transcript first — I'll check what you might be missing." }
-          : { id: `a-${Date.now()}`, role: 'assistant', kind: 'knowledgegap', data: await callSage({ mode: 'knowledgegap', transcript: lecturePacket!.transcript, notes: lecturePacket!.notes, subject: lecturePacket!.course }) }
-
-      } else if (intent === 'coach') {
-        assistantItem = { id: `a-${Date.now()}`, role: 'assistant', kind: 'coach', data: await callSage({ mode: 'coach', studentContext: studentCtx, question: text }) }
-
-      } else {
-        const history = thread.filter(t => t.kind === 'text').slice(-8).map(t => ({ role: t.role, content: t.content || '' }))
-        const data = await callSage({
-          mode: 'chat',
-          chatMessages: [...history, { role: 'user', content: text }],
-          documentContext: buildLecturePromptContext(lecturePacket),
-          studentContext: studentCtx,
-          chatMode: 'general',
-          subjectStructure: getSubjectStructure(lecturePacket?.course || text),
-        })
-        assistantItem = { id: `a-${Date.now()}`, role: 'assistant', kind: 'text', content: data.reply }
-      }
-
-      setThread(prev => [...prev, assistantItem])
-
-      if (needsCredit && accessResult?.allowed) {
-        await consumeCredit(access, accessResult.source)
-        setAccess(await loadAccess(userId))
-      }
-    } catch (err: any) {
-      toast.error(err.message || 'SAGE had trouble responding — try again.')
-    } finally {
-      setSending(false)
+    if (tool === 'camera') { cameraInputRef.current?.click(); return }
+    if (tool === 'image') { imageInputRef.current?.click(); return }
+    if (tool === 'file') { pdfInputRef.current?.click(); return }
+    if (tool === 'developer') {
+      setChatModeOverride('developer')
+      textareaRef.current?.focus()
+      return
     }
+    const labels: Record<string, string> = {
+      deepnotes: '📓 Deep Notes',
+      flashcards: '🗂️ Flashcards',
+      mockexam: '📝 Exam Generator',
+      knowledgegap: '🔍 Knowledge Gap Check',
+      coach: '🧭 Study Coach Check-in',
+    }
+    runTurn(labels[tool] || '', { intent: tool as SageIntent })
   }
 
   return (
     <div className="min-h-screen bg-surface-base flex flex-col">
-      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImageAttach} />
+      <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileAttach} />
+      <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileAttach} />
+      <input ref={pdfInputRef} type="file" accept="application/pdf" className="hidden" onChange={handlePdfAttach} />
 
       <UpgradeModal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} reason={upgradeReason} currentPlan={access.currentPlan} />
+      <SageSidebar
+        open={sidebarOpen} onClose={() => setSidebarOpen(false)}
+        conversations={conversations} activeId={activeConversationId}
+        onSelect={handleSelectConversation} onNewChat={handleNewChat}
+        onRename={handleRenameConversation} onDelete={handleDeleteConversation}
+        loading={conversationsLoading}
+      />
+      <SageToolsMenu open={toolsMenuOpen} onClose={() => setToolsMenuOpen(false)} onSelect={handleToolSelect} />
 
       <nav className="border-b border-white/5 bg-surface-elevated/50 backdrop-blur-md sticky top-0 z-10 shrink-0">
         <div className="max-w-3xl mx-auto px-4 h-16 flex items-center justify-between">
-          <button onClick={() => navigate('/dashboard')} className="flex items-center gap-2 text-sm text-[#8B97B5] hover:text-white">
-            <ArrowLeft size={16} /> Back
-          </button>
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-blue to-purple-500 flex items-center justify-center">
-              <Brain size={16} className="text-white" />
-            </div>
-            <span className="font-sora font-bold text-white">SAGE AI Tutor</span>
+          <div className="flex items-center gap-1">
+            <button onClick={() => navigate('/dashboard')} className="p-2 -ml-2 rounded-lg text-[#8B97B5] hover:text-white transition"><ArrowLeft size={18} /></button>
+            <button onClick={() => setSidebarOpen(true)} className="p-2 rounded-lg text-[#8B97B5] hover:text-white transition"><Menu size={18} /></button>
           </div>
-          <div className="w-16" />
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-blue to-purple-500 flex items-center justify-center"><Brain size={16} className="text-white" /></div>
+            <span className="font-sora font-bold text-white">SAGE</span>
+          </div>
+          <button onClick={handleNewChat} className="p-2 -mr-2 rounded-lg text-[#8B97B5] hover:text-white transition" title="New chat"><Plus size={18} /></button>
         </div>
       </nav>
 
@@ -232,50 +447,43 @@ export default function SageAITutor() {
             )}
           </AnimatePresence>
         </div>
-
-        {accessLoaded && (
-          <p className="text-[11px] text-brand-blue mt-2 px-1">
-            {isUnlimitedPlan(access)
-              ? `✨ ${access.currentPlan} plan · unlimited chat, metered generation`
-              : access.planLocked
-              ? <>🔒 Locked — <button onClick={() => navigate('/pricing')} className="text-red-400 underline">upgrade to continue →</button></>
-              : `🎓 ${explorerLecturesRemaining(access)} AI credits remaining · chat is free`}
-          </p>
-        )}
       </div>
 
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-3xl mx-auto px-4 py-4 space-y-4">
-          {thread.length === 0 && (
+          {threadLoading ? (
+            <div className="py-16 text-center text-[#8B97B5] text-sm">Loading conversation...</div>
+          ) : thread.length === 0 ? (
             <div className="flex flex-col items-center justify-center text-center py-10">
               <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-brand-blue to-purple-500 flex items-center justify-center mb-4"><Brain size={28} className="text-white" /></div>
               <p className="text-white font-sora font-bold text-lg mb-2">One tutor, everything built in</p>
-              <p className="text-[#8B97B5] text-sm max-w-sm mb-6">Ask a question, request a quiz, flashcards, deep notes, or a progress check — SAGE figures out what you need. Snap a photo for anything, including work outside your lectures.</p>
+              <p className="text-[#8B97B5] text-sm max-w-sm mb-6">Ask a question, request a quiz, flashcards, deep notes, or a progress check — SAGE figures out what you need. Snap a photo or attach a PDF for anything, including work outside your lectures.</p>
               <div className="flex flex-wrap gap-2 justify-center max-w-md">
                 {SUGGESTIONS.map(s => (
                   <button key={s} onClick={() => setComposerText(s)} className="text-xs text-brand-blue border border-brand-blue/30 bg-brand-blue/5 px-3 py-1.5 rounded-full hover:bg-brand-blue/10 transition">{s}</button>
                 ))}
               </div>
             </div>
-          )}
-
-          {thread.map(item => (
-            <div key={item.id} className={`flex ${item.role === 'user' ? 'justify-end' : 'justify-start'} gap-2`}>
-              {item.role === 'assistant' && (
-                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-blue to-purple-500 flex items-center justify-center shrink-0 mt-0.5"><Brain size={12} className="text-white" /></div>
-              )}
-              <div className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm break-words ${item.role === 'user' ? 'bg-brand-blue text-white rounded-br-sm' : 'bg-surface-elevated border border-white/5 text-[#C5CCDE] rounded-bl-sm'}`}>
-                {item.image && <img src={item.image} alt="Attached" className="rounded-lg mb-2 max-h-40 object-cover" />}
-                {item.kind === 'text' && item.content && <ChatMessage content={item.content} />}
-                {item.kind === 'flashcards' && <FlashcardInline cards={item.data} />}
-                {item.kind === 'mockexam' && <MockExamInline exam={item.data} />}
-                {item.kind === 'deepnotes' && <DeepNotesInline notes={item.data} />}
-                {item.kind === 'knowledgegap' && <GapReportInline data={item.data} />}
-                {item.kind === 'coach' && <CoachCardInline data={item.data} />}
-                {item.kind === 'snapsolve' && <SnapSolveInline result={item.data} />}
+          ) : (
+            thread.map(item => (
+              <div key={item.id} className={`flex ${item.role === 'user' ? 'justify-end' : 'justify-start'} gap-2`}>
+                {item.role === 'assistant' && (
+                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-blue to-purple-500 flex items-center justify-center shrink-0 mt-0.5"><Brain size={12} className="text-white" /></div>
+                )}
+                <div className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm break-words ${item.role === 'user' ? 'bg-brand-blue text-white rounded-br-sm' : 'bg-surface-elevated border border-white/5 text-[#C5CCDE] rounded-bl-sm'}`}>
+                  {item.image && <img src={item.image} alt="Attached" className="rounded-lg mb-2 max-h-40 object-cover" />}
+                  {item.kind === 'text' && item.content && <ChatMessage content={item.content} />}
+                  {item.kind === 'flashcards' && <FlashcardInline cards={item.data} />}
+                  {item.kind === 'mockexam' && <MockExamInline exam={item.data} />}
+                  {item.kind === 'deepnotes' && <DeepNotesInline notes={item.data} />}
+                  {item.kind === 'knowledgegap' && <GapReportInline data={item.data} />}
+                  {item.kind === 'coach' && <CoachCardInline data={item.data} />}
+                  {item.kind === 'snapsolve' && <SnapSolveInline result={item.data} />}
+                  {item.kind === 'pastpapers' && <PastPapersInline result={item.data} />}
+                </div>
               </div>
-            </div>
-          ))}
+            ))
+          )}
 
           {sending && (
             <div className="flex items-center gap-2">
@@ -291,22 +499,63 @@ export default function SageAITutor() {
 
       <div className="border-t border-white/5 bg-surface-elevated/80 backdrop-blur-md shrink-0 pb-[72px]">
         <div className="max-w-3xl mx-auto px-4 py-3">
-          {composerImage && (
-            <div className="relative inline-block mb-2">
-              <img src={composerImage} alt="Attached" className="h-16 rounded-lg border border-white/10" />
-              <button onClick={() => setComposerImage(null)} className="absolute -top-1.5 -right-1.5 bg-black/70 text-white rounded-full p-0.5"><X size={12} /></button>
-            </div>
-          )}
-          <div className="flex items-end gap-2">
-            <button onClick={() => fileRef.current?.click()} disabled={sending} className="p-2.5 rounded-xl bg-surface-base border border-white/10 text-[#8B97B5] hover:text-white transition disabled:opacity-50 shrink-0"><Camera size={18} /></button>
-            <textarea value={composerText} onChange={e => setComposerText(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
-              placeholder="Ask anything — SAGE handles the rest..." disabled={sending} rows={1}
-              className="flex-1 bg-surface-base border border-white/10 rounded-xl px-3 py-2.5 text-white placeholder-[#4A5568] text-sm outline-none focus:border-brand-blue/40 disabled:opacity-50 resize-none min-w-0 max-h-24" />
-            <button onClick={handleSend} disabled={sending || (!composerText.trim() && !composerImage)} className="bg-brand-blue text-white p-2.5 rounded-xl hover:bg-brand-blue/90 disabled:opacity-50 transition shrink-0">
-              {sending ? <Loader size={18} className="animate-spin" /> : <Send size={18} />}
+
+          {access.planLocked ? (
+            <button onClick={() => { setUpgradeReason('explorer_locked'); setShowUpgradeModal(true) }}
+              className="w-full bg-red-500/10 border border-red-500/30 text-red-300 py-3 rounded-2xl text-sm font-semibold hover:bg-red-500/15 transition">
+              🔒 Your free lectures are used up — tap to upgrade and unlock SAGE
             </button>
-          </div>
+          ) : (
+            <>
+              {chatModeOverride === 'developer' && (
+                <div className="flex items-center gap-1.5 mb-2">
+                  <span className="flex items-center gap-1 bg-orange-500/15 text-orange-300 text-[10px] font-semibold px-2.5 py-1 rounded-full">
+                    <Code2 size={10} /> Developer Mode
+                    <button onClick={() => setChatModeOverride(null)} className="ml-1 hover:text-white"><X size={10} /></button>
+                  </span>
+                </div>
+              )}
+
+              {(composerImage || composerPdf) && (
+                <div className="flex items-center gap-2 mb-2">
+                  {composerImage && (
+                    <div className="relative inline-block">
+                      <img src={composerImage} alt="Attached" className="h-14 rounded-lg border border-white/10" />
+                      <button onClick={() => setComposerImage(null)} className="absolute -top-1.5 -right-1.5 bg-black/70 text-white rounded-full p-0.5"><X size={11} /></button>
+                    </div>
+                  )}
+                  {composerPdf && (
+                    <div className="relative flex items-center gap-1.5 bg-surface-base border border-white/10 rounded-lg px-2.5 py-2">
+                      <span className="text-[10px] text-white truncate max-w-[120px]">📄 {composerPdfName}</span>
+                      <button onClick={() => { setComposerPdf(null); setComposerPdfName('') }} className="text-[#8B97B5] hover:text-white"><X size={12} /></button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-end gap-2">
+                <button onClick={() => setToolsMenuOpen(true)} disabled={sending}
+                  className="p-3 rounded-2xl bg-surface-base border border-white/10 text-[#8B97B5] hover:text-white transition disabled:opacity-40 shrink-0">
+                  <Plus size={18} />
+                </button>
+                <textarea
+                  ref={textareaRef}
+                  value={composerText}
+                  onChange={e => setComposerText(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleComposerSend() } }}
+                  placeholder={chatModeOverride === 'developer' ? 'Ask a coding or debugging question...' : 'Ask SAGE anything...'}
+                  disabled={sending}
+                  rows={1}
+                  style={{ maxHeight: 120, overflowY: 'auto' }}
+                  className="flex-1 bg-surface-base border border-white/10 rounded-2xl px-4 py-3 text-white placeholder-[#4A5568] text-sm outline-none focus:border-brand-blue/40 disabled:opacity-50 resize-none min-w-0 leading-relaxed"
+                />
+                <button onClick={handleComposerSend} disabled={sending || (!composerText.trim() && !composerImage && !composerPdf)}
+                  className="bg-brand-blue text-white p-3 rounded-2xl hover:bg-brand-blue/90 disabled:opacity-40 transition shrink-0">
+                  <ArrowUp size={18} />
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
