@@ -13,16 +13,15 @@
     "clsx": "^2.1.1",
     "framer-motion": "^11.3.0",
     "jspdf": "^2.5.2",
+    "katex": "^0.16.9",
     "lucide-react": "^0.446.0",
     "pdf-parse": "^1.1.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-katex": "^3.0.1",
     "react-router-dom": "^6.26.0",
+    "recharts": "^2.10.3",
     "tailwind-merge": "^2.5.2"
-    "katex": "^0.16.9",
-     "react-katex": "^3.0.1",
-    "recharts": "^2.10.3"
-    
   },
   "devDependencies": {
     "@types/react": "^18.3.5",
