@@ -14,13 +14,13 @@ const PLANS = [
     id: 'achiever',
     emoji: '🎯',
     name: 'Achiever',
-    price: 'KSh 29',
+    price: 'KSh 49',
     period: '/lecture',
     icon: <Zap size={20} />,
     color: 'from-light-blue to-indigo-premium',
     border: 'border-light-blue/30',
     cta: 'Pay Per Lecture',
-    perks: ['Pay only when you study', 'KSh 29 (1hr) or KSh 49 (2hr)', 'Full AI notes + quiz'],
+    perks: ['Pay only when you study', 'KSh 49 (1hr) or KSh 79 (2hr)', 'Full AI notes + quiz'],
   },
   {
     id: 'excellence',
@@ -32,7 +32,7 @@ const PLANS = [
     color: 'from-mint to-light-blue',
     border: 'border-mint/30',
     cta: 'Choose Excellence',
-    perks: ['25 AI lectures every month', 'Full color Smart Ink notes', 'SnapSolve + Past Papers'],
+    perks: ['20 AI lectures every month', 'Full color Smart Ink notes', 'SnapSolve + Past Papers'],
   },
   {
     id: 'valedictorian',
@@ -46,7 +46,7 @@ const PLANS = [
     cta: 'Get Best Value',
     highlighted: true,
     badge: '🔥 Best Value',
-    perks: ['80 AI lectures per semester', '3D gradient Smart Ink notes', 'Priority AI queue'],
+    perks: ['65 AI lectures per semester', '3D gradient Smart Ink notes', 'Priority AI queue'],
   },
 ]
 
