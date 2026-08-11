@@ -10,7 +10,7 @@ export default async function handler(req, res) {
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY
     if (!OPENAI_API_KEY) return res.status(500).json({ error: 'OpenAI API key not configured' })
 
-    // ── Chat (Tutor + Developer Agent, subject-aware) ──────────────────────
+    // ── Chat (Tutor, subject-aware) ─────────────────────────────────────
     if (mode === 'chat') {
       const { chatMessages, documentContext, studentContext, chatMode, subjectStructure } = req.body
       if (!chatMessages || !Array.isArray(chatMessages)) return res.status(400).json({ error: 'chatMessages required' })
@@ -33,7 +33,6 @@ Most answers need none of the chart/diagram blocks.\n\n`
         notes: 'Help understand lecture notes. Explain clearly, give examples, highlight exam points.',
         quiz: 'Explain why answers were correct or wrong. Give reasoning and memory tricks.',
         snapsolve: 'Continue tutoring on this problem. Go deeper, simplify if confused, suggest related practice.',
-        developer: 'You are in Developer Mode — a focused coding assistant. Help with debugging, algorithms, code explanations, and CS/IT/ICT concepts. Always write real, working code in fenced blocks with the language name. Be technical and direct — no need to soften explanations for a programming audience.',
         general: 'Answer academic questions clearly, including programming/CS/IT questions with real working code. Be encouraging.',
       }
       system += modeInstructions[chatMode] || modeInstructions.general
@@ -208,7 +207,7 @@ Return ONLY valid JSON: {"message":"1-2 sentence honest status update","recommen
       catch { return res.status(500).json({ error: 'Failed to parse response' }) }
     }
 
-    // ── Past Papers (now accepts image, text, OR real PDF upload) ──────────
+    // ── Past Papers (image, text, or PDF) ───────────────────────────────────
     if (mode === 'pastpapers') {
       const { pdfBase64 } = req.body
       if (!image && !text && !pdfBase64) return res.status(400).json({ error: 'No content provided' })
@@ -218,7 +217,7 @@ Return ONLY valid JSON: {"message":"1-2 sentence honest status update","recommen
         try {
           const pdfData = await pdfParse(Buffer.from(pdfBase64, 'base64'))
           sourceText = pdfData.text
-        } catch (e) {
+        } catch {
           return res.status(500).json({ error: 'Could not read the uploaded PDF' })
         }
       }
