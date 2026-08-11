@@ -1,6 +1,7 @@
 import pdfParse from 'pdf-parse'
 import { fetchWithRetry } from './_utils/openaiRetry.js'
 import { logTokenUsage } from './_utils/tokenLogger.js'
+import { checkRateLimit } from './_utils/rateLimiter.js'
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
@@ -9,6 +10,16 @@ export default async function handler(req, res) {
     const { mode, image, text, userId } = req.body
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY
     if (!OPENAI_API_KEY) return res.status(500).json({ error: 'OpenAI API key not configured' })
+
+    const rateCheck = await checkRateLimit(userId, 'ai-tools')
+    if (!rateCheck.allowed) {
+      return res.status(429).json({
+        error: rateCheck.reason === 'missing_user_id'
+          ? 'Authentication required'
+          : `Too many requests — please wait ${Math.ceil(rateCheck.retryAfterSeconds / 60)} minute(s) and try again.`,
+        retryAfterSeconds: rateCheck.retryAfterSeconds,
+      })
+    }
 
     // ── Chat (Tutor, subject-aware) ─────────────────────────────────────
     if (mode === 'chat') {
