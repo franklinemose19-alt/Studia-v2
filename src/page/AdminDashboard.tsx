@@ -1,14 +1,23 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   DollarSign, Users, Clock, RefreshCw, CheckCircle,
-  AlertCircle, ArrowLeft, Crown, Activity, Zap,
+  AlertCircle, ArrowLeft, Crown, Zap, Wrench, ShieldAlert,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getSupabase } from '../lib/supabaseClient'
 import { useAuth } from '../lib/AuthContext'
-import { Wrench } from 'lucide-react'
 import { toast } from '../lib/toast'
+
+interface SecurityEvent {
+  id: number
+  user_id: string
+  event_type: string
+  detail: string
+  created_at: string
+}
+
 interface AdminStats {
+  maintenanceMode: boolean
   revenue: { total: number; monthly: number; today: number; escrow: number }
   payments: { pendingCount: number; recentPayments: any[] }
   users: { total: number; planCounts: Record<string, number>; newToday: number; newThisWeek: number; newThisHour: number }
@@ -19,6 +28,7 @@ interface AdminStats {
     totalTokens: number
     featureCosts: Record<string, number>
   }
+  securityEvents: SecurityEvent[]
 }
 
 const PLAN_ICONS: Record<string, string> = { explorer: '🌍', achiever: '🎯', excellence: '🚀', valedictorian: '🏆', none: '👤' }
@@ -35,6 +45,14 @@ function getStatusColor(s: string) {
     case 'failed': return 'bg-red-500/20 text-red-400'
     default: return 'bg-white/10 text-[#8B97B5]'
   }
+}
+
+function timeAgo(iso: string) {
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
+  if (s < 60) return 'just now'
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`
+  return `${Math.floor(s / 86400)}d ago`
 }
 
 function CircleStat({ value, label, strokeColor, textColor, percentage = 100 }: {
@@ -94,6 +112,26 @@ export default function AdminDashboard() {
     finally { setLoading(false) }
   }
 
+  const toggleMaintenance = async () => {
+    if (!userId || !stats) return
+    try {
+      const res = await fetch('/api/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminUserId: userId, action: 'toggle_maintenance', enabled: !stats.maintenanceMode }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setStats(prev => prev ? { ...prev, maintenanceMode: data.maintenanceMode } : prev)
+        toast.success(data.maintenanceMode ? '🔧 Maintenance mode ON' : '✅ Maintenance mode OFF — app is live')
+      } else {
+        toast.error(data.error || 'Failed to toggle maintenance mode')
+      }
+    } catch {
+      toast.error('Connection error')
+    }
+  }
+
   useEffect(() => {
     if (isAdmin === null) return
     if (!isAdmin) { navigate('/dashboard', { replace: true }); return }
@@ -120,8 +158,8 @@ export default function AdminDashboard() {
       <div className="min-h-screen bg-surface-base flex flex-col items-center justify-center gap-4 px-4">
         <AlertCircle className="text-red-400" size={40} />
         <p className="text-white font-semibold">Could not load dashboard</p>
-        <p className="text-[#8B97B5] text-sm">{error}</p>
-        <button onClick={fetchStats} className="bg-brand-blue text-white px-6 py-2.5 rounded-xl text-sm">Retry</button>
+        <p className="text-[#8B97B5] text-sm text-center">{error}</p>
+        <button onClick={fetchStats} className="bg-brand-blue text-white px-6 py-2.5 rounded-xl text-sm font-medium">Retry</button>
       </div>
     )
   }
@@ -133,7 +171,7 @@ export default function AdminDashboard() {
     { value: formatKsh(s.revenue.total), label: 'All-time', strokeColor: '#22C55E', textColor: 'text-green-400', percentage: 100 },
     { value: formatKsh(s.revenue.monthly), label: 'This month', strokeColor: '#3B82F6', textColor: 'text-brand-blue', percentage: Math.min(100, (s.revenue.monthly / Math.max(1, s.revenue.total)) * 100) },
     { value: formatKsh(s.revenue.today), label: 'Today', strokeColor: '#6D5EF7', textColor: 'text-purple-400', percentage: Math.min(100, (s.revenue.today / Math.max(1, s.revenue.monthly)) * 100) },
-    { value: formatKsh(s.revenue.escrow), label: 'Escrow', strokeColor: '#F59E0B', textColor: 'text-warning', percentage: Math.min(100, (s.revenue.escrow / Math.max(1, s.revenue.total)) * 100) },
+    { value: formatKsh(s.revenue.escrow), label: 'Unconfirmed', strokeColor: '#F59E0B', textColor: 'text-warning', percentage: Math.min(100, (s.revenue.escrow / Math.max(1, s.revenue.total)) * 100) },
   ]
 
   const userCircles = [
@@ -173,6 +211,27 @@ export default function AdminDashboard() {
           <p className="text-xs text-[#4A5568]">Last updated: {lastUpdated.toLocaleTimeString()} · Auto-refreshes every 30s</p>
         )}
 
+        {/* Maintenance toggle */}
+        <div className={`rounded-2xl p-5 border-2 flex items-center justify-between gap-4 flex-wrap ${
+          s.maintenanceMode ? 'bg-red-500/10 border-red-500/40' : 'bg-surface-elevated border-white/5'
+        }`}>
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${s.maintenanceMode ? 'bg-red-500/20' : 'bg-white/5'}`}>
+              <Wrench size={18} className={s.maintenanceMode ? 'text-red-400' : 'text-[#8B97B5]'} />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-white">Maintenance Mode</p>
+              <p className="text-xs text-[#8B97B5]">{s.maintenanceMode ? 'Students see the maintenance screen right now' : 'App is live for all students'}</p>
+            </div>
+          </div>
+          <button onClick={toggleMaintenance}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition shrink-0 ${
+              s.maintenanceMode ? 'bg-white text-red-500 hover:bg-gray-100' : 'bg-red-500 text-white hover:bg-red-600'
+            }`}>
+            {s.maintenanceMode ? 'Turn Off' : 'Turn On'}
+          </button>
+        </div>
+
         {/* Revenue */}
         <div className="bg-surface-elevated border border-white/5 rounded-2xl p-5">
           <div className="flex items-center gap-2 mb-5">
@@ -188,7 +247,7 @@ export default function AdminDashboard() {
               <p className="text-brand-green font-bold text-sm">{formatKsh(s.revenue.total)}</p>
             </div>
             <div className="bg-surface-base rounded-xl p-3">
-              <p className="text-[10px] text-[#8B97B5] mb-1">User money in escrow</p>
+              <p className="text-[10px] text-[#8B97B5] mb-1">Unconfirmed (STK sent)</p>
               <p className="text-warning font-bold text-sm">{formatKsh(s.revenue.escrow)}</p>
             </div>
           </div>
@@ -231,7 +290,6 @@ export default function AdminDashboard() {
             {apiCostCircles.map((c, i) => <CircleStat key={i} {...c} />)}
           </div>
 
-          {/* KSh equivalents */}
           <div className="grid grid-cols-3 gap-2 mb-4">
             {[
               { label: 'Total in KSh', value: formatKsh(s.apiCosts.totalKSH) },
@@ -245,7 +303,6 @@ export default function AdminDashboard() {
             ))}
           </div>
 
-          {/* Feature breakdown */}
           {Object.keys(s.apiCosts.featureCosts).length > 0 && (
             <div className="border-t border-white/5 pt-4 space-y-2">
               <p className="text-[10px] text-[#8B97B5] font-semibold uppercase tracking-wide">Cost by Feature</p>
@@ -269,6 +326,29 @@ export default function AdminDashboard() {
               💡 Profit check: Revenue today {formatKsh(s.revenue.today)} vs AI cost today {formatKsh(s.apiCosts.todayKSH)} = net {formatKsh(s.revenue.today - s.apiCosts.todayKSH)}
             </p>
           </div>
+        </div>
+
+        {/* Security */}
+        <div className="bg-surface-elevated border border-white/5 rounded-2xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <ShieldAlert size={15} className="text-orange-400" />
+            <p className="text-sm font-semibold text-white">Security — Rate Limit Trips</p>
+          </div>
+          {s.securityEvents.length === 0 ? (
+            <p className="text-xs text-[#8B97B5] py-4 text-center">No unusual activity detected. Rate limiter is watching all AI endpoints.</p>
+          ) : (
+            <div className="space-y-2">
+              {s.securityEvents.map(ev => (
+                <div key={ev.id} className="bg-orange-500/10 border border-orange-500/20 rounded-xl p-3">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="text-[10px] font-mono text-orange-300">User: {ev.user_id.slice(0, 12)}…</span>
+                    <span className="text-[10px] text-[#8B97B5]">{timeAgo(ev.created_at)}</span>
+                  </div>
+                  <p className="text-xs text-orange-200">{ev.detail}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Pending payments */}
