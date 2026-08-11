@@ -18,7 +18,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   try {
-    const { adminUserId } = req.body
+    const { adminUserId, action, enabled } = req.body
     if (!adminUserId) return res.status(401).json({ error: 'Unauthorized' })
 
     const adminCheck = await supaFetch(`users?auth_id=eq.${adminUserId}&is_admin=eq.true&select=auth_id`)
@@ -27,13 +27,21 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: 'Forbidden' })
     }
 
+    // ── Maintenance mode toggle ──────────────────────────────────────────
+    if (action === 'toggle_maintenance') {
+      await supaFetch('system_settings?key=eq.maintenance_mode', {
+        method: 'PATCH',
+        body: JSON.stringify({ value: enabled ? 'true' : 'false', updated_at: new Date().toISOString() }),
+      })
+      return res.status(200).json({ success: true, maintenanceMode: !!enabled })
+    }
+
     const now = new Date()
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
     const startOfHour = new Date(now.getTime() - 60 * 60 * 1000).toISOString()
     const startOfWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
-    // Real auth user count
     const authUsersRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users?per_page=1000`, {
       headers: { Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, apikey: SUPABASE_SERVICE_KEY },
     })
@@ -42,12 +50,13 @@ export default async function handler(req, res) {
     const realUsers = authUsers.filter(u => u.email !== 'franklinemose19@gmail.com')
     const totalRealUsers = realUsers.length
 
-    const [completedRes, allRes, recentRes, usersRes, tokenRes] = await Promise.all([
+    const [completedRes, allRes, recentRes, usersRes, tokenRes, settingsRes] = await Promise.all([
       supaFetch(`payments?status=eq.completed&select=amount,created_at`),
       supaFetch(`payments?select=amount,status`),
       supaFetch(`payments?select=transaction_id,phone_number,amount,plan_name,status,created_at&order=created_at.desc&limit=25`),
       supaFetch(`users?select=current_plan,is_admin`),
       supaFetch(`token_usage?select=estimated_cost_usd,total_tokens,feature,created_at`),
+      supaFetch(`system_settings?key=eq.maintenance_mode&select=value`),
     ])
 
     const completed = await completedRes.json()
@@ -55,12 +64,12 @@ export default async function handler(req, res) {
     const recent = await recentRes.json()
     const users = await usersRes.json()
     const tokenData = await tokenRes.json()
+    const settingsData = await settingsRes.json()
 
     const safeCompleted = Array.isArray(completed) ? completed : []
     const safeAll = Array.isArray(all) ? all : []
     const safeTokens = Array.isArray(tokenData) ? tokenData : []
 
-    // Plan counts
     const planCounts = { explorer: 0, achiever: 0, excellence: 0, valedictorian: 0 }
     if (Array.isArray(users)) {
       users.filter(u => !u.is_admin).forEach(u => {
@@ -69,13 +78,11 @@ export default async function handler(req, res) {
       })
     }
 
-    // Token usage aggregates
     const totalCostUSD = safeTokens.reduce((s, t) => s + parseFloat(t.estimated_cost_usd || 0), 0)
     const monthlyCostUSD = safeTokens.filter(t => t.created_at >= startOfMonth).reduce((s, t) => s + parseFloat(t.estimated_cost_usd || 0), 0)
     const todayCostUSD = safeTokens.filter(t => t.created_at >= startOfToday).reduce((s, t) => s + parseFloat(t.estimated_cost_usd || 0), 0)
     const totalTokens = safeTokens.reduce((s, t) => s + (t.total_tokens || 0), 0)
 
-    // Feature breakdown
     const featureCosts = {}
     safeTokens.forEach(t => {
       if (!featureCosts[t.feature]) featureCosts[t.feature] = 0
@@ -87,6 +94,7 @@ export default async function handler(req, res) {
     const newThisHour = realUsers.filter(u => u.created_at >= startOfHour).length
 
     return res.status(200).json({
+      maintenanceMode: settingsData?.[0]?.value === 'true',
       revenue: {
         total: safeCompleted.reduce((s, p) => s + (p.amount || 0), 0),
         monthly: safeCompleted.filter(p => p.created_at >= startOfMonth).reduce((s, p) => s + (p.amount || 0), 0),
@@ -97,10 +105,7 @@ export default async function handler(req, res) {
         pendingCount: safeAll.filter(p => p.status === 'processing' || p.status === 'pending').length,
         recentPayments: Array.isArray(recent) ? recent : [],
       },
-      users: {
-        total: totalRealUsers, planCounts,
-        newToday, newThisWeek, newThisHour,
-      },
+      users: { total: totalRealUsers, planCounts, newToday, newThisWeek, newThisHour },
       apiCosts: {
         totalUSD: parseFloat(totalCostUSD.toFixed(4)),
         totalKSH: Math.round(totalCostUSD * KSH_PER_USD),
@@ -109,11 +114,7 @@ export default async function handler(req, res) {
         todayUSD: parseFloat(todayCostUSD.toFixed(4)),
         todayKSH: Math.round(todayCostUSD * KSH_PER_USD),
         totalTokens,
-        featureCosts: Object.fromEntries(
-          Object.entries(featureCosts)
-            .sort(([, a], [, b]) => b - a)
-            .map(([k, v]) => [k, parseFloat(v.toFixed(4))])
-        ),
+        featureCosts: Object.fromEntries(Object.entries(featureCosts).sort(([, a], [, b]) => b - a).map(([k, v]) => [k, parseFloat(v.toFixed(4))])),
       },
     })
   } catch (error) {
