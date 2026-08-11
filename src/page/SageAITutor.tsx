@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Brain, ArrowLeft, Menu, Plus, ArrowUp, BookOpen, ChevronDown, ChevronUp, CheckCircle, X, Code2 } from 'lucide-react'
+import { Brain, ArrowLeft, Menu, Plus, ArrowUp, BookOpen, ChevronDown, ChevronUp, CheckCircle, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useAuth } from '../lib/AuthContext'
@@ -74,7 +74,6 @@ export default function SageAITutor() {
   const [composerImage, setComposerImage] = useState<string | null>(null)
   const [composerPdf, setComposerPdf] = useState<string | null>(null)
   const [composerPdfName, setComposerPdfName] = useState('')
-  const [chatModeOverride, setChatModeOverride] = useState<'developer' | null>(null)
   const [sending, setSending] = useState(false)
 
   useEffect(() => {
@@ -102,7 +101,6 @@ export default function SageAITutor() {
     setLecturePacket(getLecturePacket(selectedLectureId))
   }, [selectedLectureId])
 
-  useEffect(() => { textareaRef.current?.scrollIntoView }, [])
   useEffect(() => { threadEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [thread, sending])
   useEffect(() => {
     const el = textareaRef.current
@@ -127,7 +125,6 @@ export default function SageAITutor() {
     return res.json()
   }
 
-  // Runs a gated generation call: cache-hit skips credit entirely; a cache-miss checks credit BEFORE calling OpenAI
   const runGatedGeneration = async <T,>(opts: { cacheKind?: string; cacheContent?: string; apiCall: () => Promise<T> }): Promise<{ data: T | null; blocked: boolean }> => {
     if (opts.cacheKind && opts.cacheContent) {
       const cached = sageCache.get(opts.cacheKind, opts.cacheContent)
@@ -149,7 +146,6 @@ export default function SageAITutor() {
   const handleSelectConversation = async (id: number) => {
     if (id === activeConversationId) return
     setThreadLoading(true)
-    setChatModeOverride(null)
     try {
       const rows = await loadMessages(id)
       const items: ThreadItem[] = rows.map(r => ({
@@ -171,7 +167,6 @@ export default function SageAITutor() {
   const handleNewChat = () => {
     setThread([])
     setActiveConversationId(null)
-    setChatModeOverride(null)
     setComposerText('')
     setComposerImage(null)
     setComposerPdf(null)
@@ -306,7 +301,7 @@ export default function SageAITutor() {
           chatMessages: [...history, { role: 'user', content: text }],
           documentContext: buildLecturePromptContext(lecturePacket),
           studentContext: studentCtx,
-          chatMode: chatModeOverride === 'developer' ? 'developer' : 'general',
+          chatMode: 'general',
           subjectStructure: getSubjectStructure(lecturePacket?.course || text),
         })
         assistantKind = 'text'
@@ -361,11 +356,6 @@ export default function SageAITutor() {
     if (tool === 'camera') { cameraInputRef.current?.click(); return }
     if (tool === 'image') { imageInputRef.current?.click(); return }
     if (tool === 'file') { pdfInputRef.current?.click(); return }
-    if (tool === 'developer') {
-      setChatModeOverride('developer')
-      textareaRef.current?.focus()
-      return
-    }
     const labels: Record<string, string> = {
       deepnotes: '📓 Deep Notes',
       flashcards: '🗂️ Flashcards',
@@ -507,15 +497,6 @@ export default function SageAITutor() {
             </button>
           ) : (
             <>
-              {chatModeOverride === 'developer' && (
-                <div className="flex items-center gap-1.5 mb-2">
-                  <span className="flex items-center gap-1 bg-orange-500/15 text-orange-300 text-[10px] font-semibold px-2.5 py-1 rounded-full">
-                    <Code2 size={10} /> Developer Mode
-                    <button onClick={() => setChatModeOverride(null)} className="ml-1 hover:text-white"><X size={10} /></button>
-                  </span>
-                </div>
-              )}
-
               {(composerImage || composerPdf) && (
                 <div className="flex items-center gap-2 mb-2">
                   {composerImage && (
@@ -543,7 +524,7 @@ export default function SageAITutor() {
                   value={composerText}
                   onChange={e => setComposerText(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleComposerSend() } }}
-                  placeholder={chatModeOverride === 'developer' ? 'Ask a coding or debugging question...' : 'Ask SAGE anything...'}
+                  placeholder="Ask SAGE anything..."
                   disabled={sending}
                   rows={1}
                   style={{ maxHeight: 120, overflowY: 'auto' }}
