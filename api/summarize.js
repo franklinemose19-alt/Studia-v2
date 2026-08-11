@@ -1,5 +1,6 @@
 import { fetchWithRetry } from './_utils/openaiRetry.js'
 import { logTokenUsage } from './_utils/tokenLogger.js'
+import { checkRateLimit } from './_utils/rateLimiter.js'
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
@@ -9,6 +10,16 @@ export default async function handler(req, res) {
 
     const apiKey = process.env.OPENAI_API_KEY
     if (!apiKey) return res.status(500).json({ error: 'API key not configured' })
+
+    const rateCheck = await checkRateLimit(userId, 'summarize')
+    if (!rateCheck.allowed) {
+      return res.status(429).json({
+        error: rateCheck.reason === 'missing_user_id'
+          ? 'Authentication required'
+          : `Too many requests — please wait ${Math.ceil(rateCheck.retryAfterSeconds / 60)} minute(s) and try again.`,
+        retryAfterSeconds: rateCheck.retryAfterSeconds,
+      })
+    }
 
     const messages = image
       ? [{
