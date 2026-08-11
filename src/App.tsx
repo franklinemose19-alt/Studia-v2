@@ -4,6 +4,7 @@ import ProtectedRoute from './lib/ProtectedRoute'
 import AdminRoute from './lib/AdminRoute'
 import { AuthProvider } from './lib/AuthContext'
 import BottomNav from './components/BottomNav'
+import MaintenanceGate from './components/MaintenanceGate'
 
 const Landing = lazy(() => import('./page/Landing'))
 const Login = lazy(() => import('./page/Login'))
@@ -40,35 +41,33 @@ export default function App() {
   return (
     <AuthProvider>
       <Router>
-        <Suspense fallback={<PageLoader />}>
-          <Routes>
-            <Route path="/" element={<Landing />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<Signup />} />
-            <Route path="/pricing" element={<Pricing />} />
-
-            {/* Redirects */}
-            <Route path="/summarize" element={<Navigate to="/notes?tab=summarize" replace />} />
-            <Route path="/ai-tools" element={<Navigate to="/sage" replace />} />
-
-            <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
-            <Route path="/checkout" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
-            <Route path="/sage" element={<ProtectedRoute><SageAITutor /></ProtectedRoute>} />
-            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/recording" element={<ProtectedRoute><Recording /></ProtectedRoute>} />
-            <Route path="/quiz" element={<ProtectedRoute><Quiz /></ProtectedRoute>} />
-            <Route path="/notes" element={<ProtectedRoute><NotesLibrary /></ProtectedRoute>} />
-            <Route path="/exam-countdown" element={<ProtectedRoute><ExamCountdown /></ProtectedRoute>} />
-            <Route path="/study-planner" element={<ProtectedRoute><StudyPlanner /></ProtectedRoute>} />
-            <Route path="/adaptive-learning" element={<ProtectedRoute><AdaptiveLearning /></ProtectedRoute>} />
-            <Route path="/offline-vault" element={<ProtectedRoute><OfflineVault /></ProtectedRoute>} />
-            <Route path="/units" element={<ProtectedRoute><UnitManagement /></ProtectedRoute>} />
-            <Route path="/unit-management" element={<ProtectedRoute><UnitManagement /></ProtectedRoute>} />
-            <Route path="/payments" element={<ProtectedRoute><PaymentDashboard /></ProtectedRoute>} />
-
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </Suspense>
+        <MaintenanceGate>
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              <Route path="/" element={<Landing />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/signup" element={<Signup />} />
+              <Route path="/pricing" element={<Pricing />} />
+              <Route path="/summarize" element={<Navigate to="/notes?tab=summarize" replace />} />
+              <Route path="/ai-tools" element={<Navigate to="/sage" replace />} />
+              <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+              <Route path="/checkout" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
+              <Route path="/sage" element={<ProtectedRoute><SageAITutor /></ProtectedRoute>} />
+              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="/recording" element={<ProtectedRoute><Recording /></ProtectedRoute>} />
+              <Route path="/quiz" element={<ProtectedRoute><Quiz /></ProtectedRoute>} />
+              <Route path="/notes" element={<ProtectedRoute><NotesLibrary /></ProtectedRoute>} />
+              <Route path="/exam-countdown" element={<ProtectedRoute><ExamCountdown /></ProtectedRoute>} />
+              <Route path="/study-planner" element={<ProtectedRoute><StudyPlanner /></ProtectedRoute>} />
+              <Route path="/adaptive-learning" element={<ProtectedRoute><AdaptiveLearning /></ProtectedRoute>} />
+              <Route path="/offline-vault" element={<ProtectedRoute><OfflineVault /></ProtectedRoute>} />
+              <Route path="/units" element={<ProtectedRoute><UnitManagement /></ProtectedRoute>} />
+              <Route path="/unit-management" element={<ProtectedRoute><UnitManagement /></ProtectedRoute>} />
+              <Route path="/payments" element={<ProtectedRoute><PaymentDashboard /></ProtectedRoute>} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Suspense>
+        </MaintenanceGate>
         <BottomNav />
       </Router>
     </AuthProvider>
