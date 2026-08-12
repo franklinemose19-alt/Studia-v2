@@ -1,13 +1,29 @@
 import { useState } from 'react'
+import { saveQuizResult } from '../../lib/quizHistory'
 
-interface Q { id: string; question: string; options: string[]; correct: number; explanation: string; difficulty: string }
+interface Q { id: string; question: string; options: string[]; correct: number; explanation: string; difficulty: string; topic?: string }
 interface Exam { examTitle: string; questions: Q[]; totalMarks: number }
 
-export default function MockExamInline({ exam }: { exam: Exam }) {
+export default function MockExamInline({ exam, subject }: { exam: Exam; subject?: string }) {
   const [answers, setAnswers] = useState<Record<string, number>>({})
   const [submitted, setSubmitted] = useState(false)
   if (!exam?.questions?.length) return null
   const score = exam.questions.filter(q => answers[q.id] === q.correct).length
+
+  const handleSubmit = () => {
+    setSubmitted(true)
+    const questionOutcomes = exam.questions.map(q => ({
+      topic: q.topic || 'General',
+      correct: answers[q.id] === q.correct,
+    }))
+    saveQuizResult({
+      subject: subject || 'General',
+      score,
+      total: exam.questions.length,
+      source: 'sage_mock_exam',
+      questions: questionOutcomes,
+    })
+  }
 
   return (
     <div className="my-2 bg-surface-base rounded-xl border border-white/10 p-4 space-y-3">
@@ -38,7 +54,7 @@ export default function MockExamInline({ exam }: { exam: Exam }) {
         </div>
       ))}
       {!submitted && (
-        <button onClick={() => setSubmitted(true)} disabled={Object.keys(answers).length < exam.questions.length}
+        <button onClick={handleSubmit} disabled={Object.keys(answers).length < exam.questions.length}
           className="w-full bg-brand-blue text-white py-2 rounded-lg text-xs font-semibold disabled:opacity-40">
           Submit ({Object.keys(answers).length}/{exam.questions.length} answered)
         </button>
