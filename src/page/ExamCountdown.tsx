@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, Trash2, Plus, Calendar, Upload, Loader, CheckCircle2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../lib/AuthContext'
+import { toast } from '../lib/toast'
 
 interface Exam {
   id: string
@@ -21,6 +23,7 @@ interface SavedCourse {
 
 export default function ExamCountdown() {
   const navigate = useNavigate()
+  const { userId } = useAuth()
   const [exams, setExams] = useState<Exam[]>([])
   const [courseName, setCourseName] = useState('')
   const [examDate, setExamDate] = useState('')
@@ -52,7 +55,7 @@ export default function ExamCountdown() {
 
   const addExam = () => {
     if (!courseName.trim() || !examDate) {
-      alert('Please fill in all fields')
+      toast.error('Please fill in all fields')
       return
     }
     const newExam: Exam = { id: `exam-${Date.now()}`, course: courseName, date: examDate, daysLeft: 0 }
@@ -65,23 +68,21 @@ export default function ExamCountdown() {
 
   // ── PDF upload + auto-match ──────────────────────────────────────────
 
+  // Reads the actual shape UnitManagement.tsx saves: Course[] with nested
+  // units[].name — not a flat {course, unitName} list. The old key/shape
+  // here never matched, so course-matching silently never worked.
   const getSavedCourses = (): SavedCourse[] => {
-  try {
-    const units = JSON.parse(localStorage.getItem('units') || '[]')
-    const grouped: { [key: string]: Set<string> } = {}
-    units.forEach((u: any) => {
-      if (!grouped[u.course]) grouped[u.course] = new Set()
-      grouped[u.course].add(u.unitName)
-    })
-    return Object.entries(grouped).map(([name, unitSet], i) => ({
-      id: `course-${i}`,
-      name,
-      units: Array.from(unitSet),
-    }))
-  } catch {
-    return []
+    try {
+      const courses = JSON.parse(localStorage.getItem('studia_courses') || '[]')
+      return courses.map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        units: (c.units || []).map((u: any) => u.name).filter(Boolean),
+      }))
+    } catch {
+      return []
+    }
   }
-}
 
   const matchesSavedCourses = (exam: any, courses: SavedCourse[]) => {
     if (!courses.length) return true
@@ -99,7 +100,7 @@ export default function ExamCountdown() {
     const file = e.target.files?.[0]
     if (!file) return
     if (file.type !== 'application/pdf') {
-      alert('Please upload a PDF file.')
+      toast.error('Please upload a PDF file.')
       return
     }
 
@@ -118,13 +119,13 @@ export default function ExamCountdown() {
         const response = await fetch('/api/parse-timetable', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pdfBase64: base64, courses }),
+          body: JSON.stringify({ pdfBase64: base64, courses, userId }),
         })
 
         const data = await response.json()
 
         if (!response.ok || !data.exams) {
-          setParseStatus('⚠️ Could not read exams from this PDF.')
+          setParseStatus(data.error ? `⚠️ ${data.error}` : '⚠️ Could not read exams from this PDF.')
           setIsParsing(false)
           return
         }
