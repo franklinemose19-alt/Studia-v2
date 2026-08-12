@@ -464,7 +464,7 @@ export default function SageAITutor() {
                   {item.image && <img src={item.image} alt="Attached" className="rounded-lg mb-2 max-h-40 object-cover" />}
                   {item.kind === 'text' && item.content && <ChatMessage content={item.content} />}
                   {item.kind === 'flashcards' && <FlashcardInline cards={item.data} />}
-                  {item.kind === 'mockexam' && <MockExamInline exam={item.data} />}
+                  {item.kind === 'mockexam' && <MockExamInline exam={item.data} subject={lecturePacket?.course} />}
                   {item.kind === 'deepnotes' && <DeepNotesInline notes={item.data} />}
                   {item.kind === 'knowledgegap' && <GapReportInline data={item.data} />}
                   {item.kind === 'coach' && <CoachCardInline data={item.data} />}
