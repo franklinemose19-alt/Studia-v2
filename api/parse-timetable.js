@@ -1,23 +1,35 @@
 import pdfParse from 'pdf-parse'
+import { logTokenUsage } from './_utils/tokenLogger.js'
+import { checkRateLimit } from './_utils/rateLimiter.js'
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
   try {
-    const { pdfBase64, courses } = req.body
+    const { pdfBase64, courses, userId } = req.body
     if (!pdfBase64) {
       return res.status(400).json({ error: 'No PDF provided' })
     }
-
-    const buffer = Buffer.from(pdfBase64, 'base64')
-    const pdfData = await pdfParse(buffer)
-    const text = pdfData.text
 
     const apiKey = process.env.OPENAI_API_KEY
     if (!apiKey) {
       return res.status(500).json({ error: 'API key not configured' })
     }
+
+    const rateCheck = await checkRateLimit(userId, 'parse-timetable')
+    if (!rateCheck.allowed) {
+      return res.status(429).json({
+        error: rateCheck.reason === 'missing_user_id'
+          ? 'Authentication required'
+          : `Too many requests — please wait ${Math.ceil(rateCheck.retryAfterSeconds / 60)} minute(s) and try again.`,
+        retryAfterSeconds: rateCheck.retryAfterSeconds,
+      })
+    }
+
+    const buffer = Buffer.from(pdfBase64, 'base64')
+    const pdfData = await pdfParse(buffer)
+    const text = pdfData.text
 
     const coursesContext = courses && courses.length > 0
       ? courses.map(c => `${c.name}${c.units?.length ? ' (' + c.units.join(', ') + ')' : ''}`).join('; ')
@@ -30,7 +42,7 @@ export default async function handler(req, res) {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'gpt-5-mini',
         messages: [
           {
             role: 'system',
@@ -42,10 +54,8 @@ If you find no exams, return [].`,
           {
             role: 'user',
             content: `Student's enrolled courses/units: ${coursesContext}
-
 Timetable text:
 """${text.slice(0, 8000)}"""
-
 Extract all exams found. If the student's courses are specified, still include all exams found in the document.`,
           },
         ],
@@ -58,6 +68,8 @@ Extract all exams found. If the student's courses are specified, still include a
       console.error('OpenAI Error:', data)
       return res.status(response.status).json({ error: data.error?.message || 'Failed to parse timetable' })
     }
+
+    logTokenUsage(userId, 'parse_timetable', 'gpt-5-mini', data.usage)
 
     const content = data.choices?.[0]?.message?.content || ''
     try {
