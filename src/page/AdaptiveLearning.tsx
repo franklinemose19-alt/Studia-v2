@@ -9,7 +9,7 @@ interface QuizResult {
   score: number
   total: number
   date: string
-  questions: { topic: string; correct: boolean }[]
+  questions?: { topic: string; correct: boolean }[]
 }
 
 interface WeakTopic {
@@ -35,8 +35,9 @@ export default function AdaptiveLearning() {
     setQuizResults(results)
 
     const topicStats: { [key: string]: { correct: number; total: number; lastAttempt: string } } = {}
-    results.forEach((result) => {
-      result.questions.forEach((q) => {
+  results.forEach((result) => {
+      const questionList = result.questions || []
+      questionList.forEach((q) => {
         if (!topicStats[q.topic]) {
           topicStats[q.topic] = { correct: 0, total: 0, lastAttempt: result.date }
         }
@@ -217,8 +218,8 @@ export default function AdaptiveLearning() {
               <div>
                 <h2 className="font-sora font-bold text-2xl text-navy mb-6">Quiz History</h2>
                 <div className="space-y-3">
-                  {sortedHistory.map((result, i) => (
-                    <motion.div key={result.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
+                 {sortedHistory.map((result, i) => (
+                    <motion.div key={result.id || i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
                       className="bg-white rounded-xl p-4 border border-gray-200 hover:border-indigo-premium/50 transition">
                       <div className="flex items-center justify-between">
                         <div>
