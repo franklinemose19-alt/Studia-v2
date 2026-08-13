@@ -1,21 +1,19 @@
-export type SageIntent =
-  | 'chat' | 'flashcards' | 'mockexam' | 'deepnotes' | 'knowledgegap' | 'coach' | 'snapsolve' | 'pastpapers'
+export type SageIntent = 'chat' | 'flashcards' | 'mockexam' | 'deepnotes' | 'knowledgegap' | 'coach' | 'snapsolve' | 'pastpapers' | 'knowledge_recall'
 
 export function detectIntent(text: string, hasImage: boolean): SageIntent {
   if (hasImage) return 'snapsolve'
   const t = (text || '').toLowerCase()
 
+  if (/\b(remind me|everything i('ve| have) learned|what (do|did) i know about|recall)\b.*\babout\b/.test(t)) return 'knowledge_recall'
   if (/\bflash ?cards?\b/.test(t)) return 'flashcards'
   if (/\b(quiz me|test me|mock exam|give me (a |an )?(quiz|test|exam)|practice questions)\b/.test(t)) return 'mockexam'
   if (/\b(deep notes|go deeper|explain (this |everything |in depth|in detail)|expand (this|these) notes|more detail)\b/.test(t)) return 'deepnotes'
   if (/\b(what am i missing|knowledge gap|gaps? in my|am i (exam )?ready|weak (topics?|areas?)|coverage|missing concepts?)\b/.test(t)) return 'knowledgegap'
   if (/\b(how am i doing|study plan|what should i (revise|study)|recommend|my progress|study coach|coach me)\b/.test(t)) return 'coach'
-
   return 'chat'
 }
 
 interface SubjectTemplate { match: RegExp; structure: string }
-
 const SUBJECT_TEMPLATES: SubjectTemplate[] = [
   { match: /math|calculus|algebra|geometry|statistics/i, structure: 'Given → Formula → Working → Answer → Verification' },
   { match: /physic/i, structure: 'Given → Formula → Substitution → Units → Answer' },
@@ -26,7 +24,6 @@ const SUBJECT_TEMPLATES: SubjectTemplate[] = [
   { match: /\blaw\b|legal/i, structure: 'Concept → Applicable legal framework → Explanation' },
   { match: /medic|nursing|health/i, structure: 'Educational explanation with clear safety boundaries — this is a study aid, not clinical guidance' },
 ]
-
 export function getSubjectStructure(subjectOrText?: string): string | null {
   if (!subjectOrText) return null
   const found = SUBJECT_TEMPLATES.find(t => t.match.test(subjectOrText))
