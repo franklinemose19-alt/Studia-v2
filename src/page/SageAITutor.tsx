@@ -25,7 +25,8 @@ import CoachCardInline from '../components/sage/CoachCardInline'
 import SnapSolveInline from '../components/sage/SnapSolveInline'
 import PastPapersInline from '../components/sage/PastPapersInline'
 import KnowledgeRecallInline from '../components/sage/KnowledgeRecallInline'
-type ThreadKind = 'text' | 'flashcards' | 'mockexam' | 'deepnotes' | 'knowledgegap' | 'coach' | 'snapsolve' | 'pastpapers'
+
+type ThreadKind = 'text' | 'flashcards' | 'mockexam' | 'deepnotes' | 'knowledgegap' | 'coach' | 'snapsolve' | 'pastpapers' | 'knowledge_recall'
 interface ThreadItem { id: string; role: 'user' | 'assistant'; kind: ThreadKind; content?: string; image?: string; data?: any }
 
 const SUGGESTIONS = ['Explain the key concepts', 'Quiz me on this', 'Make flashcards', 'What am I missing?', 'How am I doing?']
@@ -39,6 +40,7 @@ function summarizeForStorage(kind: ThreadKind, data: any): string {
     case 'coach': return data?.message || 'Study coach check-in'
     case 'snapsolve': return `Answered: ${data?.question || 'a question'}`
     case 'pastpapers': return `Analyzed past paper: ${data?.paper_title || 'document'}`
+    case 'knowledge_recall': return data?.found ? `Recalled: ${data.conceptName}` : 'Knowledge recall — nothing found yet'
     default: return ''
   }
 }
@@ -234,7 +236,12 @@ export default function SageAITutor() {
       let assistantContent = ''
       let assistantData: any = null
 
-      if (intent === 'snapsolve') {
+      if (intent === 'knowledge_recall') {
+        const data = await callSage({ mode: 'knowledge_recall', query: text })
+        assistantKind = 'knowledge_recall'
+        assistantData = data
+
+      } else if (intent === 'snapsolve') {
         const { data, blocked } = await runGatedGeneration({ apiCall: async () => (await callSage({ mode: 'snapsolve', image: opts.image, text, documentContext: buildLecturePromptContext(lecturePacket) })).result })
         if (blocked) assistantContent = "You're out of AI credits right now — tap Upgrade to keep going."
         else { assistantKind = 'snapsolve'; assistantData = data }
@@ -463,13 +470,14 @@ export default function SageAITutor() {
                 <div className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm break-words ${item.role === 'user' ? 'bg-brand-blue text-white rounded-br-sm' : 'bg-surface-elevated border border-white/5 text-[#C5CCDE] rounded-bl-sm'}`}>
                   {item.image && <img src={item.image} alt="Attached" className="rounded-lg mb-2 max-h-40 object-cover" />}
                   {item.kind === 'text' && item.content && <ChatMessage content={item.content} />}
-                  {item.kind === 'flashcards' && <FlashcardInline cards={item.data} />}
-                  {item.kind === 'mockexam' && <MockExamInline exam={item.data} subject={lecturePacket?.course} />}
+                  {item.kind === 'flashcards' && <FlashcardInline cards={item.data} userId={userId} />}
+                  {item.kind === 'mockexam' && <MockExamInline exam={item.data} subject={lecturePacket?.course} userId={userId} />}
                   {item.kind === 'deepnotes' && <DeepNotesInline notes={item.data} />}
                   {item.kind === 'knowledgegap' && <GapReportInline data={item.data} />}
                   {item.kind === 'coach' && <CoachCardInline data={item.data} />}
                   {item.kind === 'snapsolve' && <SnapSolveInline result={item.data} />}
                   {item.kind === 'pastpapers' && <PastPapersInline result={item.data} />}
+                  {item.kind === 'knowledge_recall' && <KnowledgeRecallInline result={item.data} />}
                 </div>
               </div>
             ))
