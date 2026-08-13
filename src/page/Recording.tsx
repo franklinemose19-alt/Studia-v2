@@ -1,14 +1,23 @@
-import StudyChat from '../components/StudyChat'
-import { buildStudentContext, formatContextForAI } from '../lib/studentContext'
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, Square, Play, Pause, Trash2, Download, ArrowLeft, Loader, FileText, BookOpen, Phone, Lock } from 'lucide-react'
+import { Mic, Square, Play, Pause, Trash2, Download, ArrowLeft, Loader, FileText, BookOpen, Phone, Lock, Brain } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getSupabase } from '../lib/supabaseClient'
 import { useAuth } from '../lib/AuthContext'
-import { loadAccess, checkAccess, consumeCredit, grantLiteBonusCredit, freeCreditsRemaining, isUnlimitedPlan, type AccessInfo, emptyAccess } from '../lib/access'
+import { loadAccess, checkAccess, consumeCredit, explorerLecturesRemaining, isUnlimitedPlan, type AccessInfo, emptyAccess } from '../lib/access'
 import SmartInkNotes from '../components/SmartInkNotes'
 import { getTierFromPlan, type SmartInkNote } from '../lib/smartInk'
+import { toast } from '../lib/toast'
+import TimestampedScript from '../components/TimestampedScript'
+import LanguageViewSwitcher from '../components/LanguageViewSwitcher'
+
+interface ScriptEntry {
+  timestamp: number
+  heading: string
+  definition?: string
+  explanation: string
+  keyTerm?: string
+}
 
 interface Recording {
   id: string
@@ -22,19 +31,14 @@ interface Recording {
   transcript?: string
   notes?: string
   structuredNotes?: SmartInkNote
+  structuredScript?: ScriptEntry[]
+  detectedLanguages?: string[]
   isProcessing?: boolean
 }
 
-interface Unit {
-  id: string
-  course: string
-  unitName: string
-  topics: string[]
-  totalLectures: number
-  lecturesCovered: number
-  coverage: number
-  createdDate: string
-}
+interface Unit { id: string; name: string; topics: string[] }
+interface Course { id: string; name: string; code?: string; units: Unit[]; createdAt: string }
+interface UnitCoverageRecord { lecturesRecorded: number; coveredTopics: string[] }
 
 interface CoverageData {
   covered: number
@@ -70,6 +74,23 @@ const getBlob = async (id: string): Promise<Blob | null> => {
 const deleteBlob = async (id: string) => {
   try { const db = await openDB(); db.transaction('blobs', 'readwrite').objectStore('blobs').delete(id) }
   catch (err) { console.error('Failed to delete blob:', err) }
+}
+
+const loadCourses = (): Course[] => {
+  try { return JSON.parse(localStorage.getItem('studia_courses') || '[]') } catch { return [] }
+}
+
+const loadUnitCoverage = (): Record<string, UnitCoverageRecord> => {
+  try { return JSON.parse(localStorage.getItem('unitCoverage') || '{}') } catch { return {} }
+}
+const saveUnitCoverage = (data: Record<string, UnitCoverageRecord>) => {
+  try { localStorage.setItem('unitCoverage', JSON.stringify(data)) } catch { /* storage full */ }
+}
+
+const topicMatchesConcept = (topic: string, conceptName: string): boolean => {
+  const t = topic.toLowerCase().trim()
+  const c = conceptName.toLowerCase().trim()
+  return t.length > 2 && c.length > 2 && (t.includes(c) || c.includes(t))
 }
 
 const getSupportedMimeType = (): string => {
@@ -110,7 +131,7 @@ export default function RecordingPage() {
   const [playingId, setPlayingId] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
-  const [units, setUnits] = useState<Unit[]>([])
+  const [courses, setCourses] = useState<Course[]>([])
   const [selectedCourse, setSelectedCourse] = useState('')
   const [selectedUnit, setSelectedUnit] = useState('')
 
@@ -138,10 +159,10 @@ export default function RecordingPage() {
   const currentAudioRef = useRef<HTMLAudioElement | null>(null)
   const litePollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const liteCapRef = useRef<number | null>(null)
-  const sessionSourceRef = useRef<'unlimited' | 'free' | 'lite' | null>(null)
+  const sessionSourceRef = useRef<'paid_subscription' | 'achiever_session' | 'explorer_free' | 'bonus' | null>(null)
 
   useEffect(() => {
-    try { setUnits(JSON.parse(localStorage.getItem('units') || '[]')) } catch { setUnits([]) }
+    setCourses(loadCourses())
     try { setRecordings(JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')) } catch { setRecordings([]) }
 
     const init = async () => {
@@ -164,8 +185,9 @@ export default function RecordingPage() {
     try { localStorage.setItem('recordingsMetadata', JSON.stringify(metadata)) } catch { /* storage full */ }
   }, [recordings])
 
-  const courseNames = Array.from(new Set(units.map((u) => u.course))).filter(Boolean)
-  const filteredUnits = units.filter((u) => u.course === selectedCourse)
+  const courseNames = courses.map(c => c.name)
+  const selectedCourseObj = courses.find(c => c.name === selectedCourse)
+  const filteredUnits = selectedCourseObj?.units || []
 
   const visualize = () => {
     if (!analyserRef.current || !canvasRef.current) return
@@ -216,64 +238,123 @@ export default function RecordingPage() {
     }
   }
 
-  const transcribeAudio = async (blob: Blob): Promise<string | null> => {
+  const transcribeAudio = async (blob: Blob): Promise<{ transcript: string | null; segments: any[] }> => {
     try {
       setUploadStatus('🎙️ Transcribing lecture...')
       const base64 = await blobToBase64(blob)
       const response = await fetch('/api/transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audio: base64, mimeType: blob.type }),
+        body: JSON.stringify({ audio: base64, mimeType: blob.type, userId }),
       })
       if (!response.ok) {
         const err = await response.json()
         console.error('Whisper error:', err)
-        return null
+        if (response.status === 429) toast.error(err.error || 'Too many requests — please wait a moment.')
+        return { transcript: null, segments: [] }
       }
       const data = await response.json()
-      return data.text || null
+      return { transcript: data.transcript || null, segments: data.segments || [] }
     } catch (err) {
       console.error('Transcription failed:', err)
-      return null
+      return { transcript: null, segments: [] }
     }
   }
 
   const generateNotes = async (
     transcript: string,
+    segments: any[],
     courseName?: string,
     unitName?: string
-  ): Promise<{ notes: string | null; structuredNotes: SmartInkNote | undefined }> => {
+  ): Promise<{ notes: string | null; structuredNotes: SmartInkNote | undefined; structuredScript: ScriptEntry[]; detectedLanguages: string[] }> => {
     try {
       setUploadStatus('📝 Generating Smart Ink notes...')
       const response = await fetch('/api/generate-lecture-notes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript, courseName, unitName }),
+        body: JSON.stringify({ transcript, segments, courseName, unitName, userId }),
       })
       if (!response.ok) {
         const err = await response.json()
         console.error('GPT error:', err)
-        return { notes: null, structuredNotes: undefined }
+        if (response.status === 429) toast.error(err.error || 'Too many requests — please wait a moment.')
+        return { notes: null, structuredNotes: undefined, structuredScript: [], detectedLanguages: [] }
       }
       const data = await response.json()
       return {
         notes: data.notes || null,
         structuredNotes: data.structured || undefined,
+        structuredScript: data.structuredScript || [],
+        detectedLanguages: data.detectedLanguages || [],
       }
     } catch (err) {
       console.error('Notes generation failed:', err)
-      return { notes: null, structuredNotes: undefined }
+      return { notes: null, structuredNotes: undefined, structuredScript: [], detectedLanguages: [] }
+    }
+  }
+
+  const runKnowledgeMapExtraction = async (
+    notesText: string,
+    courseName: string | undefined,
+    unitId: string | undefined,
+    recordingId: string,
+    recordingLabel: string
+  ) => {
+    if (!userId || !notesText.trim()) return
+    try {
+      const res = await fetch('/api/ai-tools', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'extract_concepts',
+          lectureContent: notesText,
+          subject: courseName,
+          courseName,
+          sourceLabel: recordingLabel,
+          sourceId: recordingId,
+          userId,
+        }),
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      const conceptNames: string[] = (data.concepts || []).map((c: any) => c.name).filter(Boolean)
+
+      if (unitId && conceptNames.length > 0) {
+        const unit = filteredUnits.find(u => u.id === unitId) || courses.flatMap(c => c.units).find(u => u.id === unitId)
+        if (unit && unit.topics.length > 0) {
+          const coverage = loadUnitCoverage()
+          const existing = coverage[unitId] || { lecturesRecorded: 0, coveredTopics: [] }
+          const newlyCovered = unit.topics.filter(topic =>
+            !existing.coveredTopics.includes(topic) && conceptNames.some(name => topicMatchesConcept(topic, name))
+          )
+          const updated: UnitCoverageRecord = {
+            lecturesRecorded: existing.lecturesRecorded + 1,
+            coveredTopics: [...existing.coveredTopics, ...newlyCovered],
+          }
+          coverage[unitId] = updated
+          saveUnitCoverage(coverage)
+          setCoverageData({ covered: updated.coveredTopics.length, total: unit.topics.length, topics: updated.coveredTopics, unitName: unit.name })
+          setShowCoverageResult(true)
+        }
+      }
+
+      if (data.prerequisiteWarnings?.length > 0) {
+        const names = data.prerequisiteWarnings.map((w: any) => w.concept).join(', ')
+        toast.info(`This lecture builds on ${names} — you're still building mastery there. Check your Knowledge Map for a refresher.`)
+      }
+    } catch (err) {
+      console.error('Knowledge map extraction failed (non-critical):', err)
     }
   }
 
   const handleStartClick = () => {
-    if (units.length === 0) {
-      alert('Please add a course and unit first — taking you there now.')
-      navigate('/units?returnTo=recording')
+    if (courses.length === 0) {
+      toast.info('Add a course and unit first — taking you there now.')
+      navigate('/units')
       return
     }
     if (!selectedUnit) {
-      alert('Please select a course and unit before recording.')
+      toast.error('Please select a course and unit before recording.')
       return
     }
     const result = checkAccess(access, 'core')
@@ -293,21 +374,22 @@ export default function RecordingPage() {
     setLiteError('')
     setLitePaying(true)
     try {
-      const amount = tier === '1hr' ? 60 : 110
+      const amount = tier === '1hr' ? 49 : 79
       const res = await fetch('/api/mpesa-stk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           phoneNumber: formatPhone(litePhone),
           amount,
-          planId: `lite-${tier}`,
-          planName: `Lite (${tier === '1hr' ? 'up to 1 hour' : 'up to 2 hours'})`,
+          planId: `achiever-${tier}`,
+          planName: `Achiever (${tier === '1hr' ? 'up to 1 hour' : 'up to 2 hours'})`,
           userId: access.userId,
         }),
       })
       const data = await res.json()
       if (!data.success) {
         setLiteError(data.error || 'Payment failed. Please try again.')
+        toast.error(data.error || 'Payment failed. Please try again.')
         setLitePaying(false)
         return
       }
@@ -332,12 +414,15 @@ export default function RecordingPage() {
           const cap = tier === '1hr' ? 3600 : 7200
           liteCapRef.current = cap
           setLiteDurationCap(cap)
-          sessionSourceRef.current = null
+          sessionSourceRef.current = 'achiever_session'
 
+          // Bonus credit already granted server-side by the M-Pesa webhook —
+          // just re-pull the real access state instead of guessing at it here.
           if (access.userId) {
-            await grantLiteBonusCredit(access.userId, access.liteBonusCredits)
-            setAccess((prev) => ({ ...prev, liteBonusCredits: prev.liteBonusCredits + 1 }))
+            const refreshed = await loadAccess(access.userId)
+            setAccess(refreshed)
           }
+          toast.success('Payment confirmed! Recording unlocked.')
           startRecording()
         } else if (data.status === 'failed') {
           clearInterval(litePollRef.current!)
@@ -396,7 +481,7 @@ export default function RecordingPage() {
       }, 1000)
       visualize()
     } catch {
-      alert('Microphone access denied. Please allow microphone access and try again.')
+      toast.error('Microphone access denied. Please allow microphone access and try again.')
     }
   }
 
@@ -408,7 +493,8 @@ export default function RecordingPage() {
       const now = new Date()
       const id = `rec-${Date.now()}`
       const courseName = selectedCourse || undefined
-      const unitName = selectedUnit ? units.find((u) => u.id === selectedUnit)?.unitName : undefined
+      const unitObj = filteredUnits.find((u) => u.id === selectedUnit)
+      const unitName = unitObj?.name
 
       const recording: Recording = {
         id, name: `Lecture ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`, duration, timestamp: now,
@@ -418,31 +504,14 @@ export default function RecordingPage() {
       await saveBlob(id, blob)
       setRecordings((prev) => [recording, ...prev])
 
-      if (selectedUnit) {
-        const unit = units.find((u) => u.id === selectedUnit)
-        if (unit && unit.topics.length > 0) {
-          const covered = Math.floor(unit.topics.length * (0.6 + Math.random() * 0.2))
-          const detectedTopics = unit.topics.slice(0, covered)
-          const coveragePercent = Math.round((detectedTopics.length / unit.topics.length) * 100)
-          setCoverageData({ covered: detectedTopics.length, total: unit.topics.length, topics: detectedTopics, unitName: unit.unitName })
-          setShowCoverageResult(true)
-          const updatedUnits = units.map((u) =>
-            u.id === selectedUnit
-              ? { ...u, totalLectures: u.totalLectures + 1, lecturesCovered: u.lecturesCovered + detectedTopics.length, coverage: coveragePercent }
-              : u
-          )
-          setUnits(updatedUnits)
-          localStorage.setItem('units', JSON.stringify(updatedUnits))
-        }
-      }
-
       const usedSource = sessionSourceRef.current
-      if (usedSource === 'free' || usedSource === 'lite') {
+      if (usedSource) {
         await consumeCredit(access, usedSource)
         setAccess((prev) => ({
           ...prev,
-          freeCreditsUsed: usedSource === 'free' ? prev.freeCreditsUsed + 1 : prev.freeCreditsUsed,
-          liteBonusCredits: usedSource === 'lite' ? Math.max(0, prev.liteBonusCredits - 1) : prev.liteBonusCredits,
+          freeCreditsUsed: usedSource === 'explorer_free' ? prev.freeCreditsUsed + 1 : prev.freeCreditsUsed,
+          liteBonusCredits: usedSource === 'bonus' ? Math.max(0, prev.liteBonusCredits - 1) : prev.liteBonusCredits,
+          lecturesUsed: usedSource === 'paid_subscription' ? prev.lecturesUsed + 1 : prev.lecturesUsed,
         }))
       }
       sessionSourceRef.current = null
@@ -450,18 +519,22 @@ export default function RecordingPage() {
       setLiteDurationCap(null)
 
       const storageUrl = await uploadToSupabase(blob, id, userId || 'anonymous')
-      const transcript = await transcribeAudio(blob)
-      const { notes, structuredNotes } = transcript
-        ? await generateNotes(transcript, courseName, unitName)
-        : { notes: null, structuredNotes: undefined }
+      const { transcript, segments } = await transcribeAudio(blob)
+      const { notes, structuredNotes, structuredScript, detectedLanguages } = transcript
+        ? await generateNotes(transcript, segments, courseName, unitName)
+        : { notes: null, structuredNotes: undefined, structuredScript: [], detectedLanguages: [] }
 
       setUploadStatus(notes ? '✅ Smart Ink notes ready!' : '⚠️ Could not generate notes')
 
       setRecordings((prev) => prev.map((r) =>
         r.id === id
-          ? { ...r, storageUrl: storageUrl || undefined, transcript: transcript || undefined, notes: notes || undefined, structuredNotes, isProcessing: false }
+          ? { ...r, storageUrl: storageUrl || undefined, transcript: transcript || undefined, notes: notes || undefined, structuredNotes, structuredScript, detectedLanguages, isProcessing: false }
           : r
       ))
+
+      if (notes) {
+        runKnowledgeMapExtraction(notes, courseName, selectedUnit || undefined, id, recording.name)
+      }
 
       clearCanvas()
     }
@@ -477,19 +550,19 @@ export default function RecordingPage() {
     if (currentAudioRef.current) { currentAudioRef.current.pause(); currentAudioRef.current = null }
     if (playingId === recording.id) { setPlayingId(null); return }
     let blob = recording.blob || await getBlob(recording.id)
-    if (!blob) { alert('Recording not found. Please re-record.'); return }
+    if (!blob) { toast.error('Recording not found. Please re-record.'); return }
     const url = URL.createObjectURL(blob)
     const audio = new Audio(url)
     currentAudioRef.current = audio
     audio.play()
     setPlayingId(recording.id)
     audio.onended = () => { setPlayingId(null); URL.revokeObjectURL(url) }
-    audio.onerror = () => { setPlayingId(null); URL.revokeObjectURL(url); alert('Could not play recording.') }
+    audio.onerror = () => { setPlayingId(null); URL.revokeObjectURL(url); toast.error('Could not play recording.') }
   }
 
   const downloadRecording = async (recording: Recording) => {
     const blob = recording.blob || await getBlob(recording.id)
-    if (!blob) { alert('File not found.'); return }
+    if (!blob) { toast.error('File not found on this device.'); return }
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -504,7 +577,7 @@ export default function RecordingPage() {
     if (playingId === id) { currentAudioRef.current?.pause(); setPlayingId(null) }
   }
 
-  const remaining = freeCreditsRemaining(access)
+  const remaining = explorerLecturesRemaining(access)
   const notesTier = getTierFromPlan(access.currentPlan, access.subscriptionStatus)
 
   return (
@@ -531,7 +604,7 @@ export default function RecordingPage() {
             {accessLoaded && (
               <p className="text-sm mt-2">
                 {isUnlimitedPlan(access) ? (
-                  <span className="text-green-400">✨ Unlimited — {access.currentPlan} plan</span>
+                  <span className="text-green-400">✨ {access.currentPlan} plan · Unlimited AI</span>
                 ) : remaining > 0 ? (
                   <span className="text-brand-blue">🎓 {remaining} free AI credit{remaining !== 1 ? 's' : ''} left</span>
                 ) : access.liteBonusCredits > 0 ? (
@@ -551,15 +624,15 @@ export default function RecordingPage() {
                 <div className="grid grid-cols-2 gap-1 text-xs text-gray-400">
                   <p>✓ Echo cancellation</p>
                   <p>✓ Noise suppression</p>
-                  <p>✓ Whisper transcription</p>
+                  <p>✓ Kiswahili + English</p>
                   <p>✓ Smart Ink notes</p>
                 </div>
               </div>
 
-              {units.length === 0 ? (
+              {courses.length === 0 ? (
                 <div className="bg-surface-base rounded-xl p-5 text-center space-y-3">
                   <BookOpen size={32} className="mx-auto text-[#4A5568]" />
-                  <p className="text-sm text-[#8B97B5]">No units yet. You'll need to add a course and unit before recording — just hit "Start Recording" and we'll take you there.</p>
+                  <p className="text-sm text-[#8B97B5]">No courses yet. You'll need to add a course and unit before recording — just hit "Start Recording" and we'll take you there.</p>
                 </div>
               ) : (
                 <>
@@ -575,7 +648,7 @@ export default function RecordingPage() {
                     <label className="block text-sm text-white mb-2">Select Unit <span className="text-[#8B97B5]">(for coverage tracking)</span></label>
                     <select value={selectedUnit} onChange={(e) => setSelectedUnit(e.target.value)} className={selectClass} disabled={!selectedCourse}>
                       <option value="">Choose a unit…</option>
-                      {filteredUnits.map((u) => <option key={u.id} value={u.id}>{u.unitName}</option>)}
+                      {filteredUnits.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
                     </select>
                   </div>
 
@@ -592,7 +665,7 @@ export default function RecordingPage() {
                   <Lock size={32} className="text-brand-blue" />
                   <div>
                     <p className="text-white font-semibold mb-1">Free credits used up</p>
-                    <p className="text-sm text-[#8B97B5]">Pay per lecture, or subscribe for unlimited recordings.</p>
+                    <p className="text-sm text-[#8B97B5]">Pay per lecture, or subscribe for more lectures monthly.</p>
                   </div>
 
                   <div className="w-full space-y-3">
@@ -613,17 +686,17 @@ export default function RecordingPage() {
                     <div className="flex gap-2">
                       <button onClick={() => payForLecture('1hr')} disabled={litePaying}
                         className="flex-1 bg-brand-blue text-white text-sm font-medium py-2.5 rounded-xl hover:bg-brand-blue/90 disabled:opacity-50 flex items-center justify-center gap-2">
-                        {litePaying ? <Loader size={14} className="animate-spin" /> : null} KSh 60 · up to 1hr
+                        {litePaying ? <Loader size={14} className="animate-spin" /> : null} KSh 49 · up to 1hr
                       </button>
                       <button onClick={() => payForLecture('2hr')} disabled={litePaying}
                         className="flex-1 bg-brand-blue text-white text-sm font-medium py-2.5 rounded-xl hover:bg-brand-blue/90 disabled:opacity-50 flex items-center justify-center gap-2">
-                        {litePaying ? <Loader size={14} className="animate-spin" /> : null} KSh 110 · up to 2hr
+                        {litePaying ? <Loader size={14} className="animate-spin" /> : null} KSh 79 · up to 2hr
                       </button>
                     </div>
-                    <p className="text-[10px] text-[#8B97B5]">Includes a bonus AI credit for a quiz, summary, or AI Tools use afterward.</p>
+                    <p className="text-[10px] text-[#8B97B5]">Includes a bonus AI credit for quiz, summarize, or SAGE use afterward.</p>
 
                     <button onClick={() => navigate('/pricing')} className="w-full text-xs text-[#8B97B5] hover:text-white underline pt-1">
-                      Or subscribe for unlimited recordings →
+                      Or subscribe for more lectures monthly →
                     </button>
                   </div>
                 </div>
@@ -663,17 +736,17 @@ export default function RecordingPage() {
                 <div className="flex items-start justify-between mb-6">
                   <div>
                     <h3 className="font-sora font-bold text-2xl text-white mb-1">📊 Unit Coverage Analysis</h3>
-                    <p className="text-[#8B97B5] text-sm">{coverageData.covered} of {coverageData.total} topics covered in {coverageData.unitName}</p>
+                    <p className="text-[#8B97B5] text-sm">{coverageData.covered} of {coverageData.total} topics covered in {coverageData.unitName}, based on your recorded lectures so far.</p>
                   </div>
                   <button onClick={() => setShowCoverageResult(false)} className="text-[#8B97B5] hover:text-white text-xl">✕</button>
                 </div>
                 <div className="flex items-center gap-4 mb-6">
                   <div className="flex-1 bg-surface-base rounded-full h-3">
                     <div className="bg-gradient-to-r from-brand-blue to-green-400 h-3 rounded-full transition-all duration-700"
-                      style={{ width: `${Math.round((coverageData.covered / coverageData.total) * 100)}%` }} />
+                      style={{ width: `${coverageData.total > 0 ? Math.round((coverageData.covered / coverageData.total) * 100) : 0}%` }} />
                   </div>
                   <span className="font-sora font-bold text-2xl text-brand-blue">
-                    {Math.round((coverageData.covered / coverageData.total) * 100)}%
+                    {coverageData.total > 0 ? Math.round((coverageData.covered / coverageData.total) * 100) : 0}%
                   </span>
                 </div>
                 <div className="space-y-4">
@@ -689,7 +762,7 @@ export default function RecordingPage() {
                     <div className="p-4 bg-yellow-500/10 rounded-xl border border-yellow-500/20">
                       <p className="text-sm text-yellow-400 font-semibold mb-2">Topics Still to Cover</p>
                       <div className="flex flex-wrap gap-2">
-                        {units.find((u) => u.id === selectedUnit)?.topics
+                        {filteredUnits.find((u) => u.id === selectedUnit)?.topics
                           .filter((t) => !coverageData.topics.includes(t))
                           .map((topic, i) => (
                             <span key={i} className="bg-yellow-500/20 text-yellow-400 px-3 py-1 rounded-full text-xs">○ {topic}</span>
@@ -725,6 +798,9 @@ export default function RecordingPage() {
                           {recording.notes && !recording.isProcessing && (
                             <span className="text-xs text-green-400">✓ Smart Ink ready</span>
                           )}
+                          {recording.detectedLanguages && recording.detectedLanguages.length > 1 && (
+                            <span className="text-xs text-purple-300">🌍 {recording.detectedLanguages.join(' + ')}</span>
+                          )}
                         </div>
                       </div>
                       <div className="flex gap-2 shrink-0">
@@ -749,33 +825,49 @@ export default function RecordingPage() {
                     <AnimatePresence>
                       {expandedId === recording.id && recording.notes && (
                         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                          className="border-t border-white/5 p-6 bg-surface-base overflow-hidden">
-                          <h4 className="font-sora font-bold text-white mb-4 flex items-center gap-2">
-                            <FileText size={16} className="text-purple-400" />
-                            Smart Ink Notes
-                            {notesTier !== 'plain' && (
-                              <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ml-auto ${
-                                notesTier === 'semester' ? 'bg-gradient-to-r from-indigo-500/20 to-purple-500/20 text-indigo-300 border border-indigo-400/30'
-                                : notesTier === 'pro' ? 'bg-brand-blue/15 text-brand-blue'
-                                : 'bg-white/5 text-[#8B97B5]'
-                              }`}>
-                                {notesTier === 'semester' ? '3D · Full Color' : notesTier === 'pro' ? '2D · Pro Color' : 'Lite · Sketch'}
-                              </span>
+                          className="border-t border-white/5 p-6 bg-surface-base overflow-hidden space-y-6">
+
+                          <div>
+                            <h4 className="font-sora font-bold text-white mb-4 flex items-center gap-2">
+                              <FileText size={16} className="text-purple-400" />
+                              Smart Ink Notes
+                              {notesTier !== 'plain' && (
+                                <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ml-auto ${
+                                  notesTier === 'semester' ? 'bg-gradient-to-r from-indigo-500/20 to-purple-500/20 text-indigo-300 border border-indigo-400/30'
+                                  : notesTier === 'pro' ? 'bg-brand-blue/15 text-brand-blue'
+                                  : 'bg-white/5 text-[#8B97B5]'
+                                }`}>
+                                  {notesTier === 'semester' ? 'Premium · Full Color' : notesTier === 'pro' ? '2D · Pro Color' : 'Lite · Sketch'}
+                                </span>
+                              )}
+                            </h4>
+                            {recording.structuredNotes ? (
+                              <SmartInkNotes note={recording.structuredNotes} tier={notesTier} />
+                            ) : (
+                              <div className="text-sm text-[#8B97B5] whitespace-pre-wrap leading-relaxed">{recording.notes}</div>
                             )}
-                          </h4>
-                          {recording.structuredNotes ? (
-  <SmartInkNotes note={recording.structuredNotes} tier={notesTier} />
-) : (
-  <div className="text-sm text-[#8B97B5] whitespace-pre-wrap leading-relaxed">{recording.notes}</div>
-)}
-{recording.notes && (
-  <StudyChat
-    documentContext={recording.notes}
-    studentContext={formatContextForAI(buildStudentContext(access.currentPlan))}
-    mode="notes"
-    placeholder="Ask about these notes..."
-  />
-)}
+                          </div>
+
+                          {recording.structuredScript && recording.structuredScript.length > 0 && (
+                            <div>
+                              <h4 className="font-sora font-bold text-white mb-3 text-sm">Timestamped Script — tap to jump to that moment</h4>
+                              <TimestampedScript script={recording.structuredScript} recordingId={recording.id} />
+                            </div>
+                          )}
+
+                          {recording.notes && (
+                            <div>
+                              <h4 className="font-sora font-bold text-white mb-3 text-sm">Read In Another Language</h4>
+                              <LanguageViewSwitcher originalText={recording.notes} userId={userId} />
+                            </div>
+                          )}
+
+                          {recording.notes && (
+                            <button onClick={() => navigate('/sage')}
+                              className="flex items-center gap-1.5 bg-indigo-premium/10 text-brand-blue px-4 py-2 rounded-xl text-xs font-semibold hover:bg-indigo-premium/20 transition">
+                              <Brain size={14} /> Ask SAGE about this lecture
+                            </button>
+                          )}
                         </motion.div>
                       )}
                     </AnimatePresence>
