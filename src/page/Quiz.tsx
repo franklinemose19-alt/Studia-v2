@@ -8,6 +8,7 @@ import {
   isUnlimitedPlan, type AccessInfo, emptyAccess,
 } from '../lib/access'
 import { getAllRecordings } from '../lib/lectureContext'
+import { saveQuizResult } from '../lib/quizHistory'
 import { toast } from '../lib/toast'
 
 interface Question {
@@ -107,7 +108,11 @@ export default function Quiz() {
 
       if (!res.ok) {
         const err = await res.json()
-        toast.error(err.error || 'Failed to generate quiz')
+        if (res.status === 429) {
+          toast.error(err.error || 'Too many requests — please wait a moment.')
+        } else {
+          toast.error(err.error || 'Failed to generate quiz')
+        }
         return
       }
 
@@ -127,7 +132,7 @@ export default function Quiz() {
         freeCreditsUsed: result.source === 'explorer_free' ? prev.freeCreditsUsed + 1 : prev.freeCreditsUsed,
         liteBonusCredits: result.source === 'bonus' ? Math.max(0, prev.liteBonusCredits - 1) : prev.liteBonusCredits,
       }))
-    } catch (err: any) {
+    } catch {
       toast.error('Failed to generate quiz — check your connection.')
     } finally {
       setLoading(false)
@@ -145,19 +150,19 @@ export default function Quiz() {
     setSubmitted(true)
     setScreen('results')
 
-    // Save to history
-    try {
-      const rec = recordings.find(r => r.id === selectedLectureId)
-      const results = JSON.parse(localStorage.getItem('quizResults') || '[]')
-      results.push({
-        score: correct,
-        total: questions.length,
-        subject: rec?.course || 'General',
-        date: new Date().toISOString(),
-        source: inputMode === 'pdf' ? 'past_paper' : 'notes',
-      })
-      localStorage.setItem('quizResults', JSON.stringify(results))
-    } catch {}
+    const rec = recordings.find(r => r.id === selectedLectureId)
+    const questionOutcomes = questions.map((q, i) => ({
+      topic: q.topic || 'General',
+      correct: answers[i] === q.correct,
+    }))
+    saveQuizResult({
+      subject: rec?.course || 'General',
+      score: correct,
+      total: questions.length,
+      source: inputMode === 'pdf' ? 'past_paper' : 'notes',
+      questions: questionOutcomes,
+      userId,
+    })
 
     const pct = Math.round((correct / questions.length) * 100)
     if (pct >= 80) toast.success(`Excellent! ${correct}/${questions.length} — ${pct}% 🎉`)
@@ -197,7 +202,6 @@ export default function Quiz() {
 
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 space-y-6">
 
-        {/* ── SETUP ──────────────────────────────────────────────────── */}
         {screen === 'setup' && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
             <div>
@@ -218,7 +222,6 @@ export default function Quiz() {
               )}
             </div>
 
-            {/* Input mode selector */}
             <div className="grid grid-cols-3 gap-2">
               {([
                 { id: 'lecture', label: '🎙️ My Lecture', desc: 'From recordings' },
@@ -235,7 +238,6 @@ export default function Quiz() {
               ))}
             </div>
 
-            {/* Content input */}
             <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4">
               {inputMode === 'lecture' && (
                 <>
@@ -321,7 +323,6 @@ export default function Quiz() {
           </motion.div>
         )}
 
-        {/* ── QUIZ ───────────────────────────────────────────────────── */}
         {screen === 'quiz' && questions.length > 0 && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
             <div className="flex items-center justify-between flex-wrap gap-3">
@@ -337,12 +338,10 @@ export default function Quiz() {
               </div>
             </div>
 
-            {/* Progress */}
             <div className="w-full bg-gray-200 rounded-full h-2">
               <div className="bg-indigo-premium h-2 rounded-full transition-all" style={{ width: `${((currentQ + 1) / questions.length) * 100}%` }} />
             </div>
 
-            {/* Question */}
             <AnimatePresence mode="wait">
               <motion.div key={currentQ} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
                 className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4">
@@ -371,7 +370,6 @@ export default function Quiz() {
               </motion.div>
             </AnimatePresence>
 
-            {/* Answer tracker */}
             <div className="bg-white rounded-2xl border border-gray-200 p-4">
               <p className="text-xs text-gray-500 mb-3 font-medium">Questions answered: {Object.keys(answers).length}/{questions.length}</p>
               <div className="flex flex-wrap gap-2">
@@ -400,10 +398,8 @@ export default function Quiz() {
           </motion.div>
         )}
 
-        {/* ── RESULTS ────────────────────────────────────────────────── */}
         {screen === 'results' && (
           <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} className="space-y-6">
-            {/* Score card */}
             <div className={`rounded-3xl p-8 text-center text-white ${
               pct >= 80 ? 'bg-gradient-to-br from-mint to-green-500'
               : pct >= 60 ? 'bg-gradient-to-br from-indigo-premium to-purple-premium'
@@ -416,7 +412,6 @@ export default function Quiz() {
               </p>
             </div>
 
-            {/* Answer review */}
             <div className="space-y-3">
               <h3 className="font-sora font-bold text-xl text-navy">Review Answers</h3>
               {questions.map((q, i) => {
@@ -448,7 +443,6 @@ export default function Quiz() {
               })}
             </div>
 
-            {/* Actions */}
             <div className="grid sm:grid-cols-2 gap-3">
               <button onClick={resetQuiz}
                 className="flex items-center justify-center gap-2 bg-indigo-premium text-white font-bold py-3.5 rounded-xl hover:bg-purple-premium transition">
