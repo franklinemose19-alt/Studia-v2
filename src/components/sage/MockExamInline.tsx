@@ -4,7 +4,7 @@ import { saveQuizResult } from '../../lib/quizHistory'
 interface Q { id: string; question: string; options: string[]; correct: number; explanation: string; difficulty: string; topic?: string }
 interface Exam { examTitle: string; questions: Q[]; totalMarks: number }
 
-export default function MockExamInline({ exam, subject }: { exam: Exam; subject?: string }) {
+export default function MockExamInline({ exam, subject, userId }: { exam: Exam; subject?: string; userId?: string | null }) {
   const [answers, setAnswers] = useState<Record<string, number>>({})
   const [submitted, setSubmitted] = useState(false)
   if (!exam?.questions?.length) return null
@@ -12,17 +12,8 @@ export default function MockExamInline({ exam, subject }: { exam: Exam; subject?
 
   const handleSubmit = () => {
     setSubmitted(true)
-    const questionOutcomes = exam.questions.map(q => ({
-      topic: q.topic || 'General',
-      correct: answers[q.id] === q.correct,
-    }))
-    saveQuizResult({
-      subject: subject || 'General',
-      score,
-      total: exam.questions.length,
-      source: 'sage_mock_exam',
-      questions: questionOutcomes,
-    })
+    const questionOutcomes = exam.questions.map(q => ({ topic: q.topic || 'General', correct: answers[q.id] === q.correct }))
+    saveQuizResult({ subject: subject || 'General', score, total: exam.questions.length, source: 'sage_mock_exam', questions: questionOutcomes, userId })
   }
 
   return (
