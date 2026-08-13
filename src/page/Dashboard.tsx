@@ -186,6 +186,7 @@ export default function Dashboard() {
     { icon: BookOpen, title: 'Unit Management', desc: 'Define syllabi', path: '/units', color: 'from-warning' },
     { icon: CreditCard, title: 'Payments', desc: 'History & billing', path: '/payments', color: 'from-mint' },
     { icon: Calendar, title: 'Study Planner', desc: 'Weekly schedule', path: '/study-planner', color: 'from-light-blue' },
+    { icon: Brain, title: 'Knowledge Map', desc: 'What you know, connected', path: '/knowledge-map', color: 'from-purple-premium' },
   ]
 
   return (
