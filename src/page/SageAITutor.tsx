@@ -24,7 +24,7 @@ import GapReportInline from '../components/sage/GapReportInline'
 import CoachCardInline from '../components/sage/CoachCardInline'
 import SnapSolveInline from '../components/sage/SnapSolveInline'
 import PastPapersInline from '../components/sage/PastPapersInline'
-
+import KnowledgeRecallInline from '../components/sage/KnowledgeRecallInline'
 type ThreadKind = 'text' | 'flashcards' | 'mockexam' | 'deepnotes' | 'knowledgegap' | 'coach' | 'snapsolve' | 'pastpapers'
 interface ThreadItem { id: string; role: 'user' | 'assistant'; kind: ThreadKind; content?: string; image?: string; data?: any }
 
