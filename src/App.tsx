@@ -23,7 +23,7 @@ const Checkout = lazy(() => import('./page/Checkout'))
 const PaymentDashboard = lazy(() => import('./page/PaymentDashboard'))
 const SageAITutor = lazy(() => import('./page/SageAITutor'))
 const AdminDashboard = lazy(() => import('./page/AdminDashboard'))
-
+const KnowledgeMap = lazy(() => import('./page/KnowledgeMap'))
 function PageLoader() {
   return (
     <div className="min-h-screen bg-surface-base flex items-center justify-center">
@@ -53,6 +53,7 @@ export default function App() {
               <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
               <Route path="/checkout" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
               <Route path="/sage" element={<ProtectedRoute><SageAITutor /></ProtectedRoute>} />
+              <Route path="/knowledge-map" element={<ProtectedRoute><KnowledgeMap /></ProtectedRoute>} />
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/recording" element={<ProtectedRoute><Recording /></ProtectedRoute>} />
               <Route path="/quiz" element={<ProtectedRoute><Quiz /></ProtectedRoute>} />
