@@ -353,8 +353,9 @@ export default function SageAITutor() {
     e.target.value = ''
   }
 
-  const handleToolSelect = (tool: SageTool) => {
+const handleToolSelect = (tool: SageTool) => {
     setToolsMenuOpen(false)
+    if (tool === 'knowledge_map') { navigate('/knowledge-map'); return }
     if (access.planLocked) {
       setUpgradeReason('explorer_locked')
       setShowUpgradeModal(true)
