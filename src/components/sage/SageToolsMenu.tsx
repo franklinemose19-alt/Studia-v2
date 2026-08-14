@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion'
-import { Camera, Image, FileText, BookOpen, Layers, ClipboardList, Search, Compass, X } from 'lucide-react'
+import { Camera, Image, FileText, BookOpen, Layers, ClipboardList, Search, Compass, Brain, X } from 'lucide-react'
 
-export type SageTool = 'camera' | 'image' | 'file' | 'deepnotes' | 'flashcards' | 'mockexam' | 'knowledgegap' | 'coach'
+export type SageTool = 'camera' | 'image' | 'file' | 'deepnotes' | 'flashcards' | 'mockexam' | 'knowledgegap' | 'coach' | 'knowledge_map'
 
 interface Props {
   open: boolean
@@ -18,6 +18,7 @@ const TOOLS: { id: SageTool; label: string; icon: any; desc: string }[] = [
   { id: 'mockexam', label: 'Exam Generator', icon: ClipboardList, desc: 'Practice exam' },
   { id: 'knowledgegap', label: 'Gap Detector', icon: Search, desc: "What you're missing" },
   { id: 'coach', label: 'Study Coach', icon: Compass, desc: 'Progress check-in' },
+  { id: 'knowledge_map', label: 'Knowledge Map', icon: Brain, desc: 'Browse what you know' },
 ]
 
 export default function SageToolsMenu({ open, onClose, onSelect }: Props) {
@@ -25,16 +26,9 @@ export default function SageToolsMenu({ open, onClose, onSelect }: Props) {
     <AnimatePresence>
       {open && (
         <>
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 bg-black/50 z-[100]"
-          />
-          <motion.div
-            initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }}
-            transition={{ type: 'spring', damping: 28, stiffness: 320 }}
-            className="fixed left-0 right-0 bottom-0 z-[110] bg-surface-elevated border-t border-white/10 rounded-t-3xl max-w-3xl mx-auto pb-[env(safe-area-inset-bottom,0px)]"
-          >
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 bg-black/50 z-[100]" />
+          <motion.div initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }} transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+            className="fixed left-0 right-0 bottom-0 z-[110] bg-surface-elevated border-t border-white/10 rounded-t-3xl max-w-3xl mx-auto pb-[env(safe-area-inset-bottom,0px)]">
             <div className="w-10 h-1 bg-white/15 rounded-full mx-auto mt-3" />
             <div className="flex items-center justify-between px-4 py-2">
               <span className="text-xs text-[#8B97B5]">SAGE Tools</span>
