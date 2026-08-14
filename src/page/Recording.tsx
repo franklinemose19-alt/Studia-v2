@@ -416,8 +416,6 @@ export default function RecordingPage() {
           setLiteDurationCap(cap)
           sessionSourceRef.current = 'achiever_session'
 
-          // Bonus credit already granted server-side by the M-Pesa webhook —
-          // just re-pull the real access state instead of guessing at it here.
           if (access.userId) {
             const refreshed = await loadAccess(access.userId)
             setAccess(refreshed)
