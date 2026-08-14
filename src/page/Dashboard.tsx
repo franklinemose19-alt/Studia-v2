@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   LogOut, Mic, BookOpen, BarChart3, Calendar, Zap,
   ChevronRight, Search, TrendingUp, Lock, CreditCard,
-  Sparkles, AlertTriangle, Crown, Brain,
+  Sparkles, AlertTriangle, Crown,
 } from 'lucide-react'
 import { signOut, getSupabase } from '../lib/supabaseClient'
 import { usePWAInstall } from '../hooks/usePWAInstall'
@@ -72,7 +72,6 @@ export default function Dashboard() {
 
   useEffect(() => {
     const init = async () => {
-      // Stats from localStorage
       let lectures = 0
       let quizResults: any[] = []
       try { lectures = JSON.parse(localStorage.getItem('recordingsMetadata') || '[]').length } catch {}
@@ -102,7 +101,6 @@ export default function Dashboard() {
         setStats({ lectures, quizzes: quizResults.length, avgScore: avg, streak })
       } catch {}
 
-      // Access info
       const a = await loadAccess(userId)
       setAccess(a)
 
@@ -111,7 +109,6 @@ export default function Dashboard() {
         setShowUpgradeModal(true)
       }
 
-      // Admin check
       if (userId) {
         try {
           const client = await getSupabase()
@@ -124,7 +121,6 @@ export default function Dashboard() {
         } catch {}
       }
 
-      // Show onboarding for brand new users
       if (!localStorage.getItem('studia_onboarded')) {
         setTimeout(() => setShowOnboarding(true), 800)
       }
@@ -180,7 +176,6 @@ export default function Dashboard() {
     { icon: BookOpen, title: 'My Notes', desc: 'Notes & summaries', path: '/notes', color: 'from-purple-premium' },
     { icon: BarChart3, title: 'Test Yourself', desc: 'AI practice tests', path: '/quiz', color: 'from-mint' },
     { icon: Sparkles, title: 'SAGE AI Tutor', desc: 'Your personal AI tutor', path: '/sage', color: 'from-indigo-premium' },
-    { icon: Brain, title: 'Knowledge Map', desc: 'What you know, connected', path: '/knowledge-map', color: 'from-purple-premium' },
     { icon: Calendar, title: 'Exam Countdown', desc: 'Track your exams', path: '/exam-countdown', color: 'from-warning' },
     { icon: TrendingUp, title: 'Adaptive Learning', desc: 'Weak topic analysis', path: '/adaptive-learning', color: 'from-mint' },
     { icon: Lock, title: 'Offline Vault', desc: 'Study anywhere', path: '/offline-vault', color: 'from-light-blue' },
@@ -206,7 +201,6 @@ export default function Dashboard() {
         currentPlan={plan}
       />
 
-      {/* Nav */}
       <nav className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 sm:gap-3">
@@ -215,7 +209,6 @@ export default function Dashboard() {
             </div>
             <span className="font-sora font-bold text-navy text-base sm:text-lg hidden sm:inline">STUDIA AI</span>
 
-            {/* Install */}
             {!isInstalled && installPrompt && (
               <button onClick={install} disabled={isInstalling}
                 className="flex items-center gap-1.5 bg-gradient-to-r from-mint to-light-blue text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-90 transition disabled:opacity-50 ml-1">
@@ -226,7 +219,6 @@ export default function Dashboard() {
               </button>
             )}
 
-            {/* Admin */}
             {isAdmin && (
               <button onClick={() => navigate('/admin')}
                 className="flex items-center gap-1.5 bg-warning/10 border border-warning/30 text-warning px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-warning/20 transition ml-1">
@@ -258,7 +250,6 @@ export default function Dashboard() {
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
             className="space-y-8 sm:space-y-10">
 
-            {/* Welcome */}
             <div>
               <h1 className="font-sora font-bold text-4xl sm:text-5xl text-navy mb-2">
                 Welcome back, {firstName}.
@@ -272,7 +263,6 @@ export default function Dashboard() {
               </p>
             </div>
 
-            {/* Circular stats */}
             <div className="bg-white rounded-2xl border border-gray-200 px-6 py-5">
               <div className="flex items-center justify-around gap-2">
                 {circleStats.map((s, i) => (
@@ -284,7 +274,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Plan + usage card */}
             <div
               className={`rounded-2xl p-5 sm:p-6 border-2 cursor-pointer transition-colors ${
                 isLocked ? 'bg-red-50 border-red-300'
@@ -367,7 +356,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Refer and Earn */}
             <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border-2 border-purple-500/20 rounded-2xl p-5 sm:p-6">
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-2xl shrink-0">
@@ -389,10 +377,8 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* WhatsApp Community */}
             <CommunityCard variant="light" />
 
-            {/* Quick Actions */}
             <div>
               <h2 className="font-sora font-bold text-xl sm:text-2xl text-navy mb-4 sm:mb-6">Quick Actions</h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
@@ -428,7 +414,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Pro tip */}
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
               className="bg-gradient-to-r from-indigo-premium to-purple-premium rounded-3xl p-6 sm:p-8 text-white overflow-hidden relative">
               <div className="absolute -right-20 -top-20 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
