@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, Square, Play, Pause, Trash2, Download, ArrowLeft, Loader, FileText, BookOpen, Phone, Lock, Brain } from 'lucide-react'
+import { Mic, Square, Play, Pause, Trash2, Download, ArrowLeft, Loader, FileText, BookOpen, Phone, Lock, Brain, Plus, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getSupabase } from '../lib/supabaseClient'
 import { useAuth } from '../lib/AuthContext'
@@ -79,6 +79,9 @@ const deleteBlob = async (id: string) => {
 const loadCourses = (): Course[] => {
   try { return JSON.parse(localStorage.getItem('studia_courses') || '[]') } catch { return [] }
 }
+const saveCourses = (courses: Course[]) => {
+  try { localStorage.setItem('studia_courses', JSON.stringify(courses)) } catch { /* storage full */ }
+}
 
 const loadUnitCoverage = (): Record<string, UnitCoverageRecord> => {
   try { return JSON.parse(localStorage.getItem('unitCoverage') || '{}') } catch { return {} }
@@ -92,6 +95,8 @@ const topicMatchesConcept = (topic: string, conceptName: string): boolean => {
   const c = conceptName.toLowerCase().trim()
   return t.length > 2 && c.length > 2 && (t.includes(c) || c.includes(t))
 }
+
+const generateId = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`
 
 const getSupportedMimeType = (): string => {
   const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg', 'audio/mp4']
@@ -120,6 +125,7 @@ const blobToBase64 = (blob: Blob): Promise<string> =>
   })
 
 const selectClass = "w-full bg-surface-base border border-white/10 rounded-xl p-3 text-white outline-none focus:border-brand-blue/40 text-sm [&>option]:bg-[#0d1526] [&>option]:text-white"
+const inputClass = "w-full bg-surface-base border border-white/10 rounded-xl p-3 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40 text-sm"
 
 export default function RecordingPage() {
   const navigate = useNavigate()
@@ -134,6 +140,12 @@ export default function RecordingPage() {
   const [courses, setCourses] = useState<Course[]>([])
   const [selectedCourse, setSelectedCourse] = useState('')
   const [selectedUnit, setSelectedUnit] = useState('')
+
+  // Inline add — no more leaving this page to create a course/unit
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [newCourseName, setNewCourseName] = useState('')
+  const [newUnitName, setNewUnitName] = useState('')
+  const [newTopicsInput, setNewTopicsInput] = useState('')
 
   const [showCoverageResult, setShowCoverageResult] = useState(false)
   const [coverageData, setCoverageData] = useState<CoverageData>({ covered: 0, total: 0, topics: [], unitName: '' })
@@ -162,7 +174,9 @@ export default function RecordingPage() {
   const sessionSourceRef = useRef<'paid_subscription' | 'achiever_session' | 'explorer_free' | 'bonus' | null>(null)
 
   useEffect(() => {
-    setCourses(loadCourses())
+    const loaded = loadCourses()
+    setCourses(loaded)
+    if (loaded.length === 0) setShowAddForm(true)
     try { setRecordings(JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')) } catch { setRecordings([]) }
 
     const init = async () => {
@@ -188,6 +202,50 @@ export default function RecordingPage() {
   const courseNames = courses.map(c => c.name)
   const selectedCourseObj = courses.find(c => c.name === selectedCourse)
   const filteredUnits = selectedCourseObj?.units || []
+
+  const handleQuickAddCourseUnit = () => {
+    const courseName = newCourseName.trim()
+    const unitName = newUnitName.trim()
+    if (!courseName) { toast.error('Enter a course name'); return }
+    if (!unitName) { toast.error('Enter a unit name'); return }
+
+    const topics = newTopicsInput.split(',').map(t => t.trim()).filter(Boolean)
+    const existingCourse = courses.find(c => c.name.trim().toLowerCase() === courseName.toLowerCase())
+
+    let updatedCourses: Course[]
+    let newUnitId: string
+
+    if (existingCourse) {
+      const dupeUnit = existingCourse.units.find(u => u.name.trim().toLowerCase() === unitName.toLowerCase())
+      if (dupeUnit) {
+        newUnitId = dupeUnit.id
+        updatedCourses = courses
+      } else {
+        newUnitId = generateId()
+        const newUnit: Unit = { id: newUnitId, name: unitName, topics }
+        updatedCourses = courses.map(c => c.id === existingCourse.id ? { ...c, units: [...c.units, newUnit] } : c)
+      }
+    } else {
+      newUnitId = generateId()
+      const newCourse: Course = {
+        id: generateId(),
+        name: courseName,
+        units: [{ id: newUnitId, name: unitName, topics }],
+        createdAt: new Date().toISOString(),
+      }
+      updatedCourses = [...courses, newCourse]
+    }
+
+    setCourses(updatedCourses)
+    saveCourses(updatedCourses)
+    setSelectedCourse(courseName)
+    setSelectedUnit(newUnitId)
+    setNewCourseName('')
+    setNewUnitName('')
+    setNewTopicsInput('')
+    setShowAddForm(false)
+    toast.success(`"${courseName}" ready — you can record now.`)
+  }
 
   const visualize = () => {
     if (!analyserRef.current || !canvasRef.current) return
@@ -348,13 +406,9 @@ export default function RecordingPage() {
   }
 
   const handleStartClick = () => {
-    if (courses.length === 0) {
-      toast.info('Add a course and unit first — taking you there now.')
-      navigate('/units')
-      return
-    }
     if (!selectedUnit) {
-      toast.error('Please select a course and unit before recording.')
+      toast.error('Add or select a course and unit above before recording.')
+      setShowAddForm(true)
       return
     }
     const result = checkAccess(access, 'core')
@@ -616,7 +670,16 @@ export default function RecordingPage() {
 
           <div className="grid md:grid-cols-2 gap-6">
             <div className="bg-surface-elevated border border-white/5 rounded-2xl p-6 space-y-4">
-              <h2 className="font-sora font-bold text-xl text-white">Recording Settings</h2>
+              <div className="flex items-center justify-between">
+                <h2 className="font-sora font-bold text-xl text-white">Course & Unit</h2>
+                {courses.length > 0 && !showAddForm && (
+                  <button onClick={() => setShowAddForm(true)}
+                    className="flex items-center gap-1 text-xs text-brand-blue hover:text-brand-blue/80 font-medium">
+                    <Plus size={13} /> Add new
+                  </button>
+                )}
+              </div>
+
               <div className="bg-gradient-to-r from-indigo-500/10 to-purple-500/10 rounded-xl p-4 border border-indigo-500/20">
                 <p className="text-sm font-semibold text-white mb-2">🎙️ SmartCapture AI Active</p>
                 <div className="grid grid-cols-2 gap-1 text-xs text-gray-400">
@@ -627,12 +690,40 @@ export default function RecordingPage() {
                 </div>
               </div>
 
-              {courses.length === 0 ? (
-                <div className="bg-surface-base rounded-xl p-5 text-center space-y-3">
-                  <BookOpen size={32} className="mx-auto text-[#4A5568]" />
-                  <p className="text-sm text-[#8B97B5]">No courses yet. You'll need to add a course and unit before recording — just hit "Start Recording" and we'll take you there.</p>
-                </div>
-              ) : (
+              {/* Inline quick-add — never leave this page */}
+              <AnimatePresence>
+                {showAddForm && (
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden">
+                    <div className="bg-surface-base rounded-xl p-4 space-y-3 border border-white/10">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold text-white">{courses.length === 0 ? 'Add your first course' : 'Add a course or unit'}</p>
+                        {courses.length > 0 && (
+                          <button onClick={() => setShowAddForm(false)} className="text-[#8B97B5] hover:text-white">
+                            <X size={16} />
+                          </button>
+                        )}
+                      </div>
+                      <input type="text" placeholder="Course name, e.g. Biology 201" value={newCourseName}
+                        onChange={(e) => setNewCourseName(e.target.value)} className={inputClass} list="existing-course-names" />
+                      <datalist id="existing-course-names">
+                        {courseNames.map(name => <option key={name} value={name} />)}
+                      </datalist>
+                      <input type="text" placeholder="Unit name, e.g. Cell Biology" value={newUnitName}
+                        onChange={(e) => setNewUnitName(e.target.value)} className={inputClass} />
+                      <input type="text" placeholder="Topics, comma-separated (optional)" value={newTopicsInput}
+                        onChange={(e) => setNewTopicsInput(e.target.value)} className={inputClass} />
+                      <button onClick={handleQuickAddCourseUnit}
+                        className="w-full bg-brand-blue text-white font-semibold py-2.5 rounded-xl hover:bg-brand-blue/90 transition text-sm">
+                        Save & Select
+                      </button>
+                      <p className="text-[10px] text-[#8B97B5]">Typing an existing course name adds this unit to it instead of duplicating it.</p>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {courses.length > 0 && !showAddForm && (
                 <>
                   <div>
                     <label className="block text-sm text-white mb-2">Select Course</label>
@@ -651,7 +742,7 @@ export default function RecordingPage() {
                   </div>
 
                   <button onClick={() => navigate('/units')} className="w-full text-xs text-[#8B97B5] hover:text-white underline">
-                    Need to add a new course or unit?
+                    Manage full topic lists in Unit Management →
                   </button>
                 </>
               )}
