@@ -1,281 +1,343 @@
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
-import { ArrowLeft, Plus, Trash2, BookOpen, ArrowRight } from 'lucide-react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-
-interface Unit {
-  id: string
-  course: string
-  unitName: string
-  topics: string[]
-  totalLectures: number
-  lecturesCovered: number
-  coverage: number
-  createdDate: string
-}
+import { motion, AnimatePresence } from 'framer-motion'
+import {
+  ArrowLeft, Plus, Trash2, BookOpen, ChevronDown,
+  ChevronUp, Edit2, Check, X, GraduationCap,
+} from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { toast } from '../lib/toast'
+import { loadCourses, saveCourses, onCoursesChanged, generateId, type Course, type Unit } from '../lib/courseStore'
 
 export default function UnitManagement() {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
-  const returnTo = searchParams.get('returnTo')
+  const [courses, setCourses] = useState<Course[]>([])
+  const [expandedCourse, setExpandedCourse] = useState<string | null>(null)
 
-  const [units, setUnits] = useState<Unit[]>([])
-  const [showForm, setShowForm] = useState(false)
-  const [formData, setFormData] = useState({ course: '', unitName: '', topics: '' })
+  const [showAddCourse, setShowAddCourse] = useState(false)
+  const [newCourseName, setNewCourseName] = useState('')
+  const [newCourseCode, setNewCourseCode] = useState('')
+
+  const [addingUnitFor, setAddingUnitFor] = useState<string | null>(null)
+  const [newUnitName, setNewUnitName] = useState('')
+  const [newTopicInput, setNewTopicInput] = useState('')
+  const [newTopics, setNewTopics] = useState<string[]>([])
+
+  const [editingCourseId, setEditingCourseId] = useState<string | null>(null)
+  const [editCourseName, setEditCourseName] = useState('')
 
   useEffect(() => {
-    const saved = localStorage.getItem('units')
-    if (saved) {
-      try {
-        setUnits(JSON.parse(saved))
-      } catch {
-        setUnits([])
-      }
-    }
-    if (returnTo) {
-      setShowForm(true)
-    }
+    setCourses(loadCourses())
+    // Live sync — picks up changes made from Recording's quick-add form too,
+    // and from another tab, without needing a page refresh.
+    const unsubscribe = onCoursesChanged(() => setCourses(loadCourses()))
+    return unsubscribe
   }, [])
 
-  const addUnit = () => {
-    if (!formData.course.trim() || !formData.unitName.trim() || !formData.topics.trim()) {
-      alert('Please fill in all fields')
-      return
+  const addCourse = () => {
+    if (!newCourseName.trim()) { toast.error('Please enter a course name'); return }
+    const course: Course = {
+      id: generateId(),
+      name: newCourseName.trim(),
+      code: newCourseCode.trim() || undefined,
+      units: [],
+      createdAt: new Date().toISOString(),
     }
-
-    const topics = formData.topics
-      .split('\n')
-      .map((t) => t.trim())
-      .filter((t) => t.length > 0)
-
-    if (topics.length === 0) {
-      alert('Please add at least one topic')
-      return
-    }
-
-    const newUnit: Unit = {
-      id: `unit-${Date.now()}`,
-      course: formData.course,
-      unitName: formData.unitName,
-      topics,
-      totalLectures: 0,
-      lecturesCovered: 0,
-      coverage: 0,
-      createdDate: new Date().toISOString(),
-    }
-
-    const updated = [...units, newUnit]
-    localStorage.setItem('units', JSON.stringify(updated))
-    setUnits(updated)
-    setFormData({ course: '', unitName: '', topics: '' })
-    setShowForm(false)
-
-    if (returnTo === 'recording') {
-      navigate('/recording')
-    }
+    const updated = [...courses, course]
+    setCourses(updated)
+    saveCourses(updated)
+    setNewCourseName('')
+    setNewCourseCode('')
+    setShowAddCourse(false)
+    setExpandedCourse(course.id)
+    toast.success(`"${course.name}" added!`)
   }
 
-  const deleteUnit = (id: string) => {
-    const updated = units.filter((u) => u.id !== id)
-    localStorage.setItem('units', JSON.stringify(updated))
-    setUnits(updated)
+  const deleteCourse = (id: string) => {
+    const updated = courses.filter(c => c.id !== id)
+    setCourses(updated)
+    saveCourses(updated)
+    toast.info('Course removed')
   }
 
-  const groupedUnits = units.reduce(
-    (acc, unit) => {
-      if (!acc[unit.course]) acc[unit.course] = []
-      acc[unit.course].push(unit)
-      return acc
-    },
-    {} as { [key: string]: Unit[] }
-  )
+  const startEditCourse = (course: Course) => {
+    setEditingCourseId(course.id)
+    setEditCourseName(course.name)
+  }
+
+  const saveEditCourse = (id: string) => {
+    if (!editCourseName.trim()) { toast.error('Course name cannot be empty'); return }
+    const updated = courses.map(c => c.id === id ? { ...c, name: editCourseName.trim() } : c)
+    setCourses(updated)
+    saveCourses(updated)
+    setEditingCourseId(null)
+  }
+
+  const addTopic = () => {
+    if (!newTopicInput.trim()) return
+    if (newTopics.includes(newTopicInput.trim())) { toast.error('Topic already added'); return }
+    setNewTopics(prev => [...prev, newTopicInput.trim()])
+    setNewTopicInput('')
+  }
+
+  const addUnit = (courseId: string) => {
+    if (!newUnitName.trim()) { toast.error('Please enter a unit name'); return }
+    const unit: Unit = {
+      id: generateId(),
+      name: newUnitName.trim(),
+      topics: newTopics,
+    }
+    const updated = courses.map(c =>
+      c.id === courseId ? { ...c, units: [...c.units, unit] } : c
+    )
+    setCourses(updated)
+    saveCourses(updated)
+    setAddingUnitFor(null)
+    setNewUnitName('')
+    setNewTopics([])
+    setNewTopicInput('')
+    toast.success(`Unit "${unit.name}" added!`)
+  }
+
+  const deleteUnit = (courseId: string, unitId: string) => {
+    const updated = courses.map(c =>
+      c.id === courseId ? { ...c, units: c.units.filter(u => u.id !== unitId) } : c
+    )
+    setCourses(updated)
+    saveCourses(updated)
+    toast.info('Unit removed')
+  }
+
+  const removeTopic = (topic: string) => {
+    setNewTopics(prev => prev.filter(t => t !== topic))
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-white via-surface-light to-white overflow-x-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-white via-surface-light to-white">
       <nav className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="flex items-center gap-2 text-navy hover:text-indigo-premium transition shrink-0"
-          >
+          <button onClick={() => navigate('/dashboard')} className="flex items-center gap-2 text-navy hover:text-indigo-premium transition">
             <ArrowLeft size={20} />
-            <span className="font-medium hidden sm:inline">Back</span>
+            <span className="hidden sm:inline font-medium">Back</span>
           </button>
-          <div className="flex items-center gap-1">
-            <span className="font-sora font-bold text-base sm:text-lg text-navy">STUDIA</span>
-            <sup className="text-indigo-premium text-xs">β</sup>
-          </div>
-          <div className="w-8 sm:w-20 shrink-0" />
+          <span className="font-sora font-bold text-lg text-navy">Unit Management</span>
+          <button
+            onClick={() => { setShowAddCourse(true); setExpandedCourse(null) }}
+            className="flex items-center gap-1.5 bg-indigo-premium text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-premium transition"
+          >
+            <Plus size={16} /> Add Course
+          </button>
         </div>
       </nav>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 sm:space-y-8 w-full">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 space-y-6">
 
-          {returnTo === 'recording' && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-indigo-premium/10 border border-indigo-premium/30 rounded-xl p-4 flex items-start sm:items-center gap-3"
-            >
-              <ArrowRight className="text-indigo-premium shrink-0 mt-0.5 sm:mt-0" size={20} />
-              <p className="text-sm text-navy min-w-0 break-words">
-                <strong>Almost there!</strong> Add a course and unit below — you'll be taken straight back to recording once it's saved.
-              </p>
-            </motion.div>
-          )}
+        <div>
+          <h1 className="font-sora font-bold text-3xl sm:text-4xl text-navy mb-2">Your Courses</h1>
+          <p className="text-gray-500 text-sm">Add your university courses and units. STUDIA uses these to organise your lecture recordings and notes. Anything you add here also shows up instantly when recording — and vice versa.</p>
+        </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="min-w-0">
-              <h1 className="font-sora font-bold text-3xl sm:text-5xl text-navy mb-2 break-words">Unit Management</h1>
-              <p className="text-gray-600 text-sm sm:text-base">Define your course units and syllabus topics.</p>
-            </div>
-            {!showForm && (
-              <button
-                onClick={() => setShowForm(true)}
-                className="bg-indigo-premium text-white px-6 py-3 rounded-lg hover:bg-purple-premium transition flex items-center justify-center gap-2 font-medium w-full sm:w-auto shrink-0"
-              >
-                <Plus size={20} />
-                Add Unit
-              </button>
-            )}
-          </div>
-
-          {showForm && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-white rounded-2xl border border-gray-200 p-5 sm:p-8 w-full"
-            >
-              <h2 className="font-sora font-bold text-xl sm:text-2xl text-navy mb-6">Create New Unit</h2>
-
-              <div className="space-y-4">
+        <AnimatePresence>
+          {showAddCourse && (
+            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+              className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="font-sora font-bold text-lg text-navy">New Course</h2>
+                <button onClick={() => setShowAddCourse(false)} className="text-gray-400 hover:text-gray-600">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-navy mb-2">Course Name</label>
+                  <label className="block text-sm font-medium text-navy mb-2">Course Name *</label>
                   <input
                     type="text"
-                    placeholder="e.g., Mathematics, Biology"
-                    value={formData.course}
-                    onChange={(e) => setFormData({ ...formData, course: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-navy placeholder-gray-400 outline-none focus:border-indigo-premium transition text-base"
+                    placeholder="e.g. Introduction to Biology"
+                    value={newCourseName}
+                    onChange={e => setNewCourseName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') addCourse() }}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-navy placeholder-gray-400 outline-none focus:border-indigo-premium transition text-base"
                   />
                 </div>
-
                 <div>
-                  <label className="block text-sm font-medium text-navy mb-2">Unit Name</label>
+                  <label className="block text-sm font-medium text-navy mb-2">Course Code (optional)</label>
                   <input
                     type="text"
-                    placeholder="e.g., Unit 1: Algebra Basics"
-                    value={formData.unitName}
-                    onChange={(e) => setFormData({ ...formData, unitName: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-navy placeholder-gray-400 outline-none focus:border-indigo-premium transition text-base"
+                    placeholder="e.g. BIO101"
+                    value={newCourseCode}
+                    onChange={e => setNewCourseCode(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') addCourse() }}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-navy placeholder-gray-400 outline-none focus:border-indigo-premium transition text-base"
                   />
                 </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-navy mb-2">Unit Topics (one per line)</label>
-                  <textarea
-                    placeholder={'Topic 1\nTopic 2\nTopic 3\n...'}
-                    value={formData.topics}
-                    onChange={(e) => setFormData({ ...formData, topics: e.target.value })}
-                    className="w-full h-32 bg-gray-50 border border-gray-200 rounded-xl p-3 text-navy placeholder-gray-400 outline-none focus:border-indigo-premium transition resize-none text-base"
-                  />
-                </div>
-
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <button
-                    onClick={addUnit}
-                    className="flex-1 bg-indigo-premium text-white font-semibold py-3.5 sm:py-3 rounded-xl hover:bg-purple-premium transition order-1 sm:order-1"
-                  >
-                    {returnTo === 'recording' ? 'Save & Continue to Recording' : 'Create Unit'}
-                  </button>
-                  {!returnTo && (
-                    <button
-                      onClick={() => {
-                        setShowForm(false)
-                        setFormData({ course: '', unitName: '', topics: '' })
-                      }}
-                      className="flex-1 bg-gray-200 text-navy font-semibold py-3.5 sm:py-3 rounded-xl hover:bg-gray-300 transition order-2"
-                    >
-                      Cancel
-                    </button>
-                  )}
-                </div>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={addCourse} className="flex-1 bg-indigo-premium text-white font-semibold py-3 rounded-xl hover:bg-purple-premium transition">
+                  Add Course
+                </button>
+                <button onClick={() => setShowAddCourse(false)} className="flex-1 bg-gray-100 text-navy font-semibold py-3 rounded-xl hover:bg-gray-200 transition">
+                  Cancel
+                </button>
               </div>
             </motion.div>
           )}
+        </AnimatePresence>
 
-          {Object.entries(groupedUnits).length > 0 ? (
-            <div className="space-y-6 sm:space-y-8 w-full">
-              {Object.entries(groupedUnits).map(([course, courseUnits]) => (
-                <div key={course} className="w-full min-w-0">
-                  <h2 className="font-sora font-bold text-xl sm:text-2xl text-navy mb-4 break-words">{course}</h2>
-                  <div className="space-y-3">
-                    {courseUnits.map((unit, i) => (
-                      <motion.div
-                        key={unit.id}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: i * 0.05 }}
-                        className="bg-white rounded-xl p-4 sm:p-6 border border-gray-200 hover:border-indigo-premium/50 transition group w-full min-w-0 overflow-hidden"
-                      >
-                        <div className="flex items-start justify-between gap-3 mb-4">
+        {courses.length === 0 && !showAddCourse && (
+          <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-12 text-center">
+            <GraduationCap size={40} className="mx-auto text-gray-300 mb-4" />
+            <p className="font-sora font-bold text-navy text-lg mb-2">No courses yet</p>
+            <p className="text-gray-500 text-sm mb-6">Add your first course to start organising your study materials.</p>
+            <button onClick={() => setShowAddCourse(true)}
+              className="bg-indigo-premium text-white px-6 py-3 rounded-xl font-semibold hover:bg-purple-premium transition">
+              Add Your First Course
+            </button>
+          </div>
+        )}
+
+        <div className="space-y-4">
+          {courses.map(course => (
+            <div key={course.id} className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+              <div className="px-5 py-4 flex items-center justify-between gap-3">
+                <button onClick={() => setExpandedCourse(expandedCourse === course.id ? null : course.id)}
+                  className="flex-1 flex items-center gap-3 text-left min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-premium to-purple-premium flex items-center justify-center shrink-0">
+                    <BookOpen size={18} className="text-white" />
+                  </div>
+                  <div className="min-w-0">
+                    {editingCourseId === course.id ? (
+                      <input
+                        value={editCourseName}
+                        onChange={e => setEditCourseName(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') saveEditCourse(course.id) }}
+                        className="border border-indigo-premium rounded-lg px-3 py-1 text-navy outline-none text-sm font-semibold"
+                        onClick={e => e.stopPropagation()}
+                        autoFocus
+                      />
+                    ) : (
+                      <p className="font-sora font-bold text-navy truncate">{course.name}</p>
+                    )}
+                    <p className="text-xs text-gray-400">
+                      {course.code && `${course.code} · `}
+                      {course.units.length} unit{course.units.length !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                  {expandedCourse === course.id ? <ChevronUp size={18} className="text-gray-400 shrink-0" /> : <ChevronDown size={18} className="text-gray-400 shrink-0" />}
+                </button>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  {editingCourseId === course.id ? (
+                    <>
+                      <button onClick={() => saveEditCourse(course.id)} className="p-2 rounded-lg text-mint hover:bg-mint/10 transition"><Check size={16} /></button>
+                      <button onClick={() => setEditingCourseId(null)} className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 transition"><X size={16} /></button>
+                    </>
+                  ) : (
+                    <>
+                      <button onClick={() => startEditCourse(course)} className="p-2 rounded-lg text-gray-400 hover:text-indigo-premium hover:bg-indigo-premium/10 transition"><Edit2 size={15} /></button>
+                      <button onClick={() => deleteCourse(course.id)} className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition"><Trash2 size={15} /></button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <AnimatePresence>
+                {expandedCourse === course.id && (
+                  <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }}
+                    className="overflow-hidden border-t border-gray-100">
+                    <div className="px-5 py-4 space-y-3">
+
+                      {course.units.length === 0 && addingUnitFor !== course.id && (
+                        <p className="text-sm text-gray-400 text-center py-4">No units yet — add your first unit below.</p>
+                      )}
+
+                      {course.units.map(unit => (
+                        <div key={unit.id} className="bg-gray-50 rounded-xl p-4 flex items-start justify-between gap-3">
                           <div className="flex-1 min-w-0">
-                            <p className="font-sora font-bold text-base sm:text-lg text-navy break-words">{unit.unitName}</p>
-                            <p className="text-xs sm:text-sm text-gray-600 mt-1">
-                              {unit.topics.length} topics • Coverage: {unit.coverage}%
-                            </p>
+                            <p className="font-semibold text-navy text-sm">{unit.name}</p>
+                            {unit.topics.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-2">
+                                {unit.topics.map((topic, i) => (
+                                  <span key={i} className="text-[10px] bg-indigo-premium/10 text-indigo-premium px-2 py-0.5 rounded-full">{topic}</span>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                          <button
-                            onClick={() => deleteUnit(unit.id)}
-                            className="p-2 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-                          >
-                            <Trash2 size={18} />
+                          <button onClick={() => deleteUnit(course.id, unit.id)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition shrink-0">
+                            <Trash2 size={14} />
                           </button>
                         </div>
+                      ))}
 
-                        <div className="mb-4">
-                          <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                            <div
-                              className="bg-gradient-to-r from-indigo-premium to-purple-premium h-2 rounded-full transition-all"
-                              style={{ width: `${unit.coverage}%` }}
-                            />
+                      {addingUnitFor === course.id ? (
+                        <div className="bg-indigo-premium/5 border border-indigo-premium/20 rounded-xl p-4 space-y-3">
+                          <input
+                            type="text"
+                            placeholder="Unit name e.g. Unit 1: Cell Biology"
+                            value={newUnitName}
+                            onChange={e => setNewUnitName(e.target.value)}
+                            className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-navy placeholder-gray-400 outline-none focus:border-indigo-premium transition text-sm"
+                          />
+
+                          <div>
+                            <label className="block text-xs font-medium text-navy mb-1.5">Topics (optional)</label>
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                placeholder="e.g. Mitosis"
+                                value={newTopicInput}
+                                onChange={e => setNewTopicInput(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTopic() } }}
+                                className="flex-1 bg-white border border-gray-200 rounded-xl px-3 py-2 text-navy placeholder-gray-400 outline-none focus:border-indigo-premium transition text-sm"
+                              />
+                              <button onClick={addTopic} className="bg-indigo-premium text-white px-3 py-2 rounded-xl text-sm font-semibold hover:bg-purple-premium transition">
+                                + Add
+                              </button>
+                            </div>
+                            {newTopics.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5 mt-2">
+                                {newTopics.map((t, i) => (
+                                  <span key={i} className="flex items-center gap-1 text-xs bg-indigo-premium/10 text-indigo-premium px-2.5 py-1 rounded-full">
+                                    {t}
+                                    <button onClick={() => removeTopic(t)} className="text-indigo-premium/60 hover:text-indigo-premium"><X size={10} /></button>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex gap-2">
+                            <button onClick={() => addUnit(course.id)}
+                              className="flex-1 bg-indigo-premium text-white font-semibold py-2.5 rounded-xl hover:bg-purple-premium transition text-sm">
+                              Save Unit
+                            </button>
+                            <button onClick={() => { setAddingUnitFor(null); setNewUnitName(''); setNewTopics([]); setNewTopicInput('') }}
+                              className="flex-1 bg-gray-200 text-navy font-semibold py-2.5 rounded-xl hover:bg-gray-300 transition text-sm">
+                              Cancel
+                            </button>
                           </div>
                         </div>
-
-                        <div className="flex flex-wrap gap-2 min-w-0">
-                          {unit.topics.slice(0, 5).map((topic, j) => (
-                            <span
-                              key={j}
-                              className="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded-full break-words max-w-full"
-                            >
-                              {topic}
-                            </span>
-                          ))}
-                          {unit.topics.length > 5 && (
-                            <span className="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded-full shrink-0">
-                              +{unit.topics.length - 5} more
-                            </span>
-                          )}
-                        </div>
-                      </motion.div>
-                    ))}
-                  </div>
-                </div>
-              ))}
+                      ) : (
+                        <button
+                          onClick={() => { setAddingUnitFor(course.id); setNewUnitName(''); setNewTopics([]) }}
+                          className="w-full py-2.5 rounded-xl border-2 border-dashed border-gray-200 text-gray-400 hover:border-indigo-premium/40 hover:text-indigo-premium transition text-sm font-medium flex items-center justify-center gap-1.5"
+                        >
+                          <Plus size={16} /> Add Unit
+                        </button>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
-          ) : !showForm ? (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-white rounded-2xl p-8 sm:p-12 border border-gray-200 text-center"
-            >
-              <BookOpen className="mx-auto text-gray-300 mb-4" size={48} />
-              <p className="text-navy font-semibold mb-2">No units created yet</p>
-              <p className="text-gray-600 text-sm sm:text-base">Add your first unit to start tracking lecture coverage!</p>
-            </motion.div>
-          ) : null}
-        </motion.div>
+          ))}
+        </div>
+
+        {courses.length > 0 && (
+          <div className="bg-indigo-premium/5 border border-indigo-premium/20 rounded-2xl p-5">
+            <p className="text-sm text-indigo-premium font-semibold mb-1">💡 How STUDIA uses your units</p>
+            <p className="text-xs text-gray-600">When you record a lecture, STUDIA asks you to select a course and unit. This helps SAGE AI Tutor understand what topic it's tutoring you on, and helps organise your notes and quiz history by subject.</p>
+          </div>
+        )}
       </div>
     </div>
   )
