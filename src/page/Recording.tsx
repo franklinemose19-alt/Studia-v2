@@ -10,7 +10,7 @@ import { getTierFromPlan, type SmartInkNote } from '../lib/smartInk'
 import { toast } from '../lib/toast'
 import TimestampedScript from '../components/TimestampedScript'
 import LanguageViewSwitcher from '../components/LanguageViewSwitcher'
-
+import { loadCourses, saveCourses, onCoursesChanged, upsertCourseUnit, generateId, type Course, type Unit } from '../lib/courseStore'
 interface ScriptEntry {
   timestamp: number
   heading: string
@@ -76,12 +76,7 @@ const deleteBlob = async (id: string) => {
   catch (err) { console.error('Failed to delete blob:', err) }
 }
 
-const loadCourses = (): Course[] => {
-  try { return JSON.parse(localStorage.getItem('studia_courses') || '[]') } catch { return [] }
-}
-const saveCourses = (courses: Course[]) => {
-  try { localStorage.setItem('studia_courses', JSON.stringify(courses)) } catch { /* storage full */ }
-}
+
 
 const loadUnitCoverage = (): Record<string, UnitCoverageRecord> => {
   try { return JSON.parse(localStorage.getItem('unitCoverage') || '{}') } catch { return {} }
