@@ -36,8 +36,6 @@ interface Recording {
   isProcessing?: boolean
 }
 
-interface Unit { id: string; name: string; topics: string[] }
-interface Course { id: string; name: string; code?: string; units: Unit[]; createdAt: string }
 interface UnitCoverageRecord { lecturesRecorded: number; coveredTopics: string[] }
 
 interface CoverageData {
@@ -91,7 +89,6 @@ const topicMatchesConcept = (topic: string, conceptName: string): boolean => {
   return t.length > 2 && c.length > 2 && (t.includes(c) || c.includes(t))
 }
 
-const generateId = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`
 
 const getSupportedMimeType = (): string => {
   const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg', 'audio/mp4']
@@ -171,6 +168,32 @@ export default function RecordingPage() {
   useEffect(() => {
     const loaded = loadCourses()
     setCourses(loaded)
+    useEffect(() => {
+  const loaded = loadCourses()
+  setCourses(loaded)
+  if (loaded.length === 0) setShowAddForm(true)
+
+  // Live sync — picks up units added in Unit Management, or another tab,
+  // without needing a refresh here.
+  const unsubscribe = onCoursesChanged(() => setCourses(loadCourses()))
+
+  try { setRecordings(JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')) } catch { setRecordings([]) }
+
+  const init = async () => {
+    const a = await loadAccess(userId)
+    setAccess(a)
+    setAccessLoaded(true)
+  }
+  init()
+
+  return () => {
+    unsubscribe()
+    if (timerRef.current) clearInterval(timerRef.current)
+    if (audioContextRef.current) audioContextRef.current.close()
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
+    if (litePollRef.current) clearInterval(litePollRef.current)
+  }
+}, [])
     if (loaded.length === 0) setShowAddForm(true)
     try { setRecordings(JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')) } catch { setRecordings([]) }
 
@@ -198,14 +221,27 @@ export default function RecordingPage() {
   const selectedCourseObj = courses.find(c => c.name === selectedCourse)
   const filteredUnits = selectedCourseObj?.units || []
 
-  const handleQuickAddCourseUnit = () => {
-    const courseName = newCourseName.trim()
-    const unitName = newUnitName.trim()
-    if (!courseName) { toast.error('Enter a course name'); return }
-    if (!unitName) { toast.error('Enter a unit name'); return }
+const handleQuickAddCourseUnit = () => {
+  const courseName = newCourseName.trim()
+  const unitName = newUnitName.trim()
+  if (!courseName) { toast.error('Enter a course name'); return }
+  if (!unitName) { toast.error('Enter a unit name'); return }
 
-    const topics = newTopicsInput.split(',').map(t => t.trim()).filter(Boolean)
-    const existingCourse = courses.find(c => c.name.trim().toLowerCase() === courseName.toLowerCase())
+  const topics = newTopicsInput.split(',').map(t => t.trim()).filter(Boolean)
+  const { courses: updatedCourses, unitId } = upsertCourseUnit(courses, courseName, unitName, topics)
+
+  setCourses(updatedCourses)
+  saveCourses(updatedCourses)
+  setSelectedCourse(courseName)
+  setSelectedUnit(unitId)
+  setNewCourseName('')
+  setNewUnitName('')
+  setNewTopicsInput('')
+  setShowAddForm(false)
+  toast.success(`"${courseName}" ready — you can record now.`)
+}
+
+   
 
     let updatedCourses: Course[]
     let newUnitId: string
