@@ -241,43 +241,6 @@ const handleQuickAddCourseUnit = () => {
   toast.success(`"${courseName}" ready — you can record now.`)
 }
 
-   
-
-    let updatedCourses: Course[]
-    let newUnitId: string
-
-    if (existingCourse) {
-      const dupeUnit = existingCourse.units.find(u => u.name.trim().toLowerCase() === unitName.toLowerCase())
-      if (dupeUnit) {
-        newUnitId = dupeUnit.id
-        updatedCourses = courses
-      } else {
-        newUnitId = generateId()
-        const newUnit: Unit = { id: newUnitId, name: unitName, topics }
-        updatedCourses = courses.map(c => c.id === existingCourse.id ? { ...c, units: [...c.units, newUnit] } : c)
-      }
-    } else {
-      newUnitId = generateId()
-      const newCourse: Course = {
-        id: generateId(),
-        name: courseName,
-        units: [{ id: newUnitId, name: unitName, topics }],
-        createdAt: new Date().toISOString(),
-      }
-      updatedCourses = [...courses, newCourse]
-    }
-
-    setCourses(updatedCourses)
-    saveCourses(updatedCourses)
-    setSelectedCourse(courseName)
-    setSelectedUnit(newUnitId)
-    setNewCourseName('')
-    setNewUnitName('')
-    setNewTopicsInput('')
-    setShowAddForm(false)
-    toast.success(`"${courseName}" ready — you can record now.`)
-  }
-
   const visualize = () => {
     if (!analyserRef.current || !canvasRef.current) return
     const canvas = canvasRef.current
