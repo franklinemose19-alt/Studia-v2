@@ -1,6 +1,5 @@
-import { fetchWithRetry } from './_utils/openaiRetry.js'
-import { logTokenUsage } from './_utils/tokenLogger.js'
 import { checkRateLimit } from './_utils/rateLimiter.js'
+import { chatCompletion } from './_utils/aiGateway.js'
 
 const notesCache = new Map()
 
@@ -9,9 +8,6 @@ export default async function handler(req, res) {
   try {
     const { transcript, segments, courseName, unitName, userId } = req.body
     if (!transcript?.trim()) return res.status(400).json({ error: 'No transcript provided' })
-
-    const apiKey = process.env.OPENAI_API_KEY
-    if (!apiKey) return res.status(500).json({ error: 'API key not configured' })
 
     const rateCheck = await checkRateLimit(userId, 'generate-lecture-notes')
     if (!rateCheck.allowed) {
@@ -24,9 +20,6 @@ export default async function handler(req, res) {
     const cacheKey = `${transcript.slice(0, 200)}-${courseName || ''}-${unitName || ''}`
     if (notesCache.has(cacheKey)) return res.status(200).json(notesCache.get(cacheKey))
 
-    // Compact timestamp map so GPT can attach real timestamps to the script
-    // instead of guessing. Only start-time + a text preview per segment —
-    // full segment text would roughly double the prompt for no real benefit.
     const segmentMap = Array.isArray(segments) && segments.length > 0
       ? segments.map(s => `[${Math.floor(s.start)}s] ${s.text.slice(0, 80)}`).join('\n')
       : null
@@ -51,7 +44,7 @@ Return ONLY valid JSON, no markdown fences:
     { "type": "table", "headers": ["Col A", "Col B"], "rows": [["val", "val"]] },
     { "type": "flowchart", "title": "Chart title", "nodes": [{ "id": "1", "label": "Step", "sublabel": "", "shape": "rect" }], "edges": [{ "from": "1", "to": "2", "label": "" }] }
   ],
-  "quickRevision": { "topFacts": ["fact 1"], "keyTerms": ["term 1"], "commonMistakes": ["mistake"] },
+  "quickRevision": { "topFacts": ["fact 1", "fact 2", "fact 3"], "keyTerms": ["term 1", "term 2"], "commonMistakes": ["mistake"] },
   "structuredScript": [
     { "timestamp": 0, "heading": "Section heading in lecturer's own topic order", "definition": "if any, else empty string", "explanation": "the lecturer's explanation, close to original wording", "keyTerm": "one important term or empty string" }
   ]
@@ -63,41 +56,30 @@ Rules for structuredScript:
 - Keep entries concise, not a full restatement of the transcript.
 ${segmentMap ? `\nTimestamp map (second: preview):\n${segmentMap.slice(0, 6000)}` : '\nNo timestamp map available — set "timestamp" to 0 for all entries.'}`
 
-    const response = await fetchWithRetry('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: 'gpt-5-mini',
-        max_tokens: 6500,
-        response_format: { type: 'json_object' },
+    try {
+      const result = await chatCompletion({
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: `Generate Smart Ink notes and the structured script.\n${courseName ? `Course: ${courseName}` : ''}\n${unitName ? `Unit: ${unitName}` : ''}\n\nTranscript:\n${transcript}` },
         ],
-      }),
-    })
+        maxTokens: 6500, responseFormat: { type: 'json_object' }, feature: 'lecture_notes', userId,
+      })
 
-    const data = await response.json()
-    if (!response.ok) return res.status(response.status).json({ error: data.error?.message || 'Notes generation failed' })
+      let structured
+      try { structured = JSON.parse(result.content) }
+      catch { return res.status(200).json({ notes: result.content, structured: null, structuredScript: [] }) }
 
-    logTokenUsage(userId, 'lecture_notes', 'gpt-5-mini', data.usage)
+      const plainText = flattenToPlainText(structured)
+      const responseBody = {
+        notes: plainText, structured,
+        structuredScript: structured.structuredScript || [],
+        detectedLanguages: structured.detectedLanguages || ['English'],
+      }
+      notesCache.set(cacheKey, responseBody)
+      if (notesCache.size > 50) notesCache.delete(notesCache.keys().next().value)
 
-    const raw = data.choices?.[0]?.message?.content || ''
-    let structured
-    try { structured = JSON.parse(raw) }
-    catch { return res.status(200).json({ notes: raw, structured: null, structuredScript: [] }) }
-
-    const plainText = flattenToPlainText(structured)
-    const result = {
-      notes: plainText,
-      structured,
-      structuredScript: structured.structuredScript || [],
-      detectedLanguages: structured.detectedLanguages || ['English'],
-    }
-    notesCache.set(cacheKey, result)
-    if (notesCache.size > 50) notesCache.delete(notesCache.keys().next().value)
-
-    return res.status(200).json(result)
+      return res.status(200).json(responseBody)
+    } catch (err) { return res.status(500).json({ error: err.message || 'Notes generation failed' }) }
   } catch (error) {
     console.error('Lecture notes error:', error)
     return res.status(500).json({ error: error.message || 'Internal server error' })
