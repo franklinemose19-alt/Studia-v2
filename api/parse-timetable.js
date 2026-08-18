@@ -1,28 +1,17 @@
 import pdfParse from 'pdf-parse'
-import { logTokenUsage } from './_utils/tokenLogger.js'
 import { checkRateLimit } from './_utils/rateLimiter.js'
+import { chatCompletion } from './_utils/aiGateway.js'
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' })
-  }
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   try {
     const { pdfBase64, courses, userId } = req.body
-    if (!pdfBase64) {
-      return res.status(400).json({ error: 'No PDF provided' })
-    }
-
-    const apiKey = process.env.OPENAI_API_KEY
-    if (!apiKey) {
-      return res.status(500).json({ error: 'API key not configured' })
-    }
+    if (!pdfBase64) return res.status(400).json({ error: 'No PDF provided' })
 
     const rateCheck = await checkRateLimit(userId, 'parse-timetable')
     if (!rateCheck.allowed) {
       return res.status(429).json({
-        error: rateCheck.reason === 'missing_user_id'
-          ? 'Authentication required'
-          : `Too many requests — please wait ${Math.ceil(rateCheck.retryAfterSeconds / 60)} minute(s) and try again.`,
+        error: rateCheck.reason === 'missing_user_id' ? 'Authentication required' : `Too many requests — wait ${Math.ceil(rateCheck.retryAfterSeconds / 60)} minute(s).`,
         retryAfterSeconds: rateCheck.retryAfterSeconds,
       })
     }
@@ -35,14 +24,8 @@ export default async function handler(req, res) {
       ? courses.map(c => `${c.name}${c.units?.length ? ' (' + c.units.join(', ') + ')' : ''}`).join('; ')
       : 'Not specified'
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-5-mini',
+    try {
+      const result = await chatCompletion({
         messages: [
           {
             role: 'system',
@@ -53,33 +36,15 @@ If you find no exams, return [].`,
           },
           {
             role: 'user',
-            content: `Student's enrolled courses/units: ${coursesContext}
-Timetable text:
-"""${text.slice(0, 8000)}"""
-Extract all exams found. If the student's courses are specified, still include all exams found in the document.`,
+            content: `Student's enrolled courses/units: ${coursesContext}\nTimetable text:\n"""${text.slice(0, 8000)}"""\nExtract all exams found. If the student's courses are specified, still include all exams found in the document.`,
           },
         ],
-        max_tokens: 2000,
-      }),
-    })
-
-    const data = await response.json()
-    if (!response.ok) {
-      console.error('OpenAI Error:', data)
-      return res.status(response.status).json({ error: data.error?.message || 'Failed to parse timetable' })
-    }
-
-    logTokenUsage(userId, 'parse_timetable', 'gpt-5-mini', data.usage)
-
-    const content = data.choices?.[0]?.message?.content || ''
-    try {
-      const jsonMatch = content.match(/\[[\s\S]*\]/)
+        maxTokens: 2000, feature: 'parse_timetable', userId,
+      })
+      const jsonMatch = result.content.match(/\[[\s\S]*\]/)
       const exams = jsonMatch ? JSON.parse(jsonMatch[0]) : []
       return res.status(200).json({ exams })
-    } catch (e) {
-      console.error('Parse error:', e, 'Content:', content)
-      return res.status(500).json({ error: 'Failed to parse exam data from timetable' })
-    }
+    } catch (err) { return res.status(500).json({ error: err.message || 'Failed to parse timetable' }) }
   } catch (error) {
     console.error('Timetable parsing error:', error)
     return res.status(500).json({ error: error.message || 'Internal server error' })
