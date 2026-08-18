@@ -1,18 +1,31 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   DollarSign, Users, Clock, RefreshCw, CheckCircle,
-  AlertCircle, ArrowLeft, Crown, Zap, Wrench, ShieldAlert,
+  AlertCircle, ArrowLeft, Crown, Zap, Wrench, Server,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getSupabase } from '../lib/supabaseClient'
 import { useAuth } from '../lib/AuthContext'
 import { toast } from '../lib/toast'
 
-interface SecurityEvent {
+interface AIProviderInfo {
+  enabled: boolean
+  configured: boolean
+  status: string
+  consecutiveFailures: number
+  avgLatencyMs: number
+  monthlyBudgetUsd: number
+  safetyThresholdPct: number
+  monthSpendUsd: number
+}
+
+interface AIFailover {
   id: number
-  user_id: string
-  event_type: string
-  detail: string
+  feature: string
+  primary_provider: string
+  fallback_provider: string
+  reason: string
+  succeeded: boolean
   created_at: string
 }
 
@@ -28,7 +41,10 @@ interface AdminStats {
     totalTokens: number
     featureCosts: Record<string, number>
   }
-  securityEvents: SecurityEvent[]
+  aiInfrastructure: {
+    providers: { openai: AIProviderInfo; azure: AIProviderInfo }
+    recentFailovers: AIFailover[]
+  }
 }
 
 const PLAN_ICONS: Record<string, string> = { explorer: '🌍', achiever: '🎯', excellence: '🚀', valedictorian: '🏆', none: '👤' }
@@ -44,6 +60,17 @@ function getStatusColor(s: string) {
     case 'pending': return 'bg-yellow-500/20 text-yellow-400'
     case 'failed': return 'bg-red-500/20 text-red-400'
     default: return 'bg-white/10 text-[#8B97B5]'
+  }
+}
+
+function providerStatusColor(status: string) {
+  switch (status) {
+    case 'healthy': return 'text-green-400 bg-green-500/15'
+    case 'degraded': return 'text-yellow-400 bg-yellow-500/15'
+    case 'unavailable': return 'text-red-400 bg-red-500/15'
+    case 'rate_limited': return 'text-orange-400 bg-orange-500/15'
+    case 'budget_limited': return 'text-purple-400 bg-purple-500/15'
+    default: return 'text-[#8B97B5] bg-white/10'
   }
 }
 
@@ -76,6 +103,78 @@ function CircleStat({ value, label, strokeColor, textColor, percentage = 100 }: 
   )
 }
 
+function ProviderCard({
+  name, label, info, onToggle, onBudgetSave,
+}: {
+  name: 'openai' | 'azure'
+  label: string
+  info: AIProviderInfo
+  onToggle: (enabled: boolean) => void
+  onBudgetSave: (budget: number, threshold: number) => void
+}) {
+  const [budgetInput, setBudgetInput] = useState(String(info.monthlyBudgetUsd))
+  const [thresholdInput, setThresholdInput] = useState(String(info.safetyThresholdPct))
+
+  const budgetPct = info.monthlyBudgetUsd > 0 ? Math.min(100, Math.round((info.monthSpendUsd / info.monthlyBudgetUsd) * 100)) : 0
+
+  return (
+    <div className="bg-surface-base border border-white/5 rounded-xl p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-semibold text-white">{label}</p>
+          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${providerStatusColor(info.status)}`}>{info.status}</span>
+          {!info.configured && <span className="text-[10px] text-[#8B97B5] bg-white/5 px-2 py-0.5 rounded-full">not configured</span>}
+        </div>
+        <button
+          onClick={() => onToggle(!info.enabled)}
+          disabled={!info.configured && name === 'azure'}
+          className={`relative w-9 h-5 rounded-full transition-colors ${info.enabled ? 'bg-brand-blue' : 'bg-white/10'} disabled:opacity-30`}
+        >
+          <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${info.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 text-[11px]">
+        <div className="bg-surface-elevated rounded-lg p-2">
+          <p className="text-[#8B97B5]">Avg latency</p>
+          <p className="text-white font-semibold">{info.avgLatencyMs}ms</p>
+        </div>
+        <div className="bg-surface-elevated rounded-lg p-2">
+          <p className="text-[#8B97B5]">Consecutive fails</p>
+          <p className="text-white font-semibold">{info.consecutiveFailures}</p>
+        </div>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between text-[11px] mb-1">
+          <span className="text-[#8B97B5]">Month spend</span>
+          <span className="text-white">${info.monthSpendUsd} / ${info.monthlyBudgetUsd}</span>
+        </div>
+        <div className="w-full bg-surface-elevated rounded-full h-1.5">
+          <div className={`h-1.5 rounded-full ${budgetPct >= 90 ? 'bg-red-400' : budgetPct >= 70 ? 'bg-yellow-400' : 'bg-green-400'}`} style={{ width: `${budgetPct}%` }} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-1.5 items-end">
+        <div>
+          <label className="text-[9px] text-[#8B97B5]">Budget $/mo</label>
+          <input type="number" value={budgetInput} onChange={e => setBudgetInput(e.target.value)}
+            className="w-full bg-surface-elevated border border-white/10 rounded-lg px-2 py-1 text-white text-xs outline-none" />
+        </div>
+        <div>
+          <label className="text-[9px] text-[#8B97B5]">Threshold %</label>
+          <input type="number" value={thresholdInput} onChange={e => setThresholdInput(e.target.value)}
+            className="w-full bg-surface-elevated border border-white/10 rounded-lg px-2 py-1 text-white text-xs outline-none" />
+        </div>
+        <button onClick={() => onBudgetSave(parseFloat(budgetInput) || 0, parseInt(thresholdInput) || 90)}
+          className="bg-brand-blue text-white text-[10px] font-semibold py-1.5 rounded-lg hover:bg-brand-blue/90 transition">
+          Save
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function AdminDashboard() {
   const navigate = useNavigate()
   const { userId } = useAuth()
@@ -98,11 +197,7 @@ export default function AdminDashboard() {
   const fetchStats = async () => {
     if (!userId) return
     try {
-      const res = await fetch('/api/admin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminUserId: userId }),
-      })
+      const res = await fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ adminUserId: userId }) })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Failed'); return }
       setStats(data)
@@ -115,21 +210,31 @@ export default function AdminDashboard() {
   const toggleMaintenance = async () => {
     if (!userId || !stats) return
     try {
-      const res = await fetch('/api/admin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminUserId: userId, action: 'toggle_maintenance', enabled: !stats.maintenanceMode }),
-      })
+      const res = await fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ adminUserId: userId, action: 'toggle_maintenance', enabled: !stats.maintenanceMode }) })
       const data = await res.json()
       if (res.ok) {
         setStats(prev => prev ? { ...prev, maintenanceMode: data.maintenanceMode } : prev)
         toast.success(data.maintenanceMode ? '🔧 Maintenance mode ON' : '✅ Maintenance mode OFF — app is live')
-      } else {
-        toast.error(data.error || 'Failed to toggle maintenance mode')
-      }
-    } catch {
-      toast.error('Connection error')
-    }
+      } else toast.error(data.error || 'Failed to toggle maintenance mode')
+    } catch { toast.error('Connection error') }
+  }
+
+  const toggleAIProvider = async (provider: 'openai' | 'azure', enabled: boolean) => {
+    if (!userId) return
+    try {
+      const res = await fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ adminUserId: userId, action: 'toggle_ai_provider', provider, enabled }) })
+      if (res.ok) { toast.success(`${provider === 'azure' ? 'Azure' : 'OpenAI'} ${enabled ? 'enabled' : 'disabled'}`); fetchStats() }
+      else toast.error('Failed to update provider')
+    } catch { toast.error('Connection error') }
+  }
+
+  const saveAIBudget = async (provider: 'openai' | 'azure', monthlyBudgetUsd: number, safetyThresholdPct: number) => {
+    if (!userId) return
+    try {
+      const res = await fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ adminUserId: userId, action: 'update_ai_budget', provider, monthlyBudgetUsd, safetyThresholdPct }) })
+      if (res.ok) { toast.success('Budget updated'); fetchStats() }
+      else toast.error('Failed to update budget')
+    } catch { toast.error('Connection error') }
   }
 
   useEffect(() => {
@@ -144,9 +249,7 @@ export default function AdminDashboard() {
     return (
       <div className="min-h-screen bg-surface-base flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-warning to-red-500 flex items-center justify-center">
-            <Crown size={22} className="text-white" />
-          </div>
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-warning to-red-500 flex items-center justify-center"><Crown size={22} className="text-white" /></div>
           <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-warning" />
         </div>
       </div>
@@ -173,14 +276,12 @@ export default function AdminDashboard() {
     { value: formatKsh(s.revenue.today), label: 'Today', strokeColor: '#6D5EF7', textColor: 'text-purple-400', percentage: Math.min(100, (s.revenue.today / Math.max(1, s.revenue.monthly)) * 100) },
     { value: formatKsh(s.revenue.escrow), label: 'Unconfirmed', strokeColor: '#F59E0B', textColor: 'text-warning', percentage: Math.min(100, (s.revenue.escrow / Math.max(1, s.revenue.total)) * 100) },
   ]
-
   const userCircles = [
     { value: totalUsers, label: 'Total', strokeColor: '#3B82F6', textColor: 'text-brand-blue', percentage: 100 },
     { value: s.users.newToday, label: 'Today', strokeColor: '#22C55E', textColor: 'text-green-400', percentage: Math.min(100, (s.users.newToday / Math.max(1, totalUsers)) * 500) },
     { value: s.users.newThisWeek, label: 'This week', strokeColor: '#6D5EF7', textColor: 'text-purple-400', percentage: Math.min(100, (s.users.newThisWeek / Math.max(1, totalUsers)) * 200) },
     { value: s.users.newThisHour, label: 'Last hour', strokeColor: '#F59E0B', textColor: 'text-warning', percentage: Math.min(100, s.users.newThisHour * 20) },
   ]
-
   const apiCostCircles = [
     { value: `$${s.apiCosts.totalUSD}`, label: 'Total cost', strokeColor: '#EF4444', textColor: 'text-red-400', percentage: 100 },
     { value: `$${s.apiCosts.monthlyUSD}`, label: 'This month', strokeColor: '#F59E0B', textColor: 'text-warning', percentage: Math.min(100, (s.apiCosts.monthlyUSD / Math.max(0.001, s.apiCosts.totalUSD)) * 100) },
@@ -192,76 +293,41 @@ export default function AdminDashboard() {
     <div className="min-h-screen bg-surface-base">
       <nav className="border-b border-white/5 bg-surface-elevated/50 backdrop-blur-md sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <button onClick={() => navigate('/dashboard')} className="flex items-center gap-2 text-sm text-[#8B97B5] hover:text-white transition-colors">
-            <ArrowLeft size={16} /> Back
-          </button>
-          <div className="flex items-center gap-2">
-            <Crown size={18} className="text-warning" />
-            <span className="font-sora font-bold text-white">Owner Dashboard</span>
-          </div>
-          <button onClick={fetchStats} className="p-2 rounded-lg hover:bg-white/10 transition-colors">
-            <RefreshCw size={17} className="text-[#8B97B5]" />
-          </button>
+          <button onClick={() => navigate('/dashboard')} className="flex items-center gap-2 text-sm text-[#8B97B5] hover:text-white transition-colors"><ArrowLeft size={16} /> Back</button>
+          <div className="flex items-center gap-2"><Crown size={18} className="text-warning" /><span className="font-sora font-bold text-white">Owner Dashboard</span></div>
+          <button onClick={fetchStats} className="p-2 rounded-lg hover:bg-white/10 transition-colors"><RefreshCw size={17} className="text-[#8B97B5]" /></button>
         </div>
       </nav>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6">
 
-        {lastUpdated && (
-          <p className="text-xs text-[#4A5568]">Last updated: {lastUpdated.toLocaleTimeString()} · Auto-refreshes every 30s</p>
-        )}
+        {lastUpdated && <p className="text-xs text-[#4A5568]">Last updated: {lastUpdated.toLocaleTimeString()} · Auto-refreshes every 30s</p>}
 
-        {/* Maintenance toggle */}
-        <div className={`rounded-2xl p-5 border-2 flex items-center justify-between gap-4 flex-wrap ${
-          s.maintenanceMode ? 'bg-red-500/10 border-red-500/40' : 'bg-surface-elevated border-white/5'
-        }`}>
+        <div className={`rounded-2xl p-5 border-2 flex items-center justify-between gap-4 flex-wrap ${s.maintenanceMode ? 'bg-red-500/10 border-red-500/40' : 'bg-surface-elevated border-white/5'}`}>
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${s.maintenanceMode ? 'bg-red-500/20' : 'bg-white/5'}`}>
-              <Wrench size={18} className={s.maintenanceMode ? 'text-red-400' : 'text-[#8B97B5]'} />
-            </div>
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${s.maintenanceMode ? 'bg-red-500/20' : 'bg-white/5'}`}><Wrench size={18} className={s.maintenanceMode ? 'text-red-400' : 'text-[#8B97B5]'} /></div>
             <div>
               <p className="text-sm font-semibold text-white">Maintenance Mode</p>
               <p className="text-xs text-[#8B97B5]">{s.maintenanceMode ? 'Students see the maintenance screen right now' : 'App is live for all students'}</p>
             </div>
           </div>
-          <button onClick={toggleMaintenance}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition shrink-0 ${
-              s.maintenanceMode ? 'bg-white text-red-500 hover:bg-gray-100' : 'bg-red-500 text-white hover:bg-red-600'
-            }`}>
+          <button onClick={toggleMaintenance} className={`px-4 py-2 rounded-xl text-xs font-bold transition shrink-0 ${s.maintenanceMode ? 'bg-white text-red-500 hover:bg-gray-100' : 'bg-red-500 text-white hover:bg-red-600'}`}>
             {s.maintenanceMode ? 'Turn Off' : 'Turn On'}
           </button>
         </div>
 
-        {/* Revenue */}
         <div className="bg-surface-elevated border border-white/5 rounded-2xl p-5">
-          <div className="flex items-center gap-2 mb-5">
-            <DollarSign size={15} className="text-brand-green" />
-            <p className="text-sm font-semibold text-white">Revenue</p>
-          </div>
-          <div className="flex items-center justify-around gap-2">
-            {revenueCircles.map((c, i) => <CircleStat key={i} {...c} />)}
-          </div>
+          <div className="flex items-center gap-2 mb-5"><DollarSign size={15} className="text-brand-green" /><p className="text-sm font-semibold text-white">Revenue</p></div>
+          <div className="flex items-center justify-around gap-2">{revenueCircles.map((c, i) => <CircleStat key={i} {...c} />)}</div>
           <div className="mt-5 pt-4 border-t border-white/5 grid grid-cols-2 gap-3">
-            <div className="bg-surface-base rounded-xl p-3">
-              <p className="text-[10px] text-[#8B97B5] mb-1">My confirmed money</p>
-              <p className="text-brand-green font-bold text-sm">{formatKsh(s.revenue.total)}</p>
-            </div>
-            <div className="bg-surface-base rounded-xl p-3">
-              <p className="text-[10px] text-[#8B97B5] mb-1">Unconfirmed (STK sent)</p>
-              <p className="text-warning font-bold text-sm">{formatKsh(s.revenue.escrow)}</p>
-            </div>
+            <div className="bg-surface-base rounded-xl p-3"><p className="text-[10px] text-[#8B97B5] mb-1">My confirmed money</p><p className="text-brand-green font-bold text-sm">{formatKsh(s.revenue.total)}</p></div>
+            <div className="bg-surface-base rounded-xl p-3"><p className="text-[10px] text-[#8B97B5] mb-1">Unconfirmed (STK sent)</p><p className="text-warning font-bold text-sm">{formatKsh(s.revenue.escrow)}</p></div>
           </div>
         </div>
 
-        {/* Users */}
         <div className="bg-surface-elevated border border-white/5 rounded-2xl p-5">
-          <div className="flex items-center gap-2 mb-5">
-            <Users size={15} className="text-brand-blue" />
-            <p className="text-sm font-semibold text-white">Users</p>
-          </div>
-          <div className="flex items-center justify-around gap-2">
-            {userCircles.map((c, i) => <CircleStat key={i} {...c} />)}
-          </div>
+          <div className="flex items-center gap-2 mb-5"><Users size={15} className="text-brand-blue" /><p className="text-sm font-semibold text-white">Users</p></div>
+          <div className="flex items-center justify-around gap-2">{userCircles.map((c, i) => <CircleStat key={i} {...c} />)}</div>
           <div className="mt-5 pt-4 border-t border-white/5 space-y-2.5">
             <p className="text-[10px] text-[#8B97B5] font-semibold uppercase tracking-wide">By Plan</p>
             {Object.entries(s.users.planCounts).sort(([, a], [, b]) => b - a).map(([plan, count]) => {
@@ -270,9 +336,7 @@ export default function AdminDashboard() {
                 <div key={plan} className="flex items-center gap-2">
                   <span className="text-xs w-4">{PLAN_ICONS[plan] || '👤'}</span>
                   <span className={`text-xs capitalize w-20 shrink-0 ${PLAN_COLORS[plan] || 'text-[#8B97B5]'}`}>{plan}</span>
-                  <div className="flex-1 bg-surface-base rounded-full h-1.5">
-                    <div className="h-1.5 rounded-full" style={{ width: `${pct}%`, backgroundColor: PLAN_STROKE[plan] || '#8B97B5' }} />
-                  </div>
+                  <div className="flex-1 bg-surface-base rounded-full h-1.5"><div className="h-1.5 rounded-full" style={{ width: `${pct}%`, backgroundColor: PLAN_STROKE[plan] || '#8B97B5' }} /></div>
                   <span className="text-[10px] text-[#8B97B5] w-12 text-right shrink-0">{count} · {pct}%</span>
                 </div>
               )
@@ -280,29 +344,14 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* API Costs */}
         <div className="bg-surface-elevated border border-white/5 rounded-2xl p-5">
-          <div className="flex items-center gap-2 mb-5">
-            <Zap size={15} className="text-red-400" />
-            <p className="text-sm font-semibold text-white">API Costs (OpenAI)</p>
-          </div>
-          <div className="flex items-center justify-around gap-2 mb-5">
-            {apiCostCircles.map((c, i) => <CircleStat key={i} {...c} />)}
-          </div>
-
+          <div className="flex items-center gap-2 mb-5"><Zap size={15} className="text-red-400" /><p className="text-sm font-semibold text-white">API Costs (all providers)</p></div>
+          <div className="flex items-center justify-around gap-2 mb-5">{apiCostCircles.map((c, i) => <CircleStat key={i} {...c} />)}</div>
           <div className="grid grid-cols-3 gap-2 mb-4">
-            {[
-              { label: 'Total in KSh', value: formatKsh(s.apiCosts.totalKSH) },
-              { label: 'This month', value: formatKsh(s.apiCosts.monthlyKSH) },
-              { label: 'Today', value: formatKsh(s.apiCosts.todayKSH) },
-            ].map((item, i) => (
-              <div key={i} className="bg-surface-base rounded-xl p-3 text-center">
-                <p className="text-[10px] text-[#8B97B5] mb-1">{item.label}</p>
-                <p className="text-red-400 font-bold text-xs">{item.value}</p>
-              </div>
+            {[{ label: 'Total in KSh', value: formatKsh(s.apiCosts.totalKSH) }, { label: 'This month', value: formatKsh(s.apiCosts.monthlyKSH) }, { label: 'Today', value: formatKsh(s.apiCosts.todayKSH) }].map((item, i) => (
+              <div key={i} className="bg-surface-base rounded-xl p-3 text-center"><p className="text-[10px] text-[#8B97B5] mb-1">{item.label}</p><p className="text-red-400 font-bold text-xs">{item.value}</p></div>
             ))}
           </div>
-
           {Object.keys(s.apiCosts.featureCosts).length > 0 && (
             <div className="border-t border-white/5 pt-4 space-y-2">
               <p className="text-[10px] text-[#8B97B5] font-semibold uppercase tracking-wide">Cost by Feature</p>
@@ -311,94 +360,70 @@ export default function AdminDashboard() {
                 return (
                   <div key={feature} className="flex items-center gap-2">
                     <span className="text-xs text-[#8B97B5] w-32 shrink-0 truncate">{feature.replace(/_/g, ' ')}</span>
-                    <div className="flex-1 bg-surface-base rounded-full h-1.5">
-                      <div className="h-1.5 rounded-full bg-red-400" style={{ width: `${pct}%` }} />
-                    </div>
+                    <div className="flex-1 bg-surface-base rounded-full h-1.5"><div className="h-1.5 rounded-full bg-red-400" style={{ width: `${pct}%` }} /></div>
                     <span className="text-[10px] text-[#8B97B5] w-16 text-right shrink-0">${cost} · {pct}%</span>
                   </div>
                 )
               })}
             </div>
           )}
-
           <div className="mt-4 bg-red-500/10 border border-red-500/20 rounded-xl p-3">
-            <p className="text-xs text-red-400 font-medium">
-              💡 Profit check: Revenue today {formatKsh(s.revenue.today)} vs AI cost today {formatKsh(s.apiCosts.todayKSH)} = net {formatKsh(s.revenue.today - s.apiCosts.todayKSH)}
-            </p>
+            <p className="text-xs text-red-400 font-medium">💡 Profit check: Revenue today {formatKsh(s.revenue.today)} vs AI cost today {formatKsh(s.apiCosts.todayKSH)} = net {formatKsh(s.revenue.today - s.apiCosts.todayKSH)}</p>
           </div>
         </div>
 
-        {/* Security */}
+        {/* AI Infrastructure */}
         <div className="bg-surface-elevated border border-white/5 rounded-2xl p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <ShieldAlert size={15} className="text-orange-400" />
-            <p className="text-sm font-semibold text-white">Security — Rate Limit Trips</p>
+          <div className="flex items-center gap-2 mb-4"><Server size={15} className="text-brand-blue" /><p className="text-sm font-semibold text-white">AI Infrastructure</p></div>
+          <div className="grid sm:grid-cols-2 gap-3 mb-4">
+            <ProviderCard name="openai" label="OpenAI" info={s.aiInfrastructure.providers.openai}
+              onToggle={(enabled) => toggleAIProvider('openai', enabled)}
+              onBudgetSave={(b, t) => saveAIBudget('openai', b, t)} />
+            <ProviderCard name="azure" label="Azure OpenAI" info={s.aiInfrastructure.providers.azure}
+              onToggle={(enabled) => toggleAIProvider('azure', enabled)}
+              onBudgetSave={(b, t) => saveAIBudget('azure', b, t)} />
           </div>
-          {s.securityEvents.length === 0 ? (
-            <p className="text-xs text-[#8B97B5] py-4 text-center">No unusual activity detected. Rate limiter is watching all AI endpoints.</p>
-          ) : (
-            <div className="space-y-2">
-              {s.securityEvents.map(ev => (
-                <div key={ev.id} className="bg-orange-500/10 border border-orange-500/20 rounded-xl p-3">
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-[10px] font-mono text-orange-300">User: {ev.user_id.slice(0, 12)}…</span>
-                    <span className="text-[10px] text-[#8B97B5]">{timeAgo(ev.created_at)}</span>
-                  </div>
-                  <p className="text-xs text-orange-200">{ev.detail}</p>
+          {!s.aiInfrastructure.providers.azure.configured && (
+            <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 mb-4">
+              <p className="text-xs text-blue-300">Azure isn't configured yet — create your Azure OpenAI resource and add the env vars in Vercel to enable it here.</p>
+            </div>
+          )}
+          {s.aiInfrastructure.recentFailovers.length > 0 && (
+            <div className="border-t border-white/5 pt-4 space-y-2">
+              <p className="text-[10px] text-[#8B97B5] font-semibold uppercase tracking-wide">Recent Failovers</p>
+              {s.aiInfrastructure.recentFailovers.map(f => (
+                <div key={f.id} className="flex items-center justify-between text-[11px] bg-surface-base rounded-lg px-3 py-2">
+                  <span className="text-white">{f.feature}: {f.primary_provider} → {f.fallback_provider}</span>
+                  <span className={f.succeeded ? 'text-green-400' : 'text-red-400'}>{f.succeeded ? '✓ recovered' : '✗ failed'} · {timeAgo(f.created_at)}</span>
                 </div>
               ))}
             </div>
           )}
         </div>
 
-        {/* Pending payments */}
         {s.payments.pendingCount > 0 && (
           <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl px-4 py-3 flex items-center gap-3">
             <Clock size={16} className="text-yellow-400 shrink-0" />
-            <div>
-              <p className="text-white font-semibold text-sm">{s.payments.pendingCount} payment{s.payments.pendingCount !== 1 ? 's' : ''} pending</p>
-              <p className="text-[#8B97B5] text-xs">STK pushes awaiting Safaricom confirmation</p>
-            </div>
+            <div><p className="text-white font-semibold text-sm">{s.payments.pendingCount} payment{s.payments.pendingCount !== 1 ? 's' : ''} pending</p><p className="text-[#8B97B5] text-xs">STK pushes awaiting Safaricom confirmation</p></div>
           </div>
         )}
 
-        {/* Recent transactions */}
         <div>
-          <div className="flex items-center gap-2 mb-4">
-            <CheckCircle size={15} className="text-brand-green" />
-            <p className="text-sm font-semibold text-white">Recent Transactions</p>
-          </div>
-
+          <div className="flex items-center gap-2 mb-4"><CheckCircle size={15} className="text-brand-green" /><p className="text-sm font-semibold text-white">Recent Transactions</p></div>
           <div className="sm:hidden space-y-2">
             {s.payments.recentPayments.length === 0 ? (
               <div className="bg-surface-elevated border border-white/5 rounded-xl p-8 text-center text-[#8B97B5] text-sm">No transactions yet</div>
             ) : s.payments.recentPayments.map((p, i) => (
               <div key={i} className="bg-surface-elevated border border-white/5 rounded-xl p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-mono text-white truncate pr-2 max-w-[140px]">{p.transaction_id}</span>
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${getStatusColor(p.status)}`}>{p.status}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-white font-medium">{p.plan_name}</span>
-                  <span className="text-sm text-brand-green font-bold">{formatKsh(p.amount)}</span>
-                </div>
-                <div className="flex items-center justify-between text-[10px] text-[#8B97B5]">
-                  <span>{p.phone_number}</span>
-                  <span>{new Date(p.created_at).toLocaleDateString()}</span>
-                </div>
+                <div className="flex items-center justify-between"><span className="text-[10px] font-mono text-white truncate pr-2 max-w-[140px]">{p.transaction_id}</span><span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${getStatusColor(p.status)}`}>{p.status}</span></div>
+                <div className="flex items-center justify-between"><span className="text-sm text-white font-medium">{p.plan_name}</span><span className="text-sm text-brand-green font-bold">{formatKsh(p.amount)}</span></div>
+                <div className="flex items-center justify-between text-[10px] text-[#8B97B5]"><span>{p.phone_number}</span><span>{new Date(p.created_at).toLocaleDateString()}</span></div>
               </div>
             ))}
           </div>
-
           <div className="hidden sm:block bg-surface-elevated border border-white/5 rounded-xl overflow-hidden">
             <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-white/5 bg-surface-base/50">
-                  {['Transaction ID', 'Phone', 'Plan', 'Amount', 'Status', 'Date'].map(h => (
-                    <th key={h} className="px-5 py-3 text-left text-xs font-semibold text-[#8B97B5]">{h}</th>
-                  ))}
-                </tr>
-              </thead>
+              <thead><tr className="border-b border-white/5 bg-surface-base/50">{['Transaction ID', 'Phone', 'Plan', 'Amount', 'Status', 'Date'].map(h => <th key={h} className="px-5 py-3 text-left text-xs font-semibold text-[#8B97B5]">{h}</th>)}</tr></thead>
               <tbody>
                 {s.payments.recentPayments.length === 0 ? (
                   <tr><td colSpan={6} className="px-5 py-8 text-center text-[#8B97B5] text-sm">No transactions yet</td></tr>
@@ -408,9 +433,7 @@ export default function AdminDashboard() {
                     <td className="px-5 py-3 text-[#8B97B5] text-xs">{p.phone_number}</td>
                     <td className="px-5 py-3 text-white text-xs">{p.plan_name}</td>
                     <td className="px-5 py-3 text-brand-green font-semibold text-xs">{formatKsh(p.amount)}</td>
-                    <td className="px-5 py-3">
-                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${getStatusColor(p.status)}`}>{p.status}</span>
-                    </td>
+                    <td className="px-5 py-3"><span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${getStatusColor(p.status)}`}>{p.status}</span></td>
                     <td className="px-5 py-3 text-[#8B97B5] text-xs">{new Date(p.created_at).toLocaleDateString()}</td>
                   </tr>
                 ))}
