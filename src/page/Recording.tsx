@@ -10,7 +10,8 @@ import { getTierFromPlan, type SmartInkNote } from '../lib/smartInk'
 import { toast } from '../lib/toast'
 import TimestampedScript from '../components/TimestampedScript'
 import LanguageViewSwitcher from '../components/LanguageViewSwitcher'
-import { loadCourses, saveCourses, onCoursesChanged, upsertCourseUnit, generateId, type Course, type Unit } from '../lib/courseStore'
+import { loadCourses, saveCourses, onCoursesChanged, upsertCourseUnit, type Course } from '../lib/courseStore'
+
 interface ScriptEntry {
   timestamp: number
   heading: string
@@ -74,8 +75,6 @@ const deleteBlob = async (id: string) => {
   catch (err) { console.error('Failed to delete blob:', err) }
 }
 
-
-
 const loadUnitCoverage = (): Record<string, UnitCoverageRecord> => {
   try { return JSON.parse(localStorage.getItem('unitCoverage') || '{}') } catch { return {} }
 }
@@ -88,7 +87,6 @@ const topicMatchesConcept = (topic: string, conceptName: string): boolean => {
   const c = conceptName.toLowerCase().trim()
   return t.length > 2 && c.length > 2 && (t.includes(c) || c.includes(t))
 }
-
 
 const getSupportedMimeType = (): string => {
   const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg', 'audio/mp4']
@@ -133,7 +131,6 @@ export default function RecordingPage() {
   const [selectedCourse, setSelectedCourse] = useState('')
   const [selectedUnit, setSelectedUnit] = useState('')
 
-  // Inline add — no more leaving this page to create a course/unit
   const [showAddForm, setShowAddForm] = useState(false)
   const [newCourseName, setNewCourseName] = useState('')
   const [newUnitName, setNewUnitName] = useState('')
@@ -165,52 +162,38 @@ export default function RecordingPage() {
   const liteCapRef = useRef<number | null>(null)
   const sessionSourceRef = useRef<'paid_subscription' | 'achiever_session' | 'explorer_free' | 'bonus' | null>(null)
 
+  // ── Effect 1: load courses + subscribe to live cross-tab/cross-page sync ──
   useEffect(() => {
     const loaded = loadCourses()
     setCourses(loaded)
-    useEffect(() => {
-  const loaded = loadCourses()
-  setCourses(loaded)
-  if (loaded.length === 0) setShowAddForm(true)
-
-  // Live sync — picks up units added in Unit Management, or another tab,
-  // without needing a refresh here.
-  const unsubscribe = onCoursesChanged(() => setCourses(loadCourses()))
-
-  try { setRecordings(JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')) } catch { setRecordings([]) }
-
-  const init = async () => {
-    const a = await loadAccess(userId)
-    setAccess(a)
-    setAccessLoaded(true)
-  }
-  init()
-
-  return () => {
-    unsubscribe()
-    if (timerRef.current) clearInterval(timerRef.current)
-    if (audioContextRef.current) audioContextRef.current.close()
-    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
-    if (litePollRef.current) clearInterval(litePollRef.current)
-  }
-}, [])
     if (loaded.length === 0) setShowAddForm(true)
+
+    const unsubscribe = onCoursesChanged(() => setCourses(loadCourses()))
+    return () => { unsubscribe() }
+  }, [])
+
+  // ── Effect 2: load recordings + access, independent lifecycle ─────────────
+  useEffect(() => {
     try { setRecordings(JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')) } catch { setRecordings([]) }
 
+    let cancelled = false
     const init = async () => {
       const a = await loadAccess(userId)
-      setAccess(a)
-      setAccessLoaded(true)
+      if (!cancelled) {
+        setAccess(a)
+        setAccessLoaded(true)
+      }
     }
     init()
 
     return () => {
+      cancelled = true
       if (timerRef.current) clearInterval(timerRef.current)
       if (audioContextRef.current) audioContextRef.current.close()
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
       if (litePollRef.current) clearInterval(litePollRef.current)
     }
-  }, [])
+  }, [userId])
 
   useEffect(() => {
     const metadata = recordings.map(({ blob, ...rest }) => rest)
@@ -221,25 +204,25 @@ export default function RecordingPage() {
   const selectedCourseObj = courses.find(c => c.name === selectedCourse)
   const filteredUnits = selectedCourseObj?.units || []
 
-const handleQuickAddCourseUnit = () => {
-  const courseName = newCourseName.trim()
-  const unitName = newUnitName.trim()
-  if (!courseName) { toast.error('Enter a course name'); return }
-  if (!unitName) { toast.error('Enter a unit name'); return }
+  const handleQuickAddCourseUnit = () => {
+    const courseName = newCourseName.trim()
+    const unitName = newUnitName.trim()
+    if (!courseName) { toast.error('Enter a course name'); return }
+    if (!unitName) { toast.error('Enter a unit name'); return }
 
-  const topics = newTopicsInput.split(',').map(t => t.trim()).filter(Boolean)
-  const { courses: updatedCourses, unitId } = upsertCourseUnit(courses, courseName, unitName, topics)
+    const topics = newTopicsInput.split(',').map(t => t.trim()).filter(Boolean)
+    const { courses: updatedCourses, unitId } = upsertCourseUnit(courses, courseName, unitName, topics)
 
-  setCourses(updatedCourses)
-  saveCourses(updatedCourses)
-  setSelectedCourse(courseName)
-  setSelectedUnit(unitId)
-  setNewCourseName('')
-  setNewUnitName('')
-  setNewTopicsInput('')
-  setShowAddForm(false)
-  toast.success(`"${courseName}" ready — you can record now.`)
-}
+    setCourses(updatedCourses)
+    saveCourses(updatedCourses)
+    setSelectedCourse(courseName)
+    setSelectedUnit(unitId)
+    setNewCourseName('')
+    setNewUnitName('')
+    setNewTopicsInput('')
+    setShowAddForm(false)
+    toast.success(`"${courseName}" ready — you can record now.`)
+  }
 
   const visualize = () => {
     if (!analyserRef.current || !canvasRef.current) return
@@ -684,7 +667,6 @@ const handleQuickAddCourseUnit = () => {
                 </div>
               </div>
 
-              {/* Inline quick-add — never leave this page */}
               <AnimatePresence>
                 {showAddForm && (
                   <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
