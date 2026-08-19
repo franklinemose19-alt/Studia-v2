@@ -2,32 +2,26 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>STUDIA AI — Your Personal AI Tutor</title>
+    <meta name="description" content="Turn every lecture into smart study material. AI notes, quizzes, and diagrams — built for Kenyan university students." />
 
-    <!-- PWA manifest -->
     <link rel="manifest" href="/manifest.json" />
-
-    <!-- Theme and display -->
     <meta name="theme-color" content="#3B82F6" />
-    <meta name="background-color" content="#080C18" />
 
-    <!-- Viewport -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-    <!-- iOS PWA support -->
+    <!-- iOS ignores the manifest's display:standalone for real launch behavior
+         unless these are also present — without them, "Add to Home Screen"
+         still opens inside Safari's browser chrome on iPhone -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="STUDIA AI" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
 
-    <!-- Android / Chrome PWA -->
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="application-name" content="STUDIA AI" />
+    <link rel="icon" type="image/png" href="/icon-192.png" />
 
-    <!-- Standard favicon -->
-    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
-    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
-
-    <title>STUDIA AI — Turn Every Lecture Into Smart Study Material</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
   </head>
   <body>
     <div id="root"></div>
