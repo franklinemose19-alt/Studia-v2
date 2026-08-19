@@ -5,10 +5,13 @@ import './index.css'
 import { registerSW } from 'virtual:pwa-register'
 import ToastContainer from './components/Toast.tsx'
 
-registerSW({
+const updateSW = registerSW({
   immediate: true,
   onNeedRefresh() {
-    console.log('STUDIA AI updated — refresh for latest version')
+    // Actually apply the update instead of just logging it — this is the
+    // piece that was missing, and it's why fixes weren't reliably reaching
+    // an already-installed app.
+    updateSW(true)
   },
   onOfflineReady() {
     console.log('STUDIA AI is ready for offline use')
