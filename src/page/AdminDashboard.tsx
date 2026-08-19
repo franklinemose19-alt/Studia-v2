@@ -82,23 +82,24 @@ function timeAgo(iso: string) {
   return `${Math.floor(s / 86400)}d ago`
 }
 
+// Value now sits BELOW the ring as normal wrapping text, not centered inside
+// it — a long "KSh 10,000,000" has nowhere safe to overflow to when it's
+// absolutely positioned inside a 44px circle. This was the actual overflow bug.
 function CircleStat({ value, label, strokeColor, textColor, percentage = 100 }: {
   value: string | number; label: string; strokeColor: string; textColor: string; percentage?: number
 }) {
   const r = 22, circ = 2 * Math.PI * r
   const offset = circ - (Math.min(100, Math.max(0, percentage)) / 100) * circ
   return (
-    <div className="flex flex-col items-center gap-1.5">
-      <div className="relative w-12 h-12">
-        <svg className="w-12 h-12 -rotate-90 absolute inset-0" viewBox="0 0 48 48">
+    <div className="flex flex-col items-center gap-1 min-w-0 w-full">
+      <div className="relative w-11 h-11 sm:w-12 sm:h-12 shrink-0">
+        <svg className="w-11 h-11 sm:w-12 sm:h-12 -rotate-90 absolute inset-0" viewBox="0 0 48 48">
           <circle cx="24" cy="24" r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="3" />
           <circle cx="24" cy="24" r={r} fill="none" stroke={strokeColor} strokeWidth="3" strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" />
         </svg>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className={`font-sora font-bold text-[11px] leading-none ${textColor}`}>{value}</span>
-        </div>
       </div>
-      <span className="text-[9px] text-[#8B97B5] text-center leading-tight max-w-[48px]">{label}</span>
+      <p className={`font-sora font-bold text-[10px] sm:text-[11px] leading-tight text-center break-words w-full px-0.5 ${textColor}`}>{value}</p>
+      <span className="text-[8px] sm:text-[9px] text-[#8B97B5] text-center leading-tight w-full break-words">{label}</span>
     </div>
   )
 }
@@ -114,63 +115,62 @@ function ProviderCard({
 }) {
   const [budgetInput, setBudgetInput] = useState(String(info.monthlyBudgetUsd))
   const [thresholdInput, setThresholdInput] = useState(String(info.safetyThresholdPct))
-
   const budgetPct = info.monthlyBudgetUsd > 0 ? Math.min(100, Math.round((info.monthSpendUsd / info.monthlyBudgetUsd) * 100)) : 0
 
   return (
-    <div className="bg-surface-base border border-white/5 rounded-xl p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-semibold text-white">{label}</p>
-          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${providerStatusColor(info.status)}`}>{info.status}</span>
-          {!info.configured && <span className="text-[10px] text-[#8B97B5] bg-white/5 px-2 py-0.5 rounded-full">not configured</span>}
+    <div className="bg-surface-base border border-white/5 rounded-xl p-3 sm:p-4 space-y-3 min-w-0 w-full">
+      <div className="flex items-center justify-between gap-2 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 flex-wrap">
+          <p className="text-sm font-semibold text-white truncate">{label}</p>
+          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${providerStatusColor(info.status)}`}>{info.status}</span>
+          {!info.configured && <span className="text-[10px] text-[#8B97B5] bg-white/5 px-2 py-0.5 rounded-full shrink-0">not set up</span>}
         </div>
         <button
           onClick={() => onToggle(!info.enabled)}
           disabled={!info.configured && name === 'azure'}
-          className={`relative w-9 h-5 rounded-full transition-colors ${info.enabled ? 'bg-brand-blue' : 'bg-white/10'} disabled:opacity-30`}
+          className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${info.enabled ? 'bg-brand-blue' : 'bg-white/10'} disabled:opacity-30`}
         >
           <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${info.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
         </button>
       </div>
 
       <div className="grid grid-cols-2 gap-2 text-[11px]">
-        <div className="bg-surface-elevated rounded-lg p-2">
+        <div className="bg-surface-elevated rounded-lg p-2 min-w-0">
           <p className="text-[#8B97B5]">Avg latency</p>
-          <p className="text-white font-semibold">{info.avgLatencyMs}ms</p>
+          <p className="text-white font-semibold truncate">{info.avgLatencyMs}ms</p>
         </div>
-        <div className="bg-surface-elevated rounded-lg p-2">
-          <p className="text-[#8B97B5]">Consecutive fails</p>
-          <p className="text-white font-semibold">{info.consecutiveFailures}</p>
+        <div className="bg-surface-elevated rounded-lg p-2 min-w-0">
+          <p className="text-[#8B97B5]">Fails in a row</p>
+          <p className="text-white font-semibold truncate">{info.consecutiveFailures}</p>
         </div>
       </div>
 
-      <div>
-        <div className="flex items-center justify-between text-[11px] mb-1">
-          <span className="text-[#8B97B5]">Month spend</span>
-          <span className="text-white">${info.monthSpendUsd} / ${info.monthlyBudgetUsd}</span>
+      <div className="min-w-0">
+        <div className="flex items-center justify-between text-[11px] mb-1 gap-2 min-w-0">
+          <span className="text-[#8B97B5] shrink-0">Month spend</span>
+          <span className="text-white truncate">${info.monthSpendUsd} / ${info.monthlyBudgetUsd}</span>
         </div>
-        <div className="w-full bg-surface-elevated rounded-full h-1.5">
+        <div className="w-full bg-surface-elevated rounded-full h-1.5 min-w-0">
           <div className={`h-1.5 rounded-full ${budgetPct >= 90 ? 'bg-red-400' : budgetPct >= 70 ? 'bg-yellow-400' : 'bg-green-400'}`} style={{ width: `${budgetPct}%` }} />
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-1.5 items-end">
-        <div>
-          <label className="text-[9px] text-[#8B97B5]">Budget $/mo</label>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="min-w-0">
+          <label className="text-[9px] text-[#8B97B5] block mb-0.5">Budget $/mo</label>
           <input type="number" value={budgetInput} onChange={e => setBudgetInput(e.target.value)}
-            className="w-full bg-surface-elevated border border-white/10 rounded-lg px-2 py-1 text-white text-xs outline-none" />
+            className="w-full min-w-0 bg-surface-elevated border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none" />
         </div>
-        <div>
-          <label className="text-[9px] text-[#8B97B5]">Threshold %</label>
+        <div className="min-w-0">
+          <label className="text-[9px] text-[#8B97B5] block mb-0.5">Threshold %</label>
           <input type="number" value={thresholdInput} onChange={e => setThresholdInput(e.target.value)}
-            className="w-full bg-surface-elevated border border-white/10 rounded-lg px-2 py-1 text-white text-xs outline-none" />
+            className="w-full min-w-0 bg-surface-elevated border border-white/10 rounded-lg px-2 py-1.5 text-white text-xs outline-none" />
         </div>
-        <button onClick={() => onBudgetSave(parseFloat(budgetInput) || 0, parseInt(thresholdInput) || 90)}
-          className="bg-brand-blue text-white text-[10px] font-semibold py-1.5 rounded-lg hover:bg-brand-blue/90 transition">
-          Save
-        </button>
       </div>
+      <button onClick={() => onBudgetSave(parseFloat(budgetInput) || 0, parseInt(thresholdInput) || 90)}
+        className="w-full bg-brand-blue text-white text-xs font-semibold py-2 rounded-lg hover:bg-brand-blue/90 transition">
+        Save
+      </button>
     </div>
   )
 }
@@ -247,7 +247,7 @@ export default function AdminDashboard() {
 
   if (isAdmin === null || (isAdmin && loading)) {
     return (
-      <div className="min-h-screen bg-surface-base flex items-center justify-center">
+      <div className="min-h-screen w-full bg-surface-base flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-warning to-red-500 flex items-center justify-center"><Crown size={22} className="text-white" /></div>
           <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-warning" />
@@ -258,7 +258,7 @@ export default function AdminDashboard() {
 
   if (error && !stats) {
     return (
-      <div className="min-h-screen bg-surface-base flex flex-col items-center justify-center gap-4 px-4">
+      <div className="min-h-screen w-full bg-surface-base flex flex-col items-center justify-center gap-4 px-4">
         <AlertCircle className="text-red-400" size={40} />
         <p className="text-white font-semibold">Could not load dashboard</p>
         <p className="text-[#8B97B5] text-sm text-center">{error}</p>
@@ -290,25 +290,30 @@ export default function AdminDashboard() {
   ]
 
   return (
-    <div className="min-h-screen bg-surface-base">
-      <nav className="border-b border-white/5 bg-surface-elevated/50 backdrop-blur-md sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <button onClick={() => navigate('/dashboard')} className="flex items-center gap-2 text-sm text-[#8B97B5] hover:text-white transition-colors"><ArrowLeft size={16} /> Back</button>
-          <div className="flex items-center gap-2"><Crown size={18} className="text-warning" /><span className="font-sora font-bold text-white">Owner Dashboard</span></div>
-          <button onClick={fetchStats} className="p-2 rounded-lg hover:bg-white/10 transition-colors"><RefreshCw size={17} className="text-[#8B97B5]" /></button>
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-surface-base box-border">
+      <nav className="border-b border-white/5 bg-surface-elevated/50 backdrop-blur-md sticky top-0 z-10 w-full">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-2 min-w-0">
+          <button onClick={() => navigate('/dashboard')} className="flex items-center gap-1.5 text-sm text-[#8B97B5] hover:text-white transition-colors shrink-0">
+            <ArrowLeft size={16} /> Back
+          </button>
+          <div className="flex items-center gap-2 min-w-0">
+            <Crown size={18} className="text-warning shrink-0" />
+            <span className="font-sora font-bold text-white truncate">Owner Dashboard</span>
+          </div>
+          <button onClick={fetchStats} className="p-2 rounded-lg hover:bg-white/10 transition-colors shrink-0"><RefreshCw size={17} className="text-[#8B97B5]" /></button>
         </div>
       </nav>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 py-6 sm:py-8 space-y-5 sm:space-y-6 w-full min-w-0">
 
         {lastUpdated && <p className="text-xs text-[#4A5568]">Last updated: {lastUpdated.toLocaleTimeString()} · Auto-refreshes every 30s</p>}
 
-        <div className={`rounded-2xl p-5 border-2 flex items-center justify-between gap-4 flex-wrap ${s.maintenanceMode ? 'bg-red-500/10 border-red-500/40' : 'bg-surface-elevated border-white/5'}`}>
-          <div className="flex items-center gap-3">
+        <div className={`rounded-2xl p-4 sm:p-5 border-2 flex items-center justify-between gap-3 flex-wrap min-w-0 ${s.maintenanceMode ? 'bg-red-500/10 border-red-500/40' : 'bg-surface-elevated border-white/5'}`}>
+          <div className="flex items-center gap-3 min-w-0">
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${s.maintenanceMode ? 'bg-red-500/20' : 'bg-white/5'}`}><Wrench size={18} className={s.maintenanceMode ? 'text-red-400' : 'text-[#8B97B5]'} /></div>
-            <div>
+            <div className="min-w-0">
               <p className="text-sm font-semibold text-white">Maintenance Mode</p>
-              <p className="text-xs text-[#8B97B5]">{s.maintenanceMode ? 'Students see the maintenance screen right now' : 'App is live for all students'}</p>
+              <p className="text-xs text-[#8B97B5] truncate">{s.maintenanceMode ? 'Students see the maintenance screen right now' : 'App is live for all students'}</p>
             </div>
           </div>
           <button onClick={toggleMaintenance} className={`px-4 py-2 rounded-xl text-xs font-bold transition shrink-0 ${s.maintenanceMode ? 'bg-white text-red-500 hover:bg-gray-100' : 'bg-red-500 text-white hover:bg-red-600'}`}>
@@ -316,27 +321,27 @@ export default function AdminDashboard() {
           </button>
         </div>
 
-        <div className="bg-surface-elevated border border-white/5 rounded-2xl p-5">
-          <div className="flex items-center gap-2 mb-5"><DollarSign size={15} className="text-brand-green" /><p className="text-sm font-semibold text-white">Revenue</p></div>
-          <div className="flex items-center justify-around gap-2">{revenueCircles.map((c, i) => <CircleStat key={i} {...c} />)}</div>
-          <div className="mt-5 pt-4 border-t border-white/5 grid grid-cols-2 gap-3">
-            <div className="bg-surface-base rounded-xl p-3"><p className="text-[10px] text-[#8B97B5] mb-1">My confirmed money</p><p className="text-brand-green font-bold text-sm">{formatKsh(s.revenue.total)}</p></div>
-            <div className="bg-surface-base rounded-xl p-3"><p className="text-[10px] text-[#8B97B5] mb-1">Unconfirmed (STK sent)</p><p className="text-warning font-bold text-sm">{formatKsh(s.revenue.escrow)}</p></div>
+        <div className="bg-surface-elevated border border-white/5 rounded-2xl p-4 sm:p-5 min-w-0">
+          <div className="flex items-center gap-2 mb-5"><DollarSign size={15} className="text-brand-green shrink-0" /><p className="text-sm font-semibold text-white">Revenue</p></div>
+          <div className="grid grid-cols-4 gap-1.5 sm:gap-3 justify-items-center">{revenueCircles.map((c, i) => <CircleStat key={i} {...c} />)}</div>
+          <div className="mt-5 pt-4 border-t border-white/5 grid grid-cols-2 gap-2 sm:gap-3">
+            <div className="bg-surface-base rounded-xl p-2.5 sm:p-3 min-w-0"><p className="text-[10px] text-[#8B97B5] mb-1">My confirmed money</p><p className="text-brand-green font-bold text-sm break-words">{formatKsh(s.revenue.total)}</p></div>
+            <div className="bg-surface-base rounded-xl p-2.5 sm:p-3 min-w-0"><p className="text-[10px] text-[#8B97B5] mb-1">Unconfirmed (STK sent)</p><p className="text-warning font-bold text-sm break-words">{formatKsh(s.revenue.escrow)}</p></div>
           </div>
         </div>
 
-        <div className="bg-surface-elevated border border-white/5 rounded-2xl p-5">
-          <div className="flex items-center gap-2 mb-5"><Users size={15} className="text-brand-blue" /><p className="text-sm font-semibold text-white">Users</p></div>
-          <div className="flex items-center justify-around gap-2">{userCircles.map((c, i) => <CircleStat key={i} {...c} />)}</div>
+        <div className="bg-surface-elevated border border-white/5 rounded-2xl p-4 sm:p-5 min-w-0">
+          <div className="flex items-center gap-2 mb-5"><Users size={15} className="text-brand-blue shrink-0" /><p className="text-sm font-semibold text-white">Users</p></div>
+          <div className="grid grid-cols-4 gap-1.5 sm:gap-3 justify-items-center">{userCircles.map((c, i) => <CircleStat key={i} {...c} />)}</div>
           <div className="mt-5 pt-4 border-t border-white/5 space-y-2.5">
             <p className="text-[10px] text-[#8B97B5] font-semibold uppercase tracking-wide">By Plan</p>
             {Object.entries(s.users.planCounts).sort(([, a], [, b]) => b - a).map(([plan, count]) => {
               const pct = totalUsers > 0 ? Math.round((count / totalUsers) * 100) : 0
               return (
-                <div key={plan} className="flex items-center gap-2">
-                  <span className="text-xs w-4">{PLAN_ICONS[plan] || '👤'}</span>
-                  <span className={`text-xs capitalize w-20 shrink-0 ${PLAN_COLORS[plan] || 'text-[#8B97B5]'}`}>{plan}</span>
-                  <div className="flex-1 bg-surface-base rounded-full h-1.5"><div className="h-1.5 rounded-full" style={{ width: `${pct}%`, backgroundColor: PLAN_STROKE[plan] || '#8B97B5' }} /></div>
+                <div key={plan} className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs w-4 shrink-0">{PLAN_ICONS[plan] || '👤'}</span>
+                  <span className={`text-xs capitalize w-16 sm:w-20 shrink-0 truncate ${PLAN_COLORS[plan] || 'text-[#8B97B5]'}`}>{plan}</span>
+                  <div className="flex-1 bg-surface-base rounded-full h-1.5 min-w-0"><div className="h-1.5 rounded-full" style={{ width: `${pct}%`, backgroundColor: PLAN_STROKE[plan] || '#8B97B5' }} /></div>
                   <span className="text-[10px] text-[#8B97B5] w-12 text-right shrink-0">{count} · {pct}%</span>
                 </div>
               )
@@ -344,12 +349,12 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <div className="bg-surface-elevated border border-white/5 rounded-2xl p-5">
-          <div className="flex items-center gap-2 mb-5"><Zap size={15} className="text-red-400" /><p className="text-sm font-semibold text-white">API Costs (all providers)</p></div>
-          <div className="flex items-center justify-around gap-2 mb-5">{apiCostCircles.map((c, i) => <CircleStat key={i} {...c} />)}</div>
-          <div className="grid grid-cols-3 gap-2 mb-4">
+        <div className="bg-surface-elevated border border-white/5 rounded-2xl p-4 sm:p-5 min-w-0">
+          <div className="flex items-center gap-2 mb-5"><Zap size={15} className="text-red-400 shrink-0" /><p className="text-sm font-semibold text-white">API Costs (all providers)</p></div>
+          <div className="grid grid-cols-4 gap-1.5 sm:gap-3 justify-items-center mb-5">{apiCostCircles.map((c, i) => <CircleStat key={i} {...c} />)}</div>
+          <div className="grid grid-cols-3 gap-1.5 sm:gap-2 mb-4">
             {[{ label: 'Total in KSh', value: formatKsh(s.apiCosts.totalKSH) }, { label: 'This month', value: formatKsh(s.apiCosts.monthlyKSH) }, { label: 'Today', value: formatKsh(s.apiCosts.todayKSH) }].map((item, i) => (
-              <div key={i} className="bg-surface-base rounded-xl p-3 text-center"><p className="text-[10px] text-[#8B97B5] mb-1">{item.label}</p><p className="text-red-400 font-bold text-xs">{item.value}</p></div>
+              <div key={i} className="bg-surface-base rounded-xl p-2 sm:p-3 text-center min-w-0"><p className="text-[9px] sm:text-[10px] text-[#8B97B5] mb-1 truncate">{item.label}</p><p className="text-red-400 font-bold text-[10px] sm:text-xs truncate">{item.value}</p></div>
             ))}
           </div>
           {Object.keys(s.apiCosts.featureCosts).length > 0 && (
@@ -358,24 +363,23 @@ export default function AdminDashboard() {
               {Object.entries(s.apiCosts.featureCosts).slice(0, 8).map(([feature, cost]) => {
                 const pct = s.apiCosts.totalUSD > 0 ? Math.round((cost / s.apiCosts.totalUSD) * 100) : 0
                 return (
-                  <div key={feature} className="flex items-center gap-2">
-                    <span className="text-xs text-[#8B97B5] w-32 shrink-0 truncate">{feature.replace(/_/g, ' ')}</span>
-                    <div className="flex-1 bg-surface-base rounded-full h-1.5"><div className="h-1.5 rounded-full bg-red-400" style={{ width: `${pct}%` }} /></div>
+                  <div key={feature} className="flex items-center gap-2 min-w-0">
+                    <span className="text-xs text-[#8B97B5] w-24 sm:w-32 shrink-0 truncate">{feature.replace(/_/g, ' ')}</span>
+                    <div className="flex-1 bg-surface-base rounded-full h-1.5 min-w-0"><div className="h-1.5 rounded-full bg-red-400" style={{ width: `${pct}%` }} /></div>
                     <span className="text-[10px] text-[#8B97B5] w-16 text-right shrink-0">${cost} · {pct}%</span>
                   </div>
                 )
               })}
             </div>
           )}
-          <div className="mt-4 bg-red-500/10 border border-red-500/20 rounded-xl p-3">
-            <p className="text-xs text-red-400 font-medium">💡 Profit check: Revenue today {formatKsh(s.revenue.today)} vs AI cost today {formatKsh(s.apiCosts.todayKSH)} = net {formatKsh(s.revenue.today - s.apiCosts.todayKSH)}</p>
+          <div className="mt-4 bg-red-500/10 border border-red-500/20 rounded-xl p-3 min-w-0">
+            <p className="text-xs text-red-400 font-medium break-words">💡 Profit check: Revenue today {formatKsh(s.revenue.today)} vs AI cost today {formatKsh(s.apiCosts.todayKSH)} = net {formatKsh(s.revenue.today - s.apiCosts.todayKSH)}</p>
           </div>
         </div>
 
-        {/* AI Infrastructure */}
-        <div className="bg-surface-elevated border border-white/5 rounded-2xl p-5">
-          <div className="flex items-center gap-2 mb-4"><Server size={15} className="text-brand-blue" /><p className="text-sm font-semibold text-white">AI Infrastructure</p></div>
-          <div className="grid sm:grid-cols-2 gap-3 mb-4">
+        <div className="bg-surface-elevated border border-white/5 rounded-2xl p-4 sm:p-5 min-w-0">
+          <div className="flex items-center gap-2 mb-4"><Server size={15} className="text-brand-blue shrink-0" /><p className="text-sm font-semibold text-white">AI Infrastructure</p></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
             <ProviderCard name="openai" label="OpenAI" info={s.aiInfrastructure.providers.openai}
               onToggle={(enabled) => toggleAIProvider('openai', enabled)}
               onBudgetSave={(b, t) => saveAIBudget('openai', b, t)} />
@@ -384,17 +388,17 @@ export default function AdminDashboard() {
               onBudgetSave={(b, t) => saveAIBudget('azure', b, t)} />
           </div>
           {!s.aiInfrastructure.providers.azure.configured && (
-            <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 mb-4">
-              <p className="text-xs text-blue-300">Azure isn't configured yet — create your Azure OpenAI resource and add the env vars in Vercel to enable it here.</p>
+            <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 mb-4 min-w-0">
+              <p className="text-xs text-blue-300 break-words">Azure isn't configured yet — create your Azure OpenAI resource and add the env vars in Vercel to enable it here.</p>
             </div>
           )}
           {s.aiInfrastructure.recentFailovers.length > 0 && (
             <div className="border-t border-white/5 pt-4 space-y-2">
               <p className="text-[10px] text-[#8B97B5] font-semibold uppercase tracking-wide">Recent Failovers</p>
               {s.aiInfrastructure.recentFailovers.map(f => (
-                <div key={f.id} className="flex items-center justify-between text-[11px] bg-surface-base rounded-lg px-3 py-2">
-                  <span className="text-white">{f.feature}: {f.primary_provider} → {f.fallback_provider}</span>
-                  <span className={f.succeeded ? 'text-green-400' : 'text-red-400'}>{f.succeeded ? '✓ recovered' : '✗ failed'} · {timeAgo(f.created_at)}</span>
+                <div key={f.id} className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[11px] bg-surface-base rounded-lg px-3 py-2 min-w-0">
+                  <span className="text-white break-words min-w-0">{f.feature}: {f.primary_provider} → {f.fallback_provider}</span>
+                  <span className={`shrink-0 ${f.succeeded ? 'text-green-400' : 'text-red-400'}`}>{f.succeeded ? '✓ recovered' : '✗ failed'} · {timeAgo(f.created_at)}</span>
                 </div>
               ))}
             </div>
@@ -402,27 +406,27 @@ export default function AdminDashboard() {
         </div>
 
         {s.payments.pendingCount > 0 && (
-          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl px-4 py-3 flex items-center gap-3">
+          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl px-4 py-3 flex items-center gap-3 min-w-0">
             <Clock size={16} className="text-yellow-400 shrink-0" />
-            <div><p className="text-white font-semibold text-sm">{s.payments.pendingCount} payment{s.payments.pendingCount !== 1 ? 's' : ''} pending</p><p className="text-[#8B97B5] text-xs">STK pushes awaiting Safaricom confirmation</p></div>
+            <div className="min-w-0"><p className="text-white font-semibold text-sm">{s.payments.pendingCount} payment{s.payments.pendingCount !== 1 ? 's' : ''} pending</p><p className="text-[#8B97B5] text-xs">STK pushes awaiting Safaricom confirmation</p></div>
           </div>
         )}
 
-        <div>
-          <div className="flex items-center gap-2 mb-4"><CheckCircle size={15} className="text-brand-green" /><p className="text-sm font-semibold text-white">Recent Transactions</p></div>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 mb-4"><CheckCircle size={15} className="text-brand-green shrink-0" /><p className="text-sm font-semibold text-white">Recent Transactions</p></div>
           <div className="sm:hidden space-y-2">
             {s.payments.recentPayments.length === 0 ? (
               <div className="bg-surface-elevated border border-white/5 rounded-xl p-8 text-center text-[#8B97B5] text-sm">No transactions yet</div>
             ) : s.payments.recentPayments.map((p, i) => (
-              <div key={i} className="bg-surface-elevated border border-white/5 rounded-xl p-4 space-y-2">
-                <div className="flex items-center justify-between"><span className="text-[10px] font-mono text-white truncate pr-2 max-w-[140px]">{p.transaction_id}</span><span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${getStatusColor(p.status)}`}>{p.status}</span></div>
-                <div className="flex items-center justify-between"><span className="text-sm text-white font-medium">{p.plan_name}</span><span className="text-sm text-brand-green font-bold">{formatKsh(p.amount)}</span></div>
-                <div className="flex items-center justify-between text-[10px] text-[#8B97B5]"><span>{p.phone_number}</span><span>{new Date(p.created_at).toLocaleDateString()}</span></div>
+              <div key={i} className="bg-surface-elevated border border-white/5 rounded-xl p-4 space-y-2 min-w-0">
+                <div className="flex items-center justify-between gap-2 min-w-0"><span className="text-[10px] font-mono text-white truncate min-w-0">{p.transaction_id}</span><span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${getStatusColor(p.status)}`}>{p.status}</span></div>
+                <div className="flex items-center justify-between gap-2 min-w-0"><span className="text-sm text-white font-medium truncate">{p.plan_name}</span><span className="text-sm text-brand-green font-bold shrink-0">{formatKsh(p.amount)}</span></div>
+                <div className="flex items-center justify-between text-[10px] text-[#8B97B5] gap-2 min-w-0"><span className="truncate">{p.phone_number}</span><span className="shrink-0">{new Date(p.created_at).toLocaleDateString()}</span></div>
               </div>
             ))}
           </div>
-          <div className="hidden sm:block bg-surface-elevated border border-white/5 rounded-xl overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="hidden sm:block bg-surface-elevated border border-white/5 rounded-xl overflow-x-auto">
+            <table className="w-full text-sm min-w-[600px]">
               <thead><tr className="border-b border-white/5 bg-surface-base/50">{['Transaction ID', 'Phone', 'Plan', 'Amount', 'Status', 'Date'].map(h => <th key={h} className="px-5 py-3 text-left text-xs font-semibold text-[#8B97B5]">{h}</th>)}</tr></thead>
               <tbody>
                 {s.payments.recentPayments.length === 0 ? (
