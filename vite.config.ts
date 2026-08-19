@@ -9,6 +9,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       manifest: false,
       workbox: {
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,ico}'],
         navigateFallbackDenylist: [/^\/api/, /^\/icon/, /^\/manifest/],
       },
