@@ -2,13 +2,12 @@ import { useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Mic, BookOpen, Zap, Camera, Calendar, Lock, Check, Star, Globe2, Brain } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { usePWAInstall } from '../hooks/usePWAInstall'
 import { useAuth } from '../lib/AuthContext'
 import CommunityCard from '../components/CommunityCard'
+import InstallButton from '../components/InstallButton'
 
 export default function Landing() {
   const navigate = useNavigate()
-  const { installPrompt, isInstalled, isInstalling, install } = usePWAInstall()
   const { signedIn, loading } = useAuth()
 
   useEffect(() => {
@@ -108,20 +107,7 @@ export default function Landing() {
 
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.35 }}
             className="flex justify-center mb-8">
-            {isInstalled ? (
-              <div className="flex items-center gap-2 text-mint text-sm font-semibold">
-                <Check size={16} /> STUDIA AI is installed on your device
-              </div>
-            ) : installPrompt ? (
-              <button onClick={install} disabled={isInstalling}
-                className="flex items-center gap-2 bg-gradient-to-r from-mint to-light-blue text-white px-7 py-3 rounded-xl font-semibold text-sm hover:opacity-90 transition disabled:opacity-50 shadow-md shadow-mint/20">
-                {isInstalling ? (
-                  <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Installing...</>
-                ) : (
-                  <>📲 Install STUDIA AI — Free</>
-                )}
-              </button>
-            ) : null}
+            <InstallButton variant="hero" />
           </motion.div>
 
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
@@ -338,12 +324,9 @@ export default function Landing() {
               Sign In
             </button>
           </div>
-          {!isInstalled && installPrompt && (
-            <button onClick={install} disabled={isInstalling}
-              className="mx-auto flex items-center justify-center gap-2 bg-white/10 border border-white/30 text-white px-6 py-3 rounded-xl font-medium text-sm hover:bg-white/20 transition disabled:opacity-50">
-              {isInstalling ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Installing...</> : <>📲 Install STUDIA AI App</>}
-            </button>
-          )}
+          <div className="flex justify-center">
+            <InstallButton variant="hero" />
+          </div>
         </div>
       </section>
 
