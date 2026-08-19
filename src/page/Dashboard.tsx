@@ -7,7 +7,6 @@ import {
   Sparkles, AlertTriangle, Crown,
 } from 'lucide-react'
 import { signOut, getSupabase } from '../lib/supabaseClient'
-import { usePWAInstall } from '../hooks/usePWAInstall'
 import {
   loadAccess, explorerLecturesRemaining, paidLecturesRemaining,
   getPlanLabel, getPlanColor, type AccessInfo, emptyAccess,
@@ -19,6 +18,7 @@ import UpgradeModal from '../components/UpgradeModal'
 import NotificationBell from '../components/NotificationBell'
 import OnboardingModal from '../components/OnboardingModal'
 import CommunityCard from '../components/CommunityCard'
+import InstallButton from '../components/InstallButton'
 
 function CircleStat({
   value, label, strokeColor, textColor, percentage = 100,
@@ -54,7 +54,6 @@ function CircleStat({
 export default function Dashboard() {
   const navigate = useNavigate()
   const { userId, user } = useAuth()
-  const { installPrompt, isInstalled, isInstalling, install } = usePWAInstall()
 
   const [stats, setStats] = useState({ lectures: 0, quizzes: 0, avgScore: 0, streak: 0 })
   const [access, setAccess] = useState<AccessInfo>(emptyAccess)
@@ -72,7 +71,6 @@ export default function Dashboard() {
 
   useEffect(() => {
     const init = async () => {
-      // Stats from localStorage
       let lectures = 0
       let quizResults: any[] = []
       try { lectures = JSON.parse(localStorage.getItem('recordingsMetadata') || '[]').length } catch {}
@@ -102,7 +100,6 @@ export default function Dashboard() {
         setStats({ lectures, quizzes: quizResults.length, avgScore: avg, streak })
       } catch {}
 
-      // Access info
       const a = await loadAccess(userId)
       setAccess(a)
 
@@ -111,7 +108,6 @@ export default function Dashboard() {
         setShowUpgradeModal(true)
       }
 
-      // Admin check
       if (userId) {
         try {
           const client = await getSupabase()
@@ -124,7 +120,6 @@ export default function Dashboard() {
         } catch {}
       }
 
-      // Show onboarding for brand new users
       if (!localStorage.getItem('studia_onboarded')) {
         setTimeout(() => setShowOnboarding(true), 800)
       }
@@ -214,18 +209,8 @@ export default function Dashboard() {
             </div>
             <span className="font-sora font-bold text-navy text-base sm:text-lg hidden sm:inline">STUDIA AI</span>
 
-            {/* Install */}
-            {!isInstalled && installPrompt && (
-              <button onClick={install} disabled={isInstalling}
-                className="flex items-center gap-1.5 bg-gradient-to-r from-mint to-light-blue text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-90 transition disabled:opacity-50 ml-1">
-                {isInstalling
-                  ? <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  : '📲'}
-                <span className="hidden sm:inline">{isInstalling ? 'Installing...' : 'Install App'}</span>
-              </button>
-            )}
+            <InstallButton variant="compact" />
 
-            {/* Admin */}
             {isAdmin && (
               <button onClick={() => navigate('/admin')}
                 className="flex items-center gap-1.5 bg-warning/10 border border-warning/30 text-warning px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-warning/20 transition ml-1">
@@ -257,7 +242,6 @@ export default function Dashboard() {
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
             className="space-y-8 sm:space-y-10">
 
-            {/* Welcome */}
             <div>
               <h1 className="font-sora font-bold text-4xl sm:text-5xl text-navy mb-2">
                 Welcome back, {firstName}.
@@ -271,7 +255,6 @@ export default function Dashboard() {
               </p>
             </div>
 
-            {/* Circular stats */}
             <div className="bg-white rounded-2xl border border-gray-200 px-6 py-5">
               <div className="flex items-center justify-around gap-2">
                 {circleStats.map((s, i) => (
@@ -283,7 +266,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Plan + usage card */}
             <div
               className={`rounded-2xl p-5 sm:p-6 border-2 cursor-pointer transition-colors ${
                 isLocked ? 'bg-red-50 border-red-300'
@@ -366,7 +348,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Refer and Earn */}
             <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border-2 border-purple-500/20 rounded-2xl p-5 sm:p-6">
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-2xl shrink-0">
@@ -388,10 +369,8 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* WhatsApp Community */}
             <CommunityCard variant="light" />
 
-            {/* Quick Actions */}
             <div>
               <h2 className="font-sora font-bold text-xl sm:text-2xl text-navy mb-4 sm:mb-6">Quick Actions</h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
@@ -427,7 +406,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Pro tip */}
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
               className="bg-gradient-to-r from-indigo-premium to-purple-premium rounded-3xl p-6 sm:p-8 text-white overflow-hidden relative">
               <div className="absolute -right-20 -top-20 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
