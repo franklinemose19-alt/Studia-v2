@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, Download, Share, PlusSquare, MoreVertical, X } from 'lucide-react'
+import { Check, Download, Share, PlusSquare, MoreVertical, X, RotateCcw } from 'lucide-react'
 import { usePWAInstall } from '../hooks/usePWAInstall'
 
 interface Props {
@@ -7,8 +7,13 @@ interface Props {
 }
 
 export default function InstallButton({ variant = 'compact' }: Props) {
-  const { isInstalled, canPromptInstall, showManualInstructions, isInstalling, install, platformHint } = usePWAInstall()
+  const { isInstalled, canPromptInstall, showManualInstructions, isInstalling, install, resetAndRetry, platformHint } = usePWAInstall()
   const [showInstructions, setShowInstructions] = useState(false)
+
+  const handleReset = () => {
+    const ok = window.confirm("This clears STUDIA's installed app data on this device and reloads the page so you can install fresh. Continue?")
+    if (ok) resetAndRetry()
+  }
 
   if (isInstalled) {
     if (variant === 'compact') return null
@@ -23,16 +28,23 @@ export default function InstallButton({ variant = 'compact' }: Props) {
     const heroClasses = 'flex items-center gap-2 bg-gradient-to-r from-mint to-light-blue text-white px-7 py-3 rounded-xl font-semibold text-sm hover:opacity-90 transition disabled:opacity-50 shadow-md shadow-mint/20'
     const compactClasses = 'flex items-center gap-1.5 bg-gradient-to-r from-mint to-light-blue text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-90 transition disabled:opacity-50'
     return (
-      <button onClick={install} disabled={isInstalling} className={variant === 'hero' ? heroClasses : compactClasses}>
-        {isInstalling ? (
-          <>
-            <div className={`${variant === 'hero' ? 'w-4 h-4' : 'w-3 h-3'} border-2 border-white/30 border-t-white rounded-full animate-spin`} />
-            Installing...
-          </>
-        ) : (
-          <>📲 {variant === 'hero' ? 'Install STUDIA AI — Free' : 'Install App'}</>
+      <div className={variant === 'hero' ? 'flex flex-col items-center gap-2' : 'flex flex-col items-start gap-1'}>
+        <button onClick={install} disabled={isInstalling} className={variant === 'hero' ? heroClasses : compactClasses}>
+          {isInstalling ? (
+            <>
+              <div className={`${variant === 'hero' ? 'w-4 h-4' : 'w-3 h-3'} border-2 border-white/30 border-t-white rounded-full animate-spin`} />
+              Installing...
+            </>
+          ) : (
+            <>📲 {variant === 'hero' ? 'Install STUDIA AI — Free' : 'Install App'}</>
+          )}
+        </button>
+        {variant === 'hero' && (
+          <button onClick={handleReset} className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-600 transition">
+            <RotateCcw size={10} /> Installed before but it opened wrong? Reset & retry
+          </button>
         )}
-      </button>
+      </div>
     )
   }
 
@@ -66,7 +78,10 @@ export default function InstallButton({ variant = 'compact' }: Props) {
                 <li className="flex items-start gap-2"><Check size={14} className="text-brand-blue shrink-0 mt-0.5" /> Confirm to finish</li>
               </ol>
             )}
-            <p className="text-[10px] text-gray-400 mt-3">Just uninstalled STUDIA AI? Your browser may take a little while before offering the automatic install button again — these manual steps always work in the meantime.</p>
+            <p className="text-[10px] text-gray-400 mt-3 mb-2">Just uninstalled STUDIA AI? Your browser may take a little while before offering the automatic install button again — these manual steps always work in the meantime.</p>
+            <button onClick={handleReset} className="flex items-center gap-1 text-[10px] text-brand-blue hover:text-brand-blue/80 font-medium">
+              <RotateCcw size={10} /> Had trouble before? Reset & retry
+            </button>
           </div>
         )}
       </div>
