@@ -24,9 +24,6 @@ function checkStandaloneMode(): boolean {
   return !!mqMatch || iosStandalone
 }
 
-// Legacy keys an earlier version of this hook may have written to mark
-// "installed" permanently — this is the actual bug. Clearing them once
-// on mount guarantees a stale flag can never override the live signals below.
 const LEGACY_KEYS = [
   'pwa_installed', 'pwaInstalled', 'pwa-installed', 'studia_pwa_installed',
   'pwaInstallDismissed', 'pwa_install_dismissed',
@@ -47,13 +44,20 @@ export function usePWAInstall() {
     const handleDisplayModeChange = () => setIsInstalled(checkStandaloneMode())
     mq.addEventListener?.('change', handleDisplayModeChange)
 
+    // Some browsers don't reliably fire the standalone media-query change —
+    // re-check whenever the tab regains focus as a backup signal.
+    const handleVisibility = () => { if (document.visibilityState === 'visible') setIsInstalled(checkStandaloneMode()) }
+    document.addEventListener('visibilitychange', handleVisibility)
+
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault()
+      console.log('[PWA] beforeinstallprompt captured — native install genuinely available')
       setInstallPrompt(e as BeforeInstallPromptEvent)
     }
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
 
     const handleAppInstalled = () => {
+      console.log('[PWA] appinstalled fired — now running standalone')
       setIsInstalled(true)
       setInstallPrompt(null)
     }
@@ -61,24 +65,44 @@ export function usePWAInstall() {
 
     return () => {
       mq.removeEventListener?.('change', handleDisplayModeChange)
+      document.removeEventListener('visibilitychange', handleVisibility)
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
       window.removeEventListener('appinstalled', handleAppInstalled)
     }
   }, [])
 
   const install = useCallback(async () => {
-    if (!installPrompt) return
+    if (!installPrompt) {
+      console.warn('[PWA] install() called with no captured prompt — should be unreachable from the UI')
+      return
+    }
     setIsInstalling(true)
     try {
       await installPrompt.prompt()
-      await installPrompt.userChoice
-      // The 'appinstalled' listener above sets isInstalled if accepted.
-      // A deferred prompt can only ever be used once — clear it either way.
+      const choice = await installPrompt.userChoice
+      console.log('[PWA] userChoice:', choice.outcome)
     } finally {
       setInstallPrompt(null)
       setIsInstalling(false)
     }
   }, [installPrompt])
+
+  // Self-serve escape hatch for a device stuck with a stale install identity —
+  // wipes every service worker + cache for this origin, then reloads clean.
+  const resetAndRetry = useCallback(async () => {
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations()
+        await Promise.all(regs.map(r => r.unregister()))
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys()
+        await Promise.all(keys.map(k => caches.delete(k)))
+      }
+    } finally {
+      window.location.reload()
+    }
+  }, [])
 
   return {
     installPrompt,
@@ -88,5 +112,6 @@ export function usePWAInstall() {
     showManualInstructions: !isInstalled && !installPrompt,
     platformHint,
     install,
+    resetAndRetry,
   }
 }
