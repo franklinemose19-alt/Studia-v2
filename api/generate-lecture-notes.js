@@ -1,21 +1,25 @@
 import { checkRateLimit } from './_utils/rateLimiter.js'
 import { chatCompletion } from './_utils/aiGateway.js'
+import { getVerifiedUserId } from './_utils/verifyUser.js'
 
 const notesCache = new Map()
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   try {
-    const { transcript, segments, courseName, unitName, userId } = req.body
+    const authId = await getVerifiedUserId(req)
+    if (!authId) return res.status(401).json({ error: 'Please sign in again.', code: 'not_authenticated' })
+
+    const { transcript, segments, courseName, unitName } = req.body
     if (!transcript?.trim()) return res.status(400).json({ error: 'No transcript provided' })
 
-    const rateCheck = await checkRateLimit(userId, 'generate-lecture-notes')
+    const rateCheck = await checkRateLimit(authId, 'generate-lecture-notes')
     if (!rateCheck.allowed) {
-      return res.status(429).json({
-        error: rateCheck.reason === 'missing_user_id' ? 'Authentication required' : `Too many requests — wait ${Math.ceil(rateCheck.retryAfterSeconds / 60)} minute(s).`,
-        retryAfterSeconds: rateCheck.retryAfterSeconds,
-      })
+      return res.status(429).json({ error: `Too many requests — wait ${Math.ceil(rateCheck.retryAfterSeconds / 60)} minute(s).`, retryAfterSeconds: rateCheck.retryAfterSeconds })
     }
+
+    // No separate credit consumption here — the lecture this transcript
+    // belongs to was already gated and charged in transcribe.js.
 
     const cacheKey = `${transcript.slice(0, 200)}-${courseName || ''}-${unitName || ''}`
     if (notesCache.has(cacheKey)) return res.status(200).json(notesCache.get(cacheKey))
@@ -62,7 +66,7 @@ ${segmentMap ? `\nTimestamp map (second: preview):\n${segmentMap.slice(0, 6000)}
           { role: 'system', content: systemPrompt },
           { role: 'user', content: `Generate Smart Ink notes and the structured script.\n${courseName ? `Course: ${courseName}` : ''}\n${unitName ? `Unit: ${unitName}` : ''}\n\nTranscript:\n${transcript}` },
         ],
-        maxTokens: 6500, responseFormat: { type: 'json_object' }, feature: 'lecture_notes', userId,
+        maxTokens: 6500, responseFormat: { type: 'json_object' }, feature: 'lecture_notes', userId: authId,
       })
 
       let structured
