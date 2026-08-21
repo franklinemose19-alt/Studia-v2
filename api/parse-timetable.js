@@ -1,19 +1,20 @@
 import pdfParse from 'pdf-parse'
 import { checkRateLimit } from './_utils/rateLimiter.js'
 import { chatCompletion } from './_utils/aiGateway.js'
+import { getVerifiedUserId } from './_utils/verifyUser.js'
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   try {
-    const { pdfBase64, courses, userId } = req.body
+    const authId = await getVerifiedUserId(req)
+    if (!authId) return res.status(401).json({ error: 'Please sign in again.', code: 'not_authenticated' })
+
+    const { pdfBase64, courses } = req.body
     if (!pdfBase64) return res.status(400).json({ error: 'No PDF provided' })
 
-    const rateCheck = await checkRateLimit(userId, 'parse-timetable')
+    const rateCheck = await checkRateLimit(authId, 'parse-timetable')
     if (!rateCheck.allowed) {
-      return res.status(429).json({
-        error: rateCheck.reason === 'missing_user_id' ? 'Authentication required' : `Too many requests — wait ${Math.ceil(rateCheck.retryAfterSeconds / 60)} minute(s).`,
-        retryAfterSeconds: rateCheck.retryAfterSeconds,
-      })
+      return res.status(429).json({ error: `Too many requests — wait ${Math.ceil(rateCheck.retryAfterSeconds / 60)} minute(s).`, retryAfterSeconds: rateCheck.retryAfterSeconds })
     }
 
     const buffer = Buffer.from(pdfBase64, 'base64')
@@ -39,7 +40,7 @@ If you find no exams, return [].`,
             content: `Student's enrolled courses/units: ${coursesContext}\nTimetable text:\n"""${text.slice(0, 8000)}"""\nExtract all exams found. If the student's courses are specified, still include all exams found in the document.`,
           },
         ],
-        maxTokens: 2000, feature: 'parse_timetable', userId,
+        maxTokens: 2000, feature: 'parse_timetable', userId: authId,
       })
       const jsonMatch = result.content.match(/\[[\s\S]*\]/)
       const exams = jsonMatch ? JSON.parse(jsonMatch[0]) : []
