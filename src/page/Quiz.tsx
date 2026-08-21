@@ -3,21 +3,13 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, Loader, Upload, FileText, ClipboardList, Check, X, RotateCcw, BookOpen } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
-import {
-  loadAccess, checkAccess, consumeCredit, explorerLecturesRemaining,
-  isUnlimitedPlan, type AccessInfo, emptyAccess,
-} from '../lib/access'
+import { loadAccess, explorerLecturesRemaining, isUnlimitedPlan, type AccessInfo, emptyAccess } from '../lib/access'
+import { authFetch } from '../lib/authFetch'
 import { getAllRecordings } from '../lib/lectureContext'
 import { saveQuizResult } from '../lib/quizHistory'
 import { toast } from '../lib/toast'
 
-interface Question {
-  question: string
-  options: string[]
-  correct: number
-  topic: string
-}
-
+interface Question { question: string; options: string[]; correct: number; topic: string }
 type InputMode = 'lecture' | 'paste' | 'pdf'
 type Screen = 'setup' | 'quiz' | 'results'
 
@@ -78,41 +70,24 @@ export default function Quiz() {
     if (inputMode === 'paste' && !pastedText.trim()) { toast.error('Please paste your lecture notes'); return }
     if (inputMode === 'pdf' && !pdfBase64) { toast.error('Please upload a PDF past paper'); return }
 
-    const result = checkAccess(access, 'core')
-    if (!result.allowed) {
-      if (result.reason === 'explorer_locked') {
-        toast.error('Free AI credits used up — upgrade to continue.')
-      } else {
-        toast.error('No AI credits remaining — upgrade your plan.')
-      }
-      navigate('/pricing')
-      return
-    }
-
     setLoading(true)
     try {
-      const body: any = { userId }
-      if (inputMode === 'pdf') {
-        body.pdfBase64 = pdfBase64
-        body.courseContext = ''
-      } else {
-        body.text = source.text
-        body.courseContext = source.course || ''
+      const body: any = {}
+      if (inputMode === 'pdf') { body.pdfBase64 = pdfBase64; body.courseContext = '' }
+      else { body.text = source.text; body.courseContext = source.course || '' }
+
+      const res = await authFetch('/api/quiz', { method: 'POST', body: JSON.stringify(body) })
+
+      if (res.status === 402) {
+        const err = await res.json()
+        toast.error(err.error)
+        navigate('/pricing')
+        return
       }
-
-      const res = await fetch('/api/quiz', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-
+      if (res.status === 401) { toast.error('Your session expired — please sign in again.'); return }
       if (!res.ok) {
         const err = await res.json()
-        if (res.status === 429) {
-          toast.error(err.error || 'Too many requests — please wait a moment.')
-        } else {
-          toast.error(err.error || 'Failed to generate quiz')
-        }
+        toast.error(res.status === 429 ? (err.error || 'Too many requests — please wait a moment.') : (err.error || 'Failed to generate quiz'))
         return
       }
 
@@ -120,18 +95,9 @@ export default function Quiz() {
       if (!data.quizzes?.length) { toast.error('Could not generate quiz from this content. Try adding more detailed notes.'); return }
 
       setQuestions(data.quizzes)
-      setAnswers({})
-      setCurrentQ(0)
-      setSubmitted(false)
-      setScore(0)
+      setAnswers({}); setCurrentQ(0); setSubmitted(false); setScore(0)
       setScreen('quiz')
-
-      await consumeCredit(access, result.source)
-      setAccess(prev => ({
-        ...prev,
-        freeCreditsUsed: result.source === 'explorer_free' ? prev.freeCreditsUsed + 1 : prev.freeCreditsUsed,
-        liteBonusCredits: result.source === 'bonus' ? Math.max(0, prev.liteBonusCredits - 1) : prev.liteBonusCredits,
-      }))
+      setAccess(await loadAccess(userId))
     } catch {
       toast.error('Failed to generate quiz — check your connection.')
     } finally {
@@ -151,17 +117,10 @@ export default function Quiz() {
     setScreen('results')
 
     const rec = recordings.find(r => r.id === selectedLectureId)
-    const questionOutcomes = questions.map((q, i) => ({
-      topic: q.topic || 'General',
-      correct: answers[i] === q.correct,
-    }))
+    const questionOutcomes = questions.map((q, i) => ({ topic: q.topic || 'General', correct: answers[i] === q.correct }))
     saveQuizResult({
-      subject: rec?.course || 'General',
-      score: correct,
-      total: questions.length,
-      source: inputMode === 'pdf' ? 'past_paper' : 'notes',
-      questions: questionOutcomes,
-      userId,
+      subject: rec?.course || 'General', score: correct, total: questions.length,
+      source: inputMode === 'pdf' ? 'past_paper' : 'notes', questions: questionOutcomes, userId,
     })
 
     const pct = Math.round((correct / questions.length) * 100)
@@ -171,14 +130,8 @@ export default function Quiz() {
   }
 
   const resetQuiz = () => {
-    setScreen('setup')
-    setQuestions([])
-    setAnswers({})
-    setSubmitted(false)
-    setScore(0)
-    setPastedText('')
-    setPdfBase64(null)
-    setPdfName('')
+    setScreen('setup'); setQuestions([]); setAnswers({}); setSubmitted(false); setScore(0)
+    setPastedText(''); setPdfBase64(null); setPdfName('')
   }
 
   const pct = questions.length > 0 ? Math.round((score / questions.length) * 100) : 0
@@ -229,9 +182,7 @@ export default function Quiz() {
                 { id: 'pdf', label: '📄 Past Paper', desc: 'Upload PDF' },
               ] as { id: InputMode; label: string; desc: string }[]).map(opt => (
                 <button key={opt.id} onClick={() => setInputMode(opt.id)}
-                  className={`p-3 rounded-2xl border-2 transition text-left ${
-                    inputMode === opt.id ? 'border-indigo-premium bg-indigo-premium/5' : 'border-gray-200 hover:border-gray-300'
-                  }`}>
+                  className={`p-3 rounded-2xl border-2 transition text-left ${inputMode === opt.id ? 'border-indigo-premium bg-indigo-premium/5' : 'border-gray-200 hover:border-gray-300'}`}>
                   <p className="font-semibold text-navy text-sm">{opt.label}</p>
                   <p className="text-xs text-gray-500">{opt.desc}</p>
                 </button>
@@ -254,16 +205,12 @@ export default function Quiz() {
                     <div className="space-y-2 max-h-56 overflow-y-auto">
                       {recordings.map(rec => (
                         <button key={rec.id} onClick={() => setSelectedLectureId(rec.id)}
-                          className={`w-full text-left px-4 py-3 rounded-xl border-2 transition ${
-                            selectedLectureId === rec.id ? 'border-indigo-premium bg-indigo-premium/5' : 'border-gray-200 hover:border-gray-300'
-                          }`}>
+                          className={`w-full text-left px-4 py-3 rounded-xl border-2 transition ${selectedLectureId === rec.id ? 'border-indigo-premium bg-indigo-premium/5' : 'border-gray-200 hover:border-gray-300'}`}>
                           <div className="flex items-center justify-between">
                             <div>
                               <p className="font-medium text-navy text-sm">{rec.name}</p>
                               <p className="text-xs text-gray-500">
-                                {rec.course && `${rec.course} · `}
-                                {rec.notes ? '✓ Notes' : '—'}
-                                {rec.transcript ? ' ✓ Transcript' : ''}
+                                {rec.course && `${rec.course} · `}{rec.notes ? '✓ Notes' : '—'}{rec.transcript ? ' ✓ Transcript' : ''}
                               </p>
                             </div>
                             {selectedLectureId === rec.id && <Check size={16} className="text-indigo-premium shrink-0" />}
@@ -278,12 +225,9 @@ export default function Quiz() {
               {inputMode === 'paste' && (
                 <>
                   <label className="block text-sm font-medium text-navy mb-2">Paste your notes</label>
-                  <textarea
-                    value={pastedText}
-                    onChange={e => setPastedText(e.target.value)}
+                  <textarea value={pastedText} onChange={e => setPastedText(e.target.value)}
                     placeholder="Paste your lecture notes, textbook excerpts, or any study material here..."
-                    className="w-full h-48 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-navy placeholder-gray-400 outline-none focus:border-indigo-premium transition resize-none text-sm"
-                  />
+                    className="w-full h-48 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-navy placeholder-gray-400 outline-none focus:border-indigo-premium transition resize-none text-sm" />
                 </>
               )}
 
@@ -296,9 +240,7 @@ export default function Quiz() {
                         <FileText size={18} className="text-indigo-premium" />
                         <p className="text-navy text-sm font-medium truncate">{pdfName}</p>
                       </div>
-                      <button onClick={() => { setPdfBase64(null); setPdfName('') }} className="text-gray-400 hover:text-red-500 transition">
-                        <X size={18} />
-                      </button>
+                      <button onClick={() => { setPdfBase64(null); setPdfName('') }} className="text-gray-400 hover:text-red-500 transition"><X size={18} /></button>
                     </div>
                   ) : (
                     <button onClick={() => fileRef.current?.click()}
@@ -313,11 +255,7 @@ export default function Quiz() {
 
               <button onClick={generateQuiz} disabled={loading}
                 className="w-full bg-indigo-premium text-white font-bold py-3.5 rounded-xl hover:bg-purple-premium transition disabled:opacity-50 flex items-center justify-center gap-2">
-                {loading ? (
-                  <><Loader className="animate-spin" size={20} /> Generating questions...</>
-                ) : (
-                  <><ClipboardList size={20} /> Generate Quiz</>
-                )}
+                {loading ? (<><Loader className="animate-spin" size={20} /> Generating questions...</>) : (<><ClipboardList size={20} /> Generate Quiz</>)}
               </button>
             </div>
           </motion.div>
@@ -349,24 +287,18 @@ export default function Quiz() {
                   <span className="w-8 h-8 rounded-full bg-indigo-premium/10 text-indigo-premium font-bold text-sm flex items-center justify-center shrink-0">{currentQ + 1}</span>
                   <p className="font-semibold text-navy text-base">{questions[currentQ]?.question}</p>
                 </div>
-
                 <div className="space-y-2">
                   {questions[currentQ]?.options.map((opt, j) => {
                     const selected = answers[currentQ] === j
                     return (
                       <button key={j} onClick={() => selectAnswer(currentQ, j)}
-                        className={`w-full text-left px-4 py-3 rounded-xl border-2 transition text-sm font-medium ${
-                          selected ? 'border-indigo-premium bg-indigo-premium/5 text-indigo-premium' : 'border-gray-200 text-navy hover:border-indigo-premium/40 hover:bg-indigo-premium/3'
-                        }`}>
+                        className={`w-full text-left px-4 py-3 rounded-xl border-2 transition text-sm font-medium ${selected ? 'border-indigo-premium bg-indigo-premium/5 text-indigo-premium' : 'border-gray-200 text-navy hover:border-indigo-premium/40 hover:bg-indigo-premium/3'}`}>
                         <span className="font-bold mr-2">{String.fromCharCode(65 + j)}.</span>{opt}
                       </button>
                     )
                   })}
                 </div>
-
-                {questions[currentQ]?.topic && (
-                  <p className="text-xs text-gray-400">Topic: {questions[currentQ].topic}</p>
-                )}
+                {questions[currentQ]?.topic && <p className="text-xs text-gray-400">Topic: {questions[currentQ].topic}</p>}
               </motion.div>
             </AnimatePresence>
 
@@ -375,41 +307,26 @@ export default function Quiz() {
               <div className="flex flex-wrap gap-2">
                 {questions.map((_, i) => (
                   <button key={i} onClick={() => setCurrentQ(i)}
-                    className={`w-8 h-8 rounded-lg text-xs font-bold transition ${
-                      i === currentQ ? 'bg-indigo-premium text-white'
-                      : answers[i] !== undefined ? 'bg-mint/20 text-mint'
-                      : 'bg-gray-100 text-gray-400'
-                    }`}>
+                    className={`w-8 h-8 rounded-lg text-xs font-bold transition ${i === currentQ ? 'bg-indigo-premium text-white' : answers[i] !== undefined ? 'bg-mint/20 text-mint' : 'bg-gray-100 text-gray-400'}`}>
                     {i + 1}
                   </button>
                 ))}
               </div>
             </div>
 
-            <button
-              onClick={submitQuiz}
-              disabled={Object.keys(answers).length < questions.length}
-              className="w-full bg-indigo-premium text-white font-bold py-3.5 rounded-xl hover:bg-purple-premium transition disabled:opacity-50"
-            >
-              {Object.keys(answers).length < questions.length
-                ? `Answer all questions (${questions.length - Object.keys(answers).length} remaining)`
-                : 'Submit Quiz'}
+            <button onClick={submitQuiz} disabled={Object.keys(answers).length < questions.length}
+              className="w-full bg-indigo-premium text-white font-bold py-3.5 rounded-xl hover:bg-purple-premium transition disabled:opacity-50">
+              {Object.keys(answers).length < questions.length ? `Answer all questions (${questions.length - Object.keys(answers).length} remaining)` : 'Submit Quiz'}
             </button>
           </motion.div>
         )}
 
         {screen === 'results' && (
           <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} className="space-y-6">
-            <div className={`rounded-3xl p-8 text-center text-white ${
-              pct >= 80 ? 'bg-gradient-to-br from-mint to-green-500'
-              : pct >= 60 ? 'bg-gradient-to-br from-indigo-premium to-purple-premium'
-              : 'bg-gradient-to-br from-warning to-red-500'
-            }`}>
+            <div className={`rounded-3xl p-8 text-center text-white ${pct >= 80 ? 'bg-gradient-to-br from-mint to-green-500' : pct >= 60 ? 'bg-gradient-to-br from-indigo-premium to-purple-premium' : 'bg-gradient-to-br from-warning to-red-500'}`}>
               <p className="text-6xl font-bold mb-2">{pct}%</p>
               <p className="text-white/90 text-xl font-semibold">{score} out of {questions.length} correct</p>
-              <p className="text-white/70 mt-1">
-                {pct >= 80 ? 'Excellent work! 🎉' : pct >= 60 ? 'Good effort! Keep practicing 💪' : 'Review your notes and try again 📚'}
-              </p>
+              <p className="text-white/70 mt-1">{pct >= 80 ? 'Excellent work! 🎉' : pct >= 60 ? 'Good effort! Keep practicing 💪' : 'Review your notes and try again 📚'}</p>
             </div>
 
             <div className="space-y-3">
@@ -427,11 +344,7 @@ export default function Quiz() {
                     </div>
                     <div className="space-y-1.5 ml-10">
                       {q.options.map((opt, j) => (
-                        <div key={j} className={`px-3 py-2 rounded-lg text-xs font-medium ${
-                          j === q.correct ? 'bg-mint/15 text-green-700 border border-mint/30'
-                          : j === userAnswer && !isCorrect ? 'bg-red-50 text-red-600 border border-red-200'
-                          : 'text-gray-500'
-                        }`}>
+                        <div key={j} className={`px-3 py-2 rounded-lg text-xs font-medium ${j === q.correct ? 'bg-mint/15 text-green-700 border border-mint/30' : j === userAnswer && !isCorrect ? 'bg-red-50 text-red-600 border border-red-200' : 'text-gray-500'}`}>
                           <span className="font-bold mr-1">{String.fromCharCode(65 + j)}.</span>{opt}
                           {j === q.correct && <span className="ml-2 text-mint font-bold">✓ Correct</span>}
                           {j === userAnswer && !isCorrect && <span className="ml-2 text-red-500 font-bold">✗ Your answer</span>}
@@ -444,12 +357,10 @@ export default function Quiz() {
             </div>
 
             <div className="grid sm:grid-cols-2 gap-3">
-              <button onClick={resetQuiz}
-                className="flex items-center justify-center gap-2 bg-indigo-premium text-white font-bold py-3.5 rounded-xl hover:bg-purple-premium transition">
+              <button onClick={resetQuiz} className="flex items-center justify-center gap-2 bg-indigo-premium text-white font-bold py-3.5 rounded-xl hover:bg-purple-premium transition">
                 <RotateCcw size={18} /> New Quiz
               </button>
-              <button onClick={() => navigate('/sage')}
-                className="flex items-center justify-center gap-2 bg-gradient-to-r from-brand-blue to-purple-500 text-white font-bold py-3.5 rounded-xl hover:opacity-90 transition">
+              <button onClick={() => navigate('/sage')} className="flex items-center justify-center gap-2 bg-gradient-to-r from-brand-blue to-purple-500 text-white font-bold py-3.5 rounded-xl hover:opacity-90 transition">
                 🧠 Ask SAGE about this
               </button>
             </div>
