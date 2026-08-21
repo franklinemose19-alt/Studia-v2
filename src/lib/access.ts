@@ -23,24 +23,12 @@ export const emptyAccess: AccessInfo = {
 
 const EXPLORER_LIFETIME_LIMIT = 3
 
-async function checkAndExpireSubscription(
-  uid: string, plan: string | null, status: string | null, periodEnd: string | null
-) {
-  if (!['excellence', 'valedictorian'].includes(plan || '')) return null
-  if (status !== 'active' || !periodEnd) return null
-  if (new Date() <= new Date(periodEnd)) return null
-  try {
-    const client = await getSupabase()
-    await client.from('users').update({
-      subscription_status: 'inactive',
-      current_plan: 'explorer',
-      lecture_allowance: 0,
-      lectures_used: 0,
-    }).eq('auth_id', uid)
-    return { plan: 'explorer', status: 'inactive' }
-  } catch { return null }
-}
-
+// Read-only — for display purposes (remaining counts, plan badges, and an
+// OPTIMISTIC pre-check so the UI can show the upgrade modal instantly
+// without waiting on a network round-trip). This is NOT the security
+// boundary anymore. The real enforcement happens server-side, atomically,
+// inside consume_ai_credit() on every AI-calling endpoint — the frontend
+// can never write these fields directly (RLS blocks it).
 export const loadAccess = async (cachedUserId?: string | null): Promise<AccessInfo> => {
   try {
     const client = await getSupabase()
@@ -57,22 +45,21 @@ export const loadAccess = async (cachedUserId?: string | null): Promise<AccessIn
       .eq('auth_id', uid)
       .maybeSingle()
 
-    let currentPlan = data?.current_plan || 'explorer'
-    let subscriptionStatus = data?.subscription_status || null
-    const periodEnd = data?.period_end || null
-
-    const expired = await checkAndExpireSubscription(uid, currentPlan, subscriptionStatus, periodEnd)
-    if (expired) { currentPlan = expired.plan; subscriptionStatus = expired.status }
-
     return {
-      userId: uid, currentPlan, subscriptionStatus,
+      userId: uid,
+      currentPlan: data?.current_plan || 'explorer',
+      subscriptionStatus: data?.subscription_status || null,
       freeCreditsUsed: data?.free_ai_credits_used || 0,
       liteBonusCredits: data?.lite_bonus_credits || 0,
-      lectureAllowance: expired ? 0 : (data?.lecture_allowance || 0),
+      lectureAllowance: data?.lecture_allowance || 0,
       lecturesUsed: data?.lectures_used || 0,
-      periodEnd, planLocked: data?.plan_locked || false,
+      periodEnd: data?.period_end || null,
+      planLocked: data?.plan_locked || false,
     }
-  } catch { return emptyAccess }
+  } catch (err) {
+    console.error('Failed to load access info:', err)
+    return emptyAccess
+  }
 }
 
 export const isActivePaidPlan = (a: AccessInfo) =>
@@ -115,6 +102,8 @@ export type AccessResult =
   | { allowed: true; source: 'paid_subscription' | 'achiever_session' | 'explorer_free' | 'bonus' }
   | { allowed: false; reason: 'explorer_locked' | 'no_lectures_left' | 'needs_premium' }
 
+// Optimistic UI check only — lets you show/hide buttons instantly.
+// The server independently re-verifies everything for real on every request.
 export const checkAccess = (access: AccessInfo, feature: FeatureType): AccessResult => {
   if (access.planLocked) return { allowed: false, reason: 'explorer_locked' }
   if (isActivePaidPlan(access)) {
@@ -131,39 +120,8 @@ export const checkAccess = (access: AccessInfo, feature: FeatureType): AccessRes
   return { allowed: false, reason: 'explorer_locked' }
 }
 
-export const consumeCredit = async (
-  access: AccessInfo,
-  source: 'paid_subscription' | 'achiever_session' | 'explorer_free' | 'bonus'
-): Promise<void> => {
-  if (!access.userId) return
-  fetch('/api/referral', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'verify', userId: access.userId }),
-  }).catch(() => {})
-  try {
-    const client = await getSupabase()
-    if (source === 'explorer_free') {
-      const newUsed = access.freeCreditsUsed + 1
-      await client.from('users').update({
-        free_ai_credits_used: newUsed,
-        plan_locked: newUsed >= EXPLORER_LIFETIME_LIMIT,
-      }).eq('auth_id', access.userId)
-    } else if (source === 'bonus') {
-      await client.from('users').update({
-        lite_bonus_credits: Math.max(0, access.liteBonusCredits - 1),
-      }).eq('auth_id', access.userId)
-    } else if (source === 'paid_subscription') {
-      await client.from('users').update({
-        lectures_used: access.lecturesUsed + 1,
-      }).eq('auth_id', access.userId)
-    }
-  } catch (err) { console.error('consumeCredit failed:', err) }
-}
-
-export const grantLiteBonusCredit = async (userId: string, currentBonusCredits: number) => {
-  try {
-    const client = await getSupabase()
-    await client.from('users').update({ lite_bonus_credits: currentBonusCredits + 1 }).eq('auth_id', userId)
-  } catch {}
-}
+// consumeCredit() and grantLiteBonusCredit() are intentionally removed.
+// Credit consumption now happens exclusively server-side, atomically, as
+// part of each AI request — see api/_utils/aiCredits.js. Referral bonuses
+// are granted server-side in api/referral.js using the service-role key.
+// Neither of those paths is affected by the client-side RLS tightening.
