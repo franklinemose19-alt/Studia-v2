@@ -1,23 +1,46 @@
 import pdfParse from 'pdf-parse'
 import { checkRateLimit } from './_utils/rateLimiter.js'
 import { chatCompletion, embed } from './_utils/aiGateway.js'
+import { getVerifiedUserId } from './_utils/verifyUser.js'
+import { consumeAICredit, releaseAICredit, isAccountLocked } from './_utils/aiCredits.js'
 
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+// Matches exactly which SAGE actions consume a credit today — chat,
+// language_view, knowledge_recall, and extract_concepts stay free
+// (extract_concepts runs internally off an already-charged lecture).
+const CREDIT_GATED_MODES = new Set(['flashcards', 'mockexam', 'knowledgegap', 'deepnotes', 'coach', 'snapsolve', 'pastpapers'])
+
+const EXHAUSTED_MESSAGE = 'Your 3 free AI lectures have been used. Upgrade to continue using SAGE AI Tutor.'
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   try {
-    const { mode, image, text, userId } = req.body
+    const authId = await getVerifiedUserId(req)
+    if (!authId) return res.status(401).json({ error: 'Please sign in again.', code: 'not_authenticated' })
 
-    const rateCheck = await checkRateLimit(userId, 'ai-tools')
+    const { mode, image, text } = req.body
+
+    const rateCheck = await checkRateLimit(authId, 'ai-tools')
     if (!rateCheck.allowed) {
-      return res.status(429).json({
-        error: rateCheck.reason === 'missing_user_id' ? 'Authentication required' : `Too many requests — wait ${Math.ceil(rateCheck.retryAfterSeconds / 60)} minute(s).`,
-        retryAfterSeconds: rateCheck.retryAfterSeconds,
-      })
+      return res.status(429).json({ error: `Too many requests — wait ${Math.ceil(rateCheck.retryAfterSeconds / 60)} minute(s).`, retryAfterSeconds: rateCheck.retryAfterSeconds })
     }
+
+    let credit = null
+    if (CREDIT_GATED_MODES.has(mode)) {
+      credit = await consumeAICredit(authId)
+      if (!credit.allowed) return res.status(402).json({ error: EXHAUSTED_MESSAGE, code: 'ai_credit_exhausted' })
+    } else if (mode === 'chat') {
+      // Chat doesn't consume a stored credit, but a fully-locked account
+      // still can't use it at all.
+      if (await isAccountLocked(authId)) {
+        return res.status(402).json({ error: EXHAUSTED_MESSAGE, code: 'ai_credit_exhausted' })
+      }
+    }
+
+    const releaseIfNeeded = () => { if (credit?.allowed) releaseAICredit(authId, credit.source) }
 
     // ── Chat ─────────────────────────────────────────────────────────────
     if (mode === 'chat') {
@@ -46,10 +69,7 @@ Most answers need none of the chart/diagram blocks.\n\n`
       system += modeInstructions[chatMode] || modeInstructions.general
 
       try {
-        const result = await chatCompletion({
-          messages: [{ role: 'system', content: system }, ...chatMessages.map(m => ({ role: m.role, content: m.content }))],
-          maxTokens: 900, feature: `chat_${chatMode || 'general'}`, userId,
-        })
+        const result = await chatCompletion({ messages: [{ role: 'system', content: system }, ...chatMessages.map(m => ({ role: m.role, content: m.content }))], maxTokens: 900, feature: `chat_${chatMode || 'general'}`, userId: authId })
         return res.status(200).json({ reply: result.content })
       } catch (err) { return res.status(500).json({ error: err.message }) }
     }
@@ -57,33 +77,33 @@ Most answers need none of the chart/diagram blocks.\n\n`
     // ── Flashcards ────────────────────────────────────────────────────────
     if (mode === 'flashcards') {
       const { lectureContent, subject, count = 12 } = req.body
-      if (!lectureContent) return res.status(400).json({ error: 'lectureContent required' })
+      if (!lectureContent) { releaseIfNeeded(); return res.status(400).json({ error: 'lectureContent required' }) }
       try {
         const result = await chatCompletion({
           messages: [
             { role: 'system', content: `Generate ${count} flashcards. Return JSON: {"flashcards":[{"id":"1","front":"Q","back":"A","topic":"T","difficulty":"easy|medium|hard"}]}` },
             { role: 'user', content: `Subject: ${subject || 'General'}\n\n${lectureContent.slice(0, 4000)}` },
           ],
-          maxTokens: 2000, responseFormat: { type: 'json_object' }, feature: 'flashcards', userId,
+          maxTokens: 2000, responseFormat: { type: 'json_object' }, feature: 'flashcards', userId: authId,
         })
         return res.status(200).json({ flashcards: JSON.parse(result.content).flashcards || [] })
-      } catch (err) { return res.status(500).json({ error: err.message || 'Failed to generate flashcards' }) }
+      } catch (err) { releaseIfNeeded(); return res.status(500).json({ error: err.message || 'Failed to generate flashcards' }) }
     }
 
     // ── Mock Exam ─────────────────────────────────────────────────────────
     if (mode === 'mockexam') {
       const { lectureContent, subject, numQuestions = 10 } = req.body
-      if (!lectureContent) return res.status(400).json({ error: 'lectureContent required' })
+      if (!lectureContent) { releaseIfNeeded(); return res.status(400).json({ error: 'lectureContent required' }) }
       try {
         const result = await chatCompletion({
           messages: [
             { role: 'system', content: `Generate a ${numQuestions}-question university-style mock exam. Return JSON: {"examTitle":"T","timeAllowed":"30","questions":[{"id":"1","question":"Q","options":["A","B","C","D"],"correct":0,"explanation":"E","marks":2,"topic":"T","difficulty":"easy|medium|hard"}],"totalMarks":20}` },
             { role: 'user', content: `Subject: ${subject || 'General'}\n\n${lectureContent.slice(0, 4000)}` },
           ],
-          maxTokens: 3000, responseFormat: { type: 'json_object' }, feature: 'mock_exam', userId,
+          maxTokens: 3000, responseFormat: { type: 'json_object' }, feature: 'mock_exam', userId: authId,
         })
         return res.status(200).json(JSON.parse(result.content))
-      } catch (err) { return res.status(500).json({ error: err.message || 'Failed to generate exam' }) }
+      } catch (err) { releaseIfNeeded(); return res.status(500).json({ error: err.message || 'Failed to generate exam' }) }
     }
 
     // ── Knowledge Gap ─────────────────────────────────────────────────────
@@ -91,7 +111,7 @@ Most answers need none of the chart/diagram blocks.\n\n`
       const { transcript, notes, subject } = req.body
       const hasTranscript = !!(transcript?.trim())
       const hasNotes = !!(notes?.trim())
-      if (!hasTranscript && !hasNotes) return res.status(400).json({ error: 'At least notes or transcript is required' })
+      if (!hasTranscript && !hasNotes) { releaseIfNeeded(); return res.status(400).json({ error: 'At least notes or transcript is required' }) }
       const userContent = hasTranscript && hasNotes
         ? `Subject: ${subject || 'General'}\n\nTranscript:\n${transcript.slice(0, 3000)}\n\nStudent Notes:\n${notes.slice(0, 2000)}`
         : hasNotes ? `Subject: ${subject || 'General'}\n\nStudent Notes (no transcript — analyze notes alone):\n${notes.slice(0, 4000)}`
@@ -102,27 +122,27 @@ Most answers need none of the chart/diagram blocks.\n\n`
             { role: 'system', content: `You are SAGE performing a Knowledge Gap Analysis. ${hasTranscript && hasNotes ? 'Compare transcript with notes.' : hasNotes ? 'Analyze notes alone.' : 'Estimate coverage from transcript.'} Return ONLY valid JSON: {"knowledgeCoverage":75,"examReadiness":65,"understandingScore":70,"confidenceScore":60,"coveredConcepts":["c1"],"missingConcepts":["cA"],"weakAreas":["a1"],"strongAreas":["a1"],"recommendations":["Study X"],"studyNext":"Most important concept","examTips":["Tip1"],"topicsMastered":["t1"],"summary":"2-sentence assessment"}` },
             { role: 'user', content: userContent },
           ],
-          maxTokens: 2000, responseFormat: { type: 'json_object' }, feature: 'knowledge_gap', userId,
+          maxTokens: 2000, responseFormat: { type: 'json_object' }, feature: 'knowledge_gap', userId: authId,
         })
         return res.status(200).json(JSON.parse(result.content))
-      } catch (err) { return res.status(500).json({ error: err.message || 'Failed to analyze knowledge gaps' }) }
+      } catch (err) { releaseIfNeeded(); return res.status(500).json({ error: err.message || 'Failed to analyze knowledge gaps' }) }
     }
 
     // ── Deep Notes ────────────────────────────────────────────────────────
     if (mode === 'deepnotes') {
       const { content, subject, existingNotes } = req.body
       const inputContent = content || existingNotes
-      if (!inputContent) return res.status(400).json({ error: 'content required' })
+      if (!inputContent) { releaseIfNeeded(); return res.status(400).json({ error: 'content required' }) }
       try {
         const result = await chatCompletion({
           messages: [
             { role: 'system', content: `You are SAGE AI Tutor. Create comprehensive deep notes. Use $...$ for inline math where relevant. Return ONLY valid JSON: {"title":"T","subject":"S","overview":"2-3 sentences","sections":[{"heading":"H","explanation":"E","simpleExplanation":"Simple","examples":["Ex"],"definitions":[{"term":"T","definition":"D"}],"memoryTrick":"M","commonMistakes":["M"],"examTips":["T"],"relatedConcepts":["C"],"realWorldApplication":"R"}],"formulasAndKeyFacts":["F"],"quickRevision":["P"],"predictedExamQuestions":["Q?"]}` },
             { role: 'user', content: `Subject: ${subject || 'General'}\n\n${inputContent.slice(0, 4000)}` },
           ],
-          maxTokens: 3000, responseFormat: { type: 'json_object' }, feature: 'deep_notes', userId,
+          maxTokens: 3000, responseFormat: { type: 'json_object' }, feature: 'deep_notes', userId: authId,
         })
         return res.status(200).json(JSON.parse(result.content))
-      } catch (err) { return res.status(500).json({ error: err.message || 'Failed to generate deep notes' }) }
+      } catch (err) { releaseIfNeeded(); return res.status(500).json({ error: err.message || 'Failed to generate deep notes' }) }
     }
 
     // ── Study Coach ───────────────────────────────────────────────────────
@@ -134,15 +154,15 @@ Most answers need none of the chart/diagram blocks.\n\n`
             { role: 'system', content: `You are SAGE's Study Coach. Give a short, honest status update and one specific, actionable recommendation. Don't inflate progress that isn't there. Return ONLY valid JSON: {"message":"1-2 sentence honest status update","recommendation":"one specific actionable piece of advice","suggestedAction":"a concrete next step"}` },
             { role: 'user', content: `${studentContext || 'No study data yet.'}\n\n${question ? `Student asked: ${question}` : 'Give a general progress check-in.'}` },
           ],
-          maxTokens: 500, responseFormat: { type: 'json_object' }, feature: 'study_coach', userId,
+          maxTokens: 500, responseFormat: { type: 'json_object' }, feature: 'study_coach', userId: authId,
         })
         return res.status(200).json(JSON.parse(result.content))
-      } catch (err) { return res.status(500).json({ error: err.message || 'Failed to generate coaching advice' }) }
+      } catch (err) { releaseIfNeeded(); return res.status(500).json({ error: err.message || 'Failed to generate coaching advice' }) }
     }
 
     // ── SnapSolve ─────────────────────────────────────────────────────────
     if (mode === 'snapsolve') {
-      if (!image && !text) return res.status(400).json({ error: 'No image or text provided' })
+      if (!image && !text) { releaseIfNeeded(); return res.status(400).json({ error: 'No image or text provided' }) }
       const { documentContext } = req.body
       const codeNote = 'If this is a programming/coding question, write real working code inside markdown code fences with the language name. If math is involved, use $...$ / $$...$$ KaTeX syntax.'
       const ctxNote = documentContext ? `The student has this lecture context available — use it if relevant, ignore if unrelated:\n${documentContext.slice(0, 1500)}\n\n` : ''
@@ -150,33 +170,33 @@ Most answers need none of the chart/diagram blocks.\n\n`
         ? [{ type: 'image_url', image_url: { url: image } }, { type: 'text', text: `${ctxNote}Analyze and solve. ${codeNote} Return JSON only: {"question":"Q","answer":"step-by-step answer","explanation":"key concepts"}` }]
         : `${ctxNote}Solve: ${text}\n${codeNote}\nReturn JSON only: {"question":"Q","answer":"answer","explanation":"concepts"}`
       try {
-        const result = await chatCompletion({ messages: [{ role: 'user', content }], maxTokens: 2000, feature: 'snapsolve', userId })
+        const result = await chatCompletion({ messages: [{ role: 'user', content }], maxTokens: 2000, feature: 'snapsolve', userId: authId })
         const raw = result.content.replace(/```json|```/g, '').trim()
         return res.status(200).json({ result: JSON.parse(raw) })
-      } catch (err) { return res.status(500).json({ error: err.message || 'Failed to parse response' }) }
+      } catch (err) { releaseIfNeeded(); return res.status(500).json({ error: err.message || 'Failed to parse response' }) }
     }
 
     // ── Past Papers ───────────────────────────────────────────────────────
     if (mode === 'pastpapers') {
       const { pdfBase64 } = req.body
-      if (!image && !text && !pdfBase64) return res.status(400).json({ error: 'No content provided' })
+      if (!image && !text && !pdfBase64) { releaseIfNeeded(); return res.status(400).json({ error: 'No content provided' }) }
       let sourceText = text
       if (pdfBase64) {
         try { sourceText = (await pdfParse(Buffer.from(pdfBase64, 'base64'))).text }
-        catch { return res.status(500).json({ error: 'Could not read the uploaded PDF' }) }
+        catch { releaseIfNeeded(); return res.status(500).json({ error: 'Could not read the uploaded PDF' }) }
       }
       const promptInstructions = `Analyze this past paper. Extract real questions and give model answers. Return JSON only: {"paper_title":"T","questions":[{"number":"1","question":"Q","model_answer":"A","marks":"2","key_points":["P"]}],"common_themes":["T"],"exam_tips":["T"],"predicted_topics":["T"]}`
       const content = image
         ? [{ type: 'image_url', image_url: { url: image } }, { type: 'text', text: promptInstructions }]
         : `${promptInstructions}\n\nPast paper content:\n\n${(sourceText || '').slice(0, 9000)}`
       try {
-        const result = await chatCompletion({ messages: [{ role: 'user', content }], maxTokens: 3000, feature: 'past_papers', userId })
+        const result = await chatCompletion({ messages: [{ role: 'user', content }], maxTokens: 3000, feature: 'past_papers', userId: authId })
         const raw = result.content.replace(/```json|```/g, '').trim()
         return res.status(200).json({ result: JSON.parse(raw) })
-      } catch (err) { return res.status(500).json({ error: err.message || 'Failed to parse response' }) }
+      } catch (err) { releaseIfNeeded(); return res.status(500).json({ error: err.message || 'Failed to parse response' }) }
     }
 
-    // ── Language View ─────────────────────────────────────────────────────
+    // ── Language View (free) ────────────────────────────────────────────
     if (mode === 'language_view') {
       const { sourceText, targetView } = req.body
       if (!sourceText?.trim()) return res.status(400).json({ error: 'sourceText required' })
@@ -187,19 +207,15 @@ Most answers need none of the chart/diagram blocks.\n\n`
         simple_english: 'Rewrite this lecture content in simple, everyday English, the way you would explain it to a friend. Keep important technical terms but explain them simply.',
       }
       try {
-        const result = await chatCompletion({
-          messages: [{ role: 'system', content: viewPrompts[targetView] }, { role: 'user', content: sourceText.slice(0, 6000) }],
-          maxTokens: 2500, feature: `language_view_${targetView}`, userId,
-        })
+        const result = await chatCompletion({ messages: [{ role: 'system', content: viewPrompts[targetView] }, { role: 'user', content: sourceText.slice(0, 6000) }], maxTokens: 2500, feature: `language_view_${targetView}`, userId: authId })
         return res.status(200).json({ text: result.content })
       } catch (err) { return res.status(500).json({ error: err.message || 'Failed to generate language view' }) }
     }
 
-    // ── Extract Concepts (Knowledge Map) ────────────────────────────────────
+    // ── Extract Concepts (free — internal to an already-charged lecture) ──
     if (mode === 'extract_concepts') {
       const { lectureContent, subject, sourceLabel, sourceId, courseName } = req.body
       if (!lectureContent?.trim()) return res.status(400).json({ error: 'lectureContent required' })
-      if (!userId) return res.status(400).json({ error: 'userId required for knowledge map' })
 
       let candidates
       try {
@@ -208,7 +224,7 @@ Most answers need none of the chart/diagram blocks.\n\n`
             { role: 'system', content: `Extract the 3-8 most important academic concepts taught in this lecture. For each, give a short canonical name (as it would appear in a textbook index, in English even if the lecture was in Kiswahili), a one-sentence description, and a short relevant excerpt. Also identify any concepts this lecture clearly depends on that were NOT covered here. Return ONLY valid JSON: {"concepts":[{"name":"Concept Name","description":"One sentence","excerpt":"Short excerpt"}],"likelyPrerequisites":["Prerequisite concept name"]}` },
             { role: 'user', content: `Subject: ${subject || courseName || 'General'}\n\n${lectureContent.slice(0, 6000)}` },
           ],
-          maxTokens: 1500, responseFormat: { type: 'json_object' }, feature: 'extract_concepts', userId,
+          maxTokens: 1500, responseFormat: { type: 'json_object' }, feature: 'extract_concepts', userId: authId,
         })
         candidates = JSON.parse(extractResult.content)
       } catch (err) { return res.status(500).json({ error: err.message || 'Failed to extract concepts' }) }
@@ -219,7 +235,7 @@ Most answers need none of the chart/diagram blocks.\n\n`
 
       let embeddings
       try {
-        const embedResult = await embed({ input: conceptCandidates.map(c => `${c.name}: ${c.description}`), feature: 'concept_embedding', userId })
+        const embedResult = await embed({ input: conceptCandidates.map(c => `${c.name}: ${c.description}`), feature: 'concept_embedding', userId: authId })
         embeddings = embedResult.embeddings
       } catch (err) { return res.status(500).json({ error: err.message || 'Failed to generate embeddings' }) }
 
@@ -232,13 +248,12 @@ Most answers need none of the chart/diagram blocks.\n\n`
         const matchRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/match_concepts`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, apikey: SUPABASE_SERVICE_KEY },
-          body: JSON.stringify({ query_embedding: embedding, match_user_id: userId, match_count: 3 }),
+          body: JSON.stringify({ query_embedding: embedding, match_user_id: authId, match_count: 3 }),
         })
         const matches = await matchRes.json()
         const topMatch = Array.isArray(matches) && matches.length > 0 ? matches[0] : null
 
         let action, conceptId
-
         if (topMatch && topMatch.similarity >= 0.88) {
           action = 'matched'; conceptId = topMatch.id
         } else if (topMatch && topMatch.similarity >= 0.72) {
@@ -248,7 +263,7 @@ Most answers need none of the chart/diagram blocks.\n\n`
                 { role: 'system', content: `Are these the same academic concept? Return ONLY JSON: {"same": true|false, "confidence": "high"|"medium"|"low"}` },
                 { role: 'user', content: `Concept A: ${candidate.name} — ${candidate.description}\nConcept B: ${topMatch.name} — ${topMatch.description || ''}` },
               ],
-              maxTokens: 150, responseFormat: { type: 'json_object' }, feature: 'concept_match_judge', userId,
+              maxTokens: 150, responseFormat: { type: 'json_object' }, feature: 'concept_match_judge', userId: authId,
             })
             const judgment = JSON.parse(judgeResult.content)
             if (judgment.same) { action = 'matched'; conceptId = topMatch.id } else { action = 'new' }
@@ -261,7 +276,7 @@ Most answers need none of the chart/diagram blocks.\n\n`
           const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/knowledge_concepts`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, apikey: SUPABASE_SERVICE_KEY, Prefer: 'return=representation' },
-            body: JSON.stringify({ user_id: userId, name: candidate.name, subject: subject || courseName || 'General', description: candidate.description, embedding }),
+            body: JSON.stringify({ user_id: authId, name: candidate.name, subject: subject || courseName || 'General', description: candidate.description, embedding }),
           })
           const inserted = await insertRes.json()
           conceptId = Array.isArray(inserted) ? inserted[0]?.id : inserted?.id
@@ -271,7 +286,7 @@ Most answers need none of the chart/diagram blocks.\n\n`
           await fetch(`${SUPABASE_URL}/rest/v1/concept_sources`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, apikey: SUPABASE_SERVICE_KEY, Prefer: 'return=minimal' },
-            body: JSON.stringify({ concept_id: conceptId, user_id: userId, source_type: 'lecture', source_id: sourceId || null, source_label: sourceLabel || courseName || 'Lecture', excerpt: candidate.excerpt || '' }),
+            body: JSON.stringify({ concept_id: conceptId, user_id: authId, source_type: 'lecture', source_id: sourceId || null, source_label: sourceLabel || courseName || 'Lecture', excerpt: candidate.excerpt || '' }),
           }).catch(() => {})
           await fetch(`${SUPABASE_URL}/rest/v1/knowledge_concepts?id=eq.${conceptId}`, {
             method: 'PATCH',
@@ -286,7 +301,7 @@ Most answers need none of the chart/diagram blocks.\n\n`
       if (likelyPrerequisites.length > 0) {
         const namesFilter = likelyPrerequisites.map(n => encodeURIComponent(n)).join(',')
         try {
-          const prereqRes = await fetch(`${SUPABASE_URL}/rest/v1/knowledge_concepts?user_id=eq.${userId}&name=in.(${namesFilter})&select=id,name,mastery`, {
+          const prereqRes = await fetch(`${SUPABASE_URL}/rest/v1/knowledge_concepts?user_id=eq.${authId}&name=in.(${namesFilter})&select=id,name,mastery`, {
             headers: { Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, apikey: SUPABASE_SERVICE_KEY },
           })
           const prereqData = await prereqRes.json()
@@ -299,7 +314,7 @@ Most answers need none of the chart/diagram blocks.\n\n`
               await fetch(`${SUPABASE_URL}/rest/v1/concept_relationships`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, apikey: SUPABASE_SERVICE_KEY, Prefer: 'return=minimal' },
-                body: JSON.stringify({ user_id: userId, concept_id: result.conceptId, related_concept_id: prereqId, relationship_type: 'prerequisite', confidence: 'suggested' }),
+                body: JSON.stringify({ user_id: authId, concept_id: result.conceptId, related_concept_id: prereqId, relationship_type: 'prerequisite', confidence: 'suggested' }),
               }).catch(() => {})
             }
           }
@@ -309,22 +324,21 @@ Most answers need none of the chart/diagram blocks.\n\n`
       return res.status(200).json({ concepts: results, prerequisiteWarnings })
     }
 
-    // ── Knowledge Recall ──────────────────────────────────────────────────
+    // ── Knowledge Recall (free) ─────────────────────────────────────────
     if (mode === 'knowledge_recall') {
       const { query } = req.body
       if (!query?.trim()) return res.status(400).json({ error: 'query required' })
-      if (!userId) return res.status(400).json({ error: 'userId required' })
 
       let queryEmbedding
       try {
-        const embedResult = await embed({ input: query, feature: 'knowledge_recall_query', userId })
+        const embedResult = await embed({ input: query, feature: 'knowledge_recall_query', userId: authId })
         queryEmbedding = embedResult.embeddings[0]
       } catch (err) { return res.status(500).json({ error: err.message || 'Failed to process query' }) }
 
       const matchRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/match_concepts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, apikey: SUPABASE_SERVICE_KEY },
-        body: JSON.stringify({ query_embedding: queryEmbedding, match_user_id: userId, match_count: 1 }),
+        body: JSON.stringify({ query_embedding: queryEmbedding, match_user_id: authId, match_count: 1 }),
       })
       const matches = await matchRes.json()
       const concept = Array.isArray(matches) && matches.length > 0 ? matches[0] : null
@@ -334,7 +348,7 @@ Most answers need none of the chart/diagram blocks.\n\n`
       }
 
       const [sourcesRes, conceptRes] = await Promise.all([
-        fetch(`${SUPABASE_URL}/rest/v1/concept_sources?concept_id=eq.${concept.id}&user_id=eq.${userId}&select=source_type,source_label,excerpt,created_at&order=created_at.asc`, { headers: { Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, apikey: SUPABASE_SERVICE_KEY } }),
+        fetch(`${SUPABASE_URL}/rest/v1/concept_sources?concept_id=eq.${concept.id}&user_id=eq.${authId}&select=source_type,source_label,excerpt,created_at&order=created_at.asc`, { headers: { Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, apikey: SUPABASE_SERVICE_KEY } }),
         fetch(`${SUPABASE_URL}/rest/v1/knowledge_concepts?id=eq.${concept.id}&select=mastery`, { headers: { Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, apikey: SUPABASE_SERVICE_KEY } }),
       ])
       const sources = await sourcesRes.json()
@@ -348,12 +362,13 @@ Most answers need none of the chart/diagram blocks.\n\n`
             { role: 'system', content: `You are SAGE recalling what a student has learned about "${concept.name}" across their whole academic history. Synthesize the sources below into one coherent answer — don't just list them. Mention their current mastery level (${mastery}%) naturally, and note what they still seem weak on if mastery is below 60%.` },
             { role: 'user', content: `Concept: ${concept.name}\nDescription: ${concept.description || ''}\n\nEverywhere this appeared:\n${sourcesSummary || 'No detailed source history yet.'}` },
           ],
-          maxTokens: 700, feature: 'knowledge_recall', userId,
+          maxTokens: 700, feature: 'knowledge_recall', userId: authId,
         })
         return res.status(200).json({ found: true, conceptName: concept.name, mastery, reply: result.content, sourceCount: Array.isArray(sources) ? sources.length : 0 })
       } catch (err) { return res.status(500).json({ error: err.message || 'Failed to recall knowledge' }) }
     }
 
+    releaseIfNeeded()
     return res.status(400).json({ error: `Invalid mode: ${mode}` })
   } catch (err) {
     console.error('SAGE AI error:', err)
