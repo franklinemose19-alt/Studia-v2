@@ -3,7 +3,8 @@ import { Brain, ArrowLeft, Menu, Plus, ArrowUp, BookOpen, ChevronDown, ChevronUp
 import { useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useAuth } from '../lib/AuthContext'
-import { loadAccess, checkAccess, consumeCredit, type AccessInfo, emptyAccess } from '../lib/access'
+import { loadAccess, type AccessInfo, emptyAccess } from '../lib/access'
+import { authFetch } from '../lib/authFetch'
 import { getAllRecordings, getLecturePacket, buildLecturePromptContext, type LecturePacket, type Recording } from '../lib/lectureContext'
 import { buildStudentContext, formatContextForAI } from '../lib/studentContext'
 import { detectIntent, getSubjectStructure, type SageIntent } from '../lib/sageIntent'
@@ -114,35 +115,27 @@ export default function SageAITutor() {
   const lectureContent = lecturePacket ? (lecturePacket.notes || '') + '\n\n' + (lecturePacket.transcript || '') : ''
   const studentCtx = formatContextForAI(buildStudentContext(access.currentPlan))
 
+  // Auth is attached automatically by authFetch. A 402 means genuinely
+  // exhausted credits — the server is now the only source of truth for
+  // this, not anything computed client-side.
   const callSage = async (body: any) => {
-    const res = await fetch('/api/ai-tools', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...body, userId }),
-    })
+    const res = await authFetch('/api/ai-tools', { method: 'POST', body: JSON.stringify(body) })
+    if (res.status === 402) {
+      const err = await res.json().catch(() => ({}))
+      const e: any = new Error(err.error || 'Your 3 free AI lectures have been used. Upgrade to continue using SAGE AI Tutor.')
+      e.isExhausted = true
+      throw e
+    }
+    if (res.status === 401) {
+      const e: any = new Error('Your session expired — please sign in again.')
+      e.isAuthError = true
+      throw e
+    }
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
       throw new Error(err.error || 'Request failed')
     }
     return res.json()
-  }
-
-  const runGatedGeneration = async <T,>(opts: { cacheKind?: string; cacheContent?: string; apiCall: () => Promise<T> }): Promise<{ data: T | null; blocked: boolean }> => {
-    if (opts.cacheKind && opts.cacheContent) {
-      const cached = sageCache.get(opts.cacheKind, opts.cacheContent)
-      if (cached) return { data: cached, blocked: false }
-    }
-    const result = checkAccess(access, 'core')
-    if (!result.allowed) {
-      setUpgradeReason(access.planLocked ? 'explorer_locked' : 'no_lectures_left')
-      setShowUpgradeModal(true)
-      return { data: null, blocked: true }
-    }
-    const data = await opts.apiCall()
-    if (opts.cacheKind && opts.cacheContent) sageCache.set(opts.cacheKind, opts.cacheContent, data)
-    await consumeCredit(access, result.source)
-    setAccess(await loadAccess(userId))
-    return { data, blocked: false }
   }
 
   const handleSelectConversation = async (id: number) => {
@@ -242,64 +235,65 @@ export default function SageAITutor() {
         assistantData = data
 
       } else if (intent === 'snapsolve') {
-        const { data, blocked } = await runGatedGeneration({ apiCall: async () => (await callSage({ mode: 'snapsolve', image: opts.image, text, documentContext: buildLecturePromptContext(lecturePacket) })).result })
-        if (blocked) assistantContent = "You're out of AI credits right now — tap Upgrade to keep going."
-        else { assistantKind = 'snapsolve'; assistantData = data }
+        const data = (await callSage({ mode: 'snapsolve', image: opts.image, text, documentContext: buildLecturePromptContext(lecturePacket) })).result
+        assistantKind = 'snapsolve'; assistantData = data
 
       } else if (intent === 'pastpapers') {
-        const { data, blocked } = await runGatedGeneration({ apiCall: async () => (await callSage({ mode: 'pastpapers', pdfBase64: opts.pdfBase64 })).result })
-        if (blocked) assistantContent = "You're out of AI credits right now — tap Upgrade to keep going."
-        else { assistantKind = 'pastpapers'; assistantData = data }
+        const data = (await callSage({ mode: 'pastpapers', pdfBase64: opts.pdfBase64 })).result
+        assistantKind = 'pastpapers'; assistantData = data
 
       } else if (intent === 'flashcards') {
         if (!lectureContent.trim()) assistantContent = "I'll need a lecture with notes to build flashcards — select one above first."
         else {
-          const { data, blocked } = await runGatedGeneration({
-            cacheKind: 'flashcards', cacheContent: lectureContent,
-            apiCall: async () => (await callSage({ mode: 'flashcards', lectureContent, subject: lecturePacket?.course })).flashcards,
-          })
-          if (blocked) assistantContent = "You're out of AI credits right now — tap Upgrade to keep going."
-          else { assistantKind = 'flashcards'; assistantData = data }
+          const cached = sageCache.get('flashcards', lectureContent)
+          if (cached) { assistantKind = 'flashcards'; assistantData = cached }
+          else {
+            const data = (await callSage({ mode: 'flashcards', lectureContent, subject: lecturePacket?.course })).flashcards
+            sageCache.set('flashcards', lectureContent, data)
+            assistantKind = 'flashcards'; assistantData = data
+          }
         }
 
       } else if (intent === 'mockexam') {
         if (!lectureContent.trim()) assistantContent = "I'll need a lecture with notes or a transcript to build an exam — select one above first."
         else {
-          const { data, blocked } = await runGatedGeneration({
-            cacheKind: 'mockexam', cacheContent: lectureContent,
-            apiCall: () => callSage({ mode: 'mockexam', lectureContent, subject: lecturePacket?.course, numQuestions: 8 }),
-          })
-          if (blocked) assistantContent = "You're out of AI credits right now — tap Upgrade to keep going."
-          else { assistantKind = 'mockexam'; assistantData = data }
+          const cached = sageCache.get('mockexam', lectureContent)
+          if (cached) { assistantKind = 'mockexam'; assistantData = cached }
+          else {
+            const data = await callSage({ mode: 'mockexam', lectureContent, subject: lecturePacket?.course, numQuestions: 8 })
+            sageCache.set('mockexam', lectureContent, data)
+            assistantKind = 'mockexam'; assistantData = data
+          }
         }
 
       } else if (intent === 'deepnotes') {
         if (!lectureContent.trim()) assistantContent = "Select a lecture with notes first — I'll expand them into deep notes."
         else {
-          const { data, blocked } = await runGatedGeneration({
-            cacheKind: 'deepnotes', cacheContent: lectureContent,
-            apiCall: () => callSage({ mode: 'deepnotes', content: lectureContent, subject: lecturePacket?.course }),
-          })
-          if (blocked) assistantContent = "You're out of AI credits right now — tap Upgrade to keep going."
-          else { assistantKind = 'deepnotes'; assistantData = data }
+          const cached = sageCache.get('deepnotes', lectureContent)
+          if (cached) { assistantKind = 'deepnotes'; assistantData = cached }
+          else {
+            const data = await callSage({ mode: 'deepnotes', content: lectureContent, subject: lecturePacket?.course })
+            sageCache.set('deepnotes', lectureContent, data)
+            assistantKind = 'deepnotes'; assistantData = data
+          }
         }
 
       } else if (intent === 'knowledgegap') {
         if (!lecturePacket?.transcript && !lecturePacket?.notes) assistantContent = "Select a lecture with notes or a transcript first — I'll check what you might be missing."
         else {
           const cacheKey = (lecturePacket.transcript || '') + (lecturePacket.notes || '')
-          const { data, blocked } = await runGatedGeneration({
-            cacheKind: 'knowledgegap', cacheContent: cacheKey,
-            apiCall: () => callSage({ mode: 'knowledgegap', transcript: lecturePacket!.transcript, notes: lecturePacket!.notes, subject: lecturePacket!.course }),
-          })
-          if (blocked) assistantContent = "You're out of AI credits right now — tap Upgrade to keep going."
-          else { assistantKind = 'knowledgegap'; assistantData = data }
+          const cached = sageCache.get('knowledgegap', cacheKey)
+          if (cached) { assistantKind = 'knowledgegap'; assistantData = cached }
+          else {
+            const data = await callSage({ mode: 'knowledgegap', transcript: lecturePacket!.transcript, notes: lecturePacket!.notes, subject: lecturePacket!.course })
+            sageCache.set('knowledgegap', cacheKey, data)
+            assistantKind = 'knowledgegap'; assistantData = data
+          }
         }
 
       } else if (intent === 'coach') {
-        const { data, blocked } = await runGatedGeneration({ apiCall: () => callSage({ mode: 'coach', studentContext: studentCtx, question: text }) })
-        if (blocked) assistantContent = "You're out of AI credits right now — tap Upgrade to keep going."
-        else { assistantKind = 'coach'; assistantData = data }
+        const data = await callSage({ mode: 'coach', studentContext: studentCtx, question: text })
+        assistantKind = 'coach'; assistantData = data
 
       } else {
         const history = thread.filter(t => t.kind === 'text' && t.content).slice(-8).map(t => ({ role: t.role, content: t.content }))
@@ -320,9 +314,18 @@ export default function SageAITutor() {
       saveMessage(convoId, userId!, 'assistant', assistantContent || summarizeForStorage(assistantKind, assistantData), { kind: assistantKind, data: assistantData }).catch(() => {})
 
     } catch (err: any) {
-      toast.error(err.message || 'SAGE had trouble responding — try again.')
+      if (err.isExhausted) {
+        toast.error(err.message)
+        setUpgradeReason('explorer_locked')
+        setShowUpgradeModal(true)
+      } else if (err.isAuthError) {
+        toast.error(err.message)
+      } else {
+        toast.error(err.message || 'SAGE had trouble responding — try again.')
+      }
     } finally {
       setSending(false)
+      setAccess(await loadAccess(userId))
     }
   }
 
@@ -353,8 +356,11 @@ export default function SageAITutor() {
     e.target.value = ''
   }
 
-const handleToolSelect = (tool: SageTool) => {
+  const handleToolSelect = (tool: SageTool) => {
     setToolsMenuOpen(false)
+    // Knowledge Map is browsable, free, and checked before the lock gate —
+    // viewing what you've already learned shouldn't be blocked the same
+    // way generating new AI content is.
     if (tool === 'knowledge_map') { navigate('/knowledge-map'); return }
     if (access.planLocked) {
       setUpgradeReason('explorer_locked')
