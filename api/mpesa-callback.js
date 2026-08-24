@@ -1,111 +1,72 @@
-
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 async function supaFetch(path, options = {}) {
   return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
-      apikey: SUPABASE_SERVICE_KEY,
-      Prefer: 'return=minimal',
-      ...(options.headers || {}),
-    },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`, apikey: SUPABASE_SERVICE_KEY, ...(options.headers || {}) },
   })
 }
 
-async function insertNotification(userId, title, message, type = 'info') {
-  try {
-    await supaFetch('notifications', {
-      method: 'POST',
-      body: JSON.stringify({ user_id: userId, title, message, type }),
-    })
-  } catch (err) {
-    console.error('Failed to insert notification:', err)
-  }
-}
-
-function getEndDate(planId) {
-  const now = new Date()
-  if (planId === 'excellence') {
-    const end = new Date(now)
-    end.setMonth(end.getMonth() + 1)
-    return end.toISOString()
-  }
-  if (planId === 'valedictorian') {
-    const end = new Date(now)
-    end.setMonth(end.getMonth() + 6)
-    return end.toISOString()
-  }
+// New plan naming for the minutes-based system. Achiever / Achiever+ are
+// one-time packs added to purchased_minutes_remaining. Excellence /
+// Valedictorian are subscriptions with a periodic minutes allowance.
+// Valedictorian's period length (semester ≈ 120 days) is my best estimate,
+// not a value I have full confidence matches whatever convention was used
+// before this batch — worth confirming against your actual renewal dates.
+function getPlanActivation(planId) {
+  if (planId === 'achiever') return { type: 'minutes_pack', minutes: 45 }
+  if (planId === 'achiever-plus') return { type: 'minutes_pack', minutes: 90 }
+  if (planId === 'excellence') return { type: 'subscription', minutesAllowance: 600, periodDays: 30 }
+  if (planId === 'valedictorian') return { type: 'subscription', minutesAllowance: 1800, periodDays: 120 }
   return null
 }
 
-function getLectureAllowance(planId) {
-  if (planId === 'excellence') return 20      // was 25
-  if (planId === 'valedictorian') return 65   // was 80
-  return 0
-}
-function getPlanDisplayName(planId) {
-  const names = {
-    'achiever-1hr': 'Achiever (1 Hour)',
-    'achiever-2hr': 'Achiever (2 Hours)',
-    'excellence': '🚀 Excellence',
-    'valedictorian': '🏆 Valedictorian',
+function extractCallbackFields(stkCallback) {
+  const items = stkCallback?.CallbackMetadata?.Item || []
+  const get = (name) => items.find(i => i.Name === name)?.Value
+  return {
+    amount: get('Amount'),
+    mpesaReceiptNumber: get('MpesaReceiptNumber'),
+    phoneNumber: get('PhoneNumber'),
   }
-  return names[planId] || planId
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' })
-  }
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   try {
-    const callbackData = req.body?.Body?.stkCallback
-    if (!callbackData) {
-      return res.status(400).json({ error: 'Invalid callback structure' })
-    }
+    const stkCallback = req.body?.Body?.stkCallback
+    if (!stkCallback) return res.status(400).json({ error: 'Invalid callback payload' })
 
-    const { ResultCode, CheckoutRequestID } = callbackData
+    const checkoutRequestId = stkCallback.CheckoutRequestID
+    const resultCode = stkCallback.ResultCode
+    const resultDesc = stkCallback.ResultDesc
 
-    if (ResultCode !== 0) {
-      console.log(`Payment failed: ${CheckoutRequestID}, Code: ${ResultCode}`)
-      await supaFetch(`payments?transaction_id=eq.${CheckoutRequestID}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: 'failed', updated_at: new Date().toISOString() }),
-      })
-
-      // Fetch payment to get userId for notification
-      const paymentRes = await supaFetch(`payments?transaction_id=eq.${CheckoutRequestID}&select=created_by,plan_name`)
-      const payments = await paymentRes.json()
-      if (payments?.[0]?.created_by) {
-        await insertNotification(
-          payments[0].created_by,
-          'Payment Failed ❌',
-          `Your payment for ${payments[0].plan_name || 'STUDIA'} was not completed. Please try again.`,
-          'error'
-        )
-      }
-
-      return res.status(200).json({ success: true })
-    }
-
-    // Fetch payment record
-    const paymentRes = await supaFetch(`payments?transaction_id=eq.${CheckoutRequestID}`)
+    const paymentRes = await supaFetch(`payments?transaction_id=eq.${checkoutRequestId}&select=*`)
     const payments = await paymentRes.json()
-    const payment = payments?.[0]
+    const payment = Array.isArray(payments) ? payments[0] : null
 
     if (!payment) {
-      console.error('Payment record not found:', CheckoutRequestID)
-      return res.status(200).json({ success: true })
+      console.error('mpesa-callback: no matching payment for', checkoutRequestId)
+      return res.status(200).json({ received: true }) // ack Safaricom either way — don't retry-storm us
     }
 
-    // Mark payment completed
-    await supaFetch(`payments?transaction_id=eq.${CheckoutRequestID}`, {
+    if (resultCode !== 0) {
+      await supaFetch(`payments?transaction_id=eq.${checkoutRequestId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'failed', mpesa_confirmation: { resultCode, resultDesc }, updated_at: new Date().toISOString() }),
+      })
+      return res.status(200).json({ received: true })
+    }
+
+    const { amount, mpesaReceiptNumber, phoneNumber } = extractCallbackFields(stkCallback)
+
+    await supaFetch(`payments?transaction_id=eq.${checkoutRequestId}`, {
       method: 'PATCH',
       body: JSON.stringify({
         status: 'completed',
+        mpesa_confirmation: { resultCode, resultDesc, mpesaReceiptNumber, amount, phoneNumber },
         completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }),
@@ -113,86 +74,58 @@ export default async function handler(req, res) {
 
     const userId = payment.created_by
     const planId = payment.plan_id
-    const planName = getPlanDisplayName(planId)
+    const activation = getPlanActivation(planId)
 
-    if (!userId) {
-      console.warn('No userId on payment')
-      return res.status(200).json({ success: true })
+    if (userId && activation) {
+      if (activation.type === 'minutes_pack') {
+        const userRes = await supaFetch(`users?auth_id=eq.${userId}&select=purchased_minutes_remaining`)
+        const userData = await userRes.json()
+        const currentMinutes = userData?.[0]?.purchased_minutes_remaining || 0
+
+        await supaFetch(`users?auth_id=eq.${userId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ purchased_minutes_remaining: currentMinutes + activation.minutes }),
+        })
+
+        await supaFetch('notifications', {
+          method: 'POST', headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            user_id: userId, type: 'success', title: '✅ Payment confirmed',
+            message: `You've unlocked ${activation.minutes} AI processing minutes. Happy studying!`,
+          }),
+        }).catch(() => {})
+
+      } else if (activation.type === 'subscription') {
+        const now = new Date()
+        const periodEnd = new Date(now.getTime() + activation.periodDays * 24 * 60 * 60 * 1000)
+
+        await supaFetch(`users?auth_id=eq.${userId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            current_plan: planId,
+            subscription_status: 'active',
+            lecture_allowance: activation.minutesAllowance,
+            lectures_used: 0,
+            period_start: now.toISOString(),
+            period_end: periodEnd.toISOString(),
+          }),
+        })
+
+        await supaFetch('notifications', {
+          method: 'POST', headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            user_id: userId, type: 'success', title: '✅ Subscription activated',
+            message: `Your ${planId} plan is active — ${activation.minutesAllowance} AI minutes available.`,
+          }),
+        }).catch(() => {})
+      }
     }
 
-    // ── Achiever (pay-per-lecture) ─────────────────────────────────────────
-    if (planId && (planId.startsWith('achiever') || planId.startsWith('lite'))) {
-      const userRes = await supaFetch(`users?auth_id=eq.${userId}&select=lite_bonus_credits`)
-      const userData = await userRes.json()
-      const currentBonus = userData?.[0]?.lite_bonus_credits || 0
-
-      await supaFetch(`users?auth_id=eq.${userId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ lite_bonus_credits: currentBonus + 1 }),
-      })
-
-      const duration = planId.includes('2hr') ? '2 hours' : '1 hour'
-      await insertNotification(
-        userId,
-        'Lecture Unlocked! 🎙️',
-        `Your ${duration} lecture session is ready. Start recording now! You also received 1 bonus AI credit.`,
-        'success'
-      )
-
-      console.log(`✅ Achiever lecture unlocked for user ${userId}`)
-      return res.status(200).json({ success: true })
-    }
-
-    // ── Excellence / Valedictorian ─────────────────────────────────────────
-    if (planId === 'excellence' || planId === 'valedictorian') {
-      const endDate = getEndDate(planId)
-      const allowance = getLectureAllowance(planId)
-      const now = new Date().toISOString()
-      const periodLabel = planId === 'valedictorian' ? 'semester' : 'month'
-
-      // Upsert subscription
-      await supaFetch('subscriptions', {
-        method: 'POST',
-        headers: { Prefer: 'resolution=merge-duplicates' },
-        body: JSON.stringify({
-          user_id: userId,
-          plan_id: planId,
-          status: 'active',
-          start_date: now,
-          end_date: endDate,
-          created_at: now,
-          updated_at: now,
-        }),
-      })
-
-      // Update user record
-      await supaFetch(`users?auth_id=eq.${userId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          current_plan: planId,
-          subscription_status: 'active',
-          lecture_allowance: allowance,
-          lectures_used: 0,
-          period_start: now,
-          period_end: endDate,
-          plan_locked: false,
-          updated_at: now,
-        }),
-      })
-
-      await insertNotification(
-        userId,
-        `${planName} Activated! 🎉`,
-        `You now have ${allowance} AI lectures this ${periodLabel}. Your plan is active until ${endDate ? new Date(endDate).toLocaleDateString() : 'end of period'}. Start recording!`,
-        'success'
-      )
-
-      console.log(`✅ ${planId} activated for user ${userId} — ${allowance} lectures until ${endDate}`)
-    }
-
-    return res.status(200).json({ success: true })
+    return res.status(200).json({ received: true })
   } catch (error) {
-    console.error('Callback error:', error)
-    return res.status(500).json({ error: error.message })
+    console.error('mpesa-callback error:', error)
+    // Still ack with 200 — Safaricom retries on non-200, and a retry storm
+    // on top of a genuine server error would only make things worse.
+    return res.status(200).json({ received: true, error: error.message })
   }
 }
