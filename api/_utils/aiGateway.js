@@ -1,10 +1,11 @@
-import { logTokenUsage, logWhisperUsage, logEmbeddingUsage } from './tokenLogger.js'
+import { logTokenUsage, logTranscriptionUsage, logEmbeddingUsage } from './tokenLogger.js'
 
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 const OPENAI_MODEL_CHAT = 'gpt-5-mini'
 const OPENAI_MODEL_EMBED = 'text-embedding-3-small'
+const OPENAI_MODEL_TRANSCRIBE = 'gpt-4o-mini-transcribe'
 
 async function supaFetch(path, options = {}) {
   return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -17,7 +18,7 @@ class GatewayError extends Error {
   constructor(provider, kind, message, httpStatus) {
     super(message)
     this.provider = provider
-    this.kind = kind // not_configured | rate_limited | unavailable | auth_error | error
+    this.kind = kind
     this.httpStatus = httpStatus
   }
 }
@@ -42,7 +43,6 @@ function mapHttpError(status) {
   return 'error'
 }
 
-// ── Settings cache — avoids hitting Supabase on every single AI call ───────
 let settingsCache = null
 let settingsCacheAt = 0
 const SETTINGS_TTL_MS = 20000
@@ -114,9 +114,6 @@ function isProviderEligible(provider, settings) {
   return { eligible: true }
 }
 
-// Weighted random selection — favors lower recent latency and more remaining
-// budget headroom, so load genuinely spreads across both healthy providers
-// instead of always picking one "best" provider and starving the other.
 function selectProvider(settings) {
   const candidates = ['openai', 'azure'].filter(p => isProviderEligible(p, settings).eligible)
   if (candidates.length === 0) return null
@@ -194,28 +191,36 @@ async function callOpenAIEmbed({ input }) {
   return { embeddings: (data.data || []).map(d => d.embedding), usage: data.usage }
 }
 
+// Uses gpt-4o-mini-transcribe (half the cost of Whisper). Requests the
+// simpler 'json' response format rather than 'verbose_json' — this newer
+// model's exact support for segment-level timestamps isn't something I
+// have confident knowledge of, so this is the safer, more broadly
+// compatible choice. If 'data.duration' isn't present in the response,
+// the caller (api/transcribe.js) falls back to the client-reported
+// duration for billing purposes — see the comment there.
 async function callOpenAITranscribe({ audioBuffer, mimeType }) {
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) throw new GatewayError('openai', 'not_configured', 'OPENAI_API_KEY not set')
   const audioBlob = new Blob([audioBuffer], { type: mimeType })
   const formData = new FormData()
   formData.append('file', audioBlob, 'lecture.webm')
-  formData.append('model', 'whisper-1')
-  formData.append('response_format', 'verbose_json')
+  formData.append('model', OPENAI_MODEL_TRANSCRIBE)
+  formData.append('response_format', 'json')
 
   const res = await fetchWithTimeout('https://api.openai.com/v1/audio/transcriptions', {
     method: 'POST', headers: { Authorization: `Bearer ${apiKey}` }, body: formData,
   }, 60000)
   const data = await res.json()
   if (!res.ok) throw new GatewayError('openai', mapHttpError(res.status), data.error?.message || 'Transcription failed', res.status)
-  return { transcript: data.text || '', duration: data.duration || 0, segments: data.segments || [] }
+  return {
+    transcript: data.text || '',
+    duration: typeof data.duration === 'number' ? data.duration : null,
+    segments: Array.isArray(data.segments) ? data.segments : [],
+    model: OPENAI_MODEL_TRANSCRIBE,
+  }
 }
 
 // ── Azure provider calls ────────────────────────────────────────────────────
-// api-version is my best current knowledge — Azure updates these periodically.
-// If Azure calls fail after setup with a version-related error, check
-// https://learn.microsoft.com/azure/ai-services/openai/reference for the
-// current value and update AZURE_OPENAI_API_VERSION in Vercel env vars.
 const DEFAULT_AZURE_API_VERSION = '2024-08-01-preview'
 
 async function callAzureChat({ messages, maxTokens, temperature, responseFormat }) {
@@ -250,23 +255,32 @@ async function callAzureEmbed({ input }) {
   return { embeddings: (data.data || []).map(d => d.embedding), usage: data.usage }
 }
 
+// Azure deployment names are chosen by you at deploy time — the model this
+// points to on Azure's side may not be an exact gpt-4o-mini-transcribe
+// match. Since Azure is currently disabled/unconfigured in your setup,
+// this is low-priority to verify until you actually turn Azure on.
 async function callAzureTranscribe({ audioBuffer, mimeType }) {
   const endpoint = process.env.AZURE_OPENAI_ENDPOINT
   const apiKey = process.env.AZURE_OPENAI_API_KEY
   const deployment = process.env.AZURE_OPENAI_DEPLOYMENT_WHISPER
   const apiVersion = process.env.AZURE_OPENAI_API_VERSION || DEFAULT_AZURE_API_VERSION
-  if (!endpoint || !apiKey || !deployment) throw new GatewayError('azure', 'not_configured', 'Azure Whisper deployment not configured')
+  if (!endpoint || !apiKey || !deployment) throw new GatewayError('azure', 'not_configured', 'Azure transcription deployment not configured')
 
   const audioBlob = new Blob([audioBuffer], { type: mimeType })
   const formData = new FormData()
   formData.append('file', audioBlob, 'lecture.webm')
-  formData.append('response_format', 'verbose_json')
+  formData.append('response_format', 'json')
 
   const url = `${endpoint.replace(/\/$/, '')}/openai/deployments/${deployment}/audio/transcriptions?api-version=${apiVersion}`
   const res = await fetchWithTimeout(url, { method: 'POST', headers: { 'api-key': apiKey }, body: formData }, 60000)
   const data = await res.json()
   if (!res.ok) throw new GatewayError('azure', mapHttpError(res.status), data.error?.message || 'Azure transcription failed', res.status)
-  return { transcript: data.text || '', duration: data.duration || 0, segments: data.segments || [] }
+  return {
+    transcript: data.text || '',
+    duration: typeof data.duration === 'number' ? data.duration : null,
+    segments: Array.isArray(data.segments) ? data.segments : [],
+    model: deployment,
+  }
 }
 
 // ── Public gateway functions — everything in STUDIA calls only these ───────
@@ -348,7 +362,7 @@ export async function transcribe({ audioBuffer, mimeType, feature, userId }) {
     try {
       const result = provider === 'azure' ? await callAzureTranscribe({ audioBuffer, mimeType }) : await callOpenAITranscribe({ audioBuffer, mimeType })
       recordHealth(provider, true, Date.now() - start).catch(() => {})
-      logWhisperUsage(userId, result.duration, provider).catch(() => {})
+      logTranscriptionUsage(userId, result.duration || 0, result.model, provider).catch(() => {})
       return { ...result, provider }
     } catch (err) {
       recordHealth(provider, false, Date.now() - start).catch(() => {})
