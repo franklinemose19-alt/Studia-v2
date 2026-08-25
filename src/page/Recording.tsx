@@ -4,7 +4,8 @@ import { Mic, Square, Play, Pause, Trash2, Download, ArrowLeft, Loader, FileText
 import { useNavigate } from 'react-router-dom'
 import { getSupabase } from '../lib/supabaseClient'
 import { useAuth } from '../lib/AuthContext'
-import { loadAccess, checkAccess, consumeCredit, explorerLecturesRemaining, isUnlimitedPlan, type AccessInfo, emptyAccess } from '../lib/access'
+import { loadAccess, checkAccess, totalMinutesAvailable, isUnlimitedPlan, type AccessInfo, emptyAccess } from '../lib/access'
+import { authFetch } from '../lib/authFetch'
 import SmartInkNotes from '../components/SmartInkNotes'
 import { getTierFromPlan, type SmartInkNote } from '../lib/smartInk'
 import { toast } from '../lib/toast'
@@ -12,39 +13,17 @@ import TimestampedScript from '../components/TimestampedScript'
 import LanguageViewSwitcher from '../components/LanguageViewSwitcher'
 import { loadCourses, saveCourses, onCoursesChanged, upsertCourseUnit, type Course } from '../lib/courseStore'
 
-interface ScriptEntry {
-  timestamp: number
-  heading: string
-  definition?: string
-  explanation: string
-  keyTerm?: string
-}
+interface ScriptEntry { timestamp: number; heading: string; definition?: string; explanation: string; keyTerm?: string }
 
 interface Recording {
-  id: string
-  name: string
-  duration: number
-  timestamp: Date
-  blob?: Blob
-  course?: string
-  unit?: string
-  storageUrl?: string
-  transcript?: string
-  notes?: string
-  structuredNotes?: SmartInkNote
-  structuredScript?: ScriptEntry[]
-  detectedLanguages?: string[]
-  isProcessing?: boolean
+  id: string; name: string; duration: number; timestamp: Date; blob?: Blob
+  course?: string; unit?: string; storageUrl?: string; transcript?: string
+  notes?: string; structuredNotes?: SmartInkNote; structuredScript?: ScriptEntry[]
+  detectedLanguages?: string[]; isProcessing?: boolean
 }
 
 interface UnitCoverageRecord { lecturesRecorded: number; coveredTopics: string[] }
-
-interface CoverageData {
-  covered: number
-  total: number
-  topics: string[]
-  unitName: string
-}
+interface CoverageData { covered: number; total: number; topics: string[]; unitName: string }
 
 const openDB = (): Promise<IDBDatabase> =>
   new Promise((resolve, reject) => {
@@ -58,7 +37,6 @@ const saveBlob = async (id: string, blob: Blob) => {
   try { const db = await openDB(); db.transaction('blobs', 'readwrite').objectStore('blobs').put(blob, id) }
   catch (err) { console.error('Failed to save blob:', err) }
 }
-
 const getBlob = async (id: string): Promise<Blob | null> => {
   try {
     const db = await openDB()
@@ -69,7 +47,6 @@ const getBlob = async (id: string): Promise<Blob | null> => {
     })
   } catch { return null }
 }
-
 const deleteBlob = async (id: string) => {
   try { const db = await openDB(); db.transaction('blobs', 'readwrite').objectStore('blobs').delete(id) }
   catch (err) { console.error('Failed to delete blob:', err) }
@@ -79,33 +56,29 @@ const loadUnitCoverage = (): Record<string, UnitCoverageRecord> => {
   try { return JSON.parse(localStorage.getItem('unitCoverage') || '{}') } catch { return {} }
 }
 const saveUnitCoverage = (data: Record<string, UnitCoverageRecord>) => {
-  try { localStorage.setItem('unitCoverage', JSON.stringify(data)) } catch { /* storage full */ }
+  try { localStorage.setItem('unitCoverage', JSON.stringify(data)) } catch {}
 }
-
 const topicMatchesConcept = (topic: string, conceptName: string): boolean => {
   const t = topic.toLowerCase().trim()
   const c = conceptName.toLowerCase().trim()
   return t.length > 2 && c.length > 2 && (t.includes(c) || c.includes(t))
 }
-
 const getSupportedMimeType = (): string => {
   const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg', 'audio/mp4']
   return types.find((t) => MediaRecorder.isTypeSupported(t)) || ''
 }
-
 const formatTime = (seconds: number) => {
   const mins = Math.floor(seconds / 60)
   const secs = seconds % 60
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
 }
-
+const formatMinutes = (mins: number) => mins < 1 ? `${Math.round(mins * 60)}s` : `${Math.round(mins)} min`
 const formatPhone = (phone: string) => {
   let cleaned = phone.replace(/\D/g, '')
   if (cleaned.startsWith('0')) cleaned = '254' + cleaned.substring(1)
   else if (!cleaned.startsWith('254')) cleaned = '254' + cleaned
   return cleaned
 }
-
 const blobToBase64 = (blob: Blob): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -138,13 +111,11 @@ export default function RecordingPage() {
 
   const [showCoverageResult, setShowCoverageResult] = useState(false)
   const [coverageData, setCoverageData] = useState<CoverageData>({ covered: 0, total: 0, topics: [], unitName: '' })
-
   const [uploadStatus, setUploadStatus] = useState<string>('')
 
   const [access, setAccess] = useState<AccessInfo>(emptyAccess)
   const [accessLoaded, setAccessLoaded] = useState(false)
   const [showPaywall, setShowPaywall] = useState(false)
-  const [liteDurationCap, setLiteDurationCap] = useState<number | null>(null)
 
   const [litePhone, setLitePhone] = useState('')
   const [litePaying, setLitePaying] = useState(false)
@@ -159,33 +130,23 @@ export default function RecordingPage() {
   const animFrameRef = useRef<number | null>(null)
   const currentAudioRef = useRef<HTMLAudioElement | null>(null)
   const litePollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const liteCapRef = useRef<number | null>(null)
-  const sessionSourceRef = useRef<'paid_subscription' | 'achiever_session' | 'explorer_free' | 'bonus' | null>(null)
 
-  // ── Effect 1: load courses + subscribe to live cross-tab/cross-page sync ──
   useEffect(() => {
     const loaded = loadCourses()
     setCourses(loaded)
     if (loaded.length === 0) setShowAddForm(true)
-
     const unsubscribe = onCoursesChanged(() => setCourses(loadCourses()))
     return () => { unsubscribe() }
   }, [])
 
-  // ── Effect 2: load recordings + access, independent lifecycle ─────────────
   useEffect(() => {
     try { setRecordings(JSON.parse(localStorage.getItem('recordingsMetadata') || '[]')) } catch { setRecordings([]) }
-
     let cancelled = false
     const init = async () => {
       const a = await loadAccess(userId)
-      if (!cancelled) {
-        setAccess(a)
-        setAccessLoaded(true)
-      }
+      if (!cancelled) { setAccess(a); setAccessLoaded(true) }
     }
     init()
-
     return () => {
       cancelled = true
       if (timerRef.current) clearInterval(timerRef.current)
@@ -197,7 +158,7 @@ export default function RecordingPage() {
 
   useEffect(() => {
     const metadata = recordings.map(({ blob, ...rest }) => rest)
-    try { localStorage.setItem('recordingsMetadata', JSON.stringify(metadata)) } catch { /* storage full */ }
+    try { localStorage.setItem('recordingsMetadata', JSON.stringify(metadata)) } catch {}
   }, [recordings])
 
   const courseNames = courses.map(c => c.name)
@@ -209,17 +170,13 @@ export default function RecordingPage() {
     const unitName = newUnitName.trim()
     if (!courseName) { toast.error('Enter a course name'); return }
     if (!unitName) { toast.error('Enter a unit name'); return }
-
     const topics = newTopicsInput.split(',').map(t => t.trim()).filter(Boolean)
     const { courses: updatedCourses, unitId } = upsertCourseUnit(courses, courseName, unitName, topics)
-
     setCourses(updatedCourses)
     saveCourses(updatedCourses)
     setSelectedCourse(courseName)
     setSelectedUnit(unitId)
-    setNewCourseName('')
-    setNewUnitName('')
-    setNewTopicsInput('')
+    setNewCourseName(''); setNewUnitName(''); setNewTopicsInput('')
     setShowAddForm(false)
     toast.success(`"${courseName}" ready — you can record now.`)
   }
@@ -247,7 +204,6 @@ export default function RecordingPage() {
     }
     draw()
   }
-
   const clearCanvas = () => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -273,82 +229,67 @@ export default function RecordingPage() {
     }
   }
 
-  const transcribeAudio = async (blob: Blob): Promise<{ transcript: string | null; segments: any[] }> => {
+  // Charged server-side, atomically, minute-accurate — see api/transcribe.js.
+  // clientDurationSeconds is sent only as the server's PRE-FLIGHT estimate
+  // (cheap rejection before an AI call, and the honest fallback if the
+  // transcription model doesn't return its own duration); the server
+  // always trues up against whatever real duration it can determine.
+  const transcribeAudio = async (blob: Blob, recordedSeconds: number): Promise<{ transcript: string | null; segments: any[]; exhausted: boolean; minutesCharged: number; creditWarning: string | null }> => {
     try {
       setUploadStatus('🎙️ Transcribing lecture...')
       const base64 = await blobToBase64(blob)
-      const response = await fetch('/api/transcribe', {
+      const response = await authFetch('/api/transcribe', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audio: base64, mimeType: blob.type, userId }),
+        body: JSON.stringify({ audio: base64, mimeType: blob.type, clientDurationSeconds: recordedSeconds }),
       })
       if (!response.ok) {
         const err = await response.json()
-        console.error('Whisper error:', err)
+        if (response.status === 402) {
+          toast.error(err.error)
+          setAccess(await loadAccess(userId))
+          return { transcript: null, segments: [], exhausted: true, minutesCharged: 0, creditWarning: null }
+        }
+        if (response.status === 401) { toast.error('Session expired — please sign in again.'); return { transcript: null, segments: [], exhausted: false, minutesCharged: 0, creditWarning: null } }
         if (response.status === 429) toast.error(err.error || 'Too many requests — please wait a moment.')
-        return { transcript: null, segments: [] }
+        console.error('Transcribe error:', err)
+        return { transcript: null, segments: [], exhausted: false, minutesCharged: 0, creditWarning: null }
       }
       const data = await response.json()
-      return { transcript: data.transcript || null, segments: data.segments || [] }
+      if (data.creditWarning) toast.info(data.creditWarning)
+      return { transcript: data.transcript || null, segments: data.segments || [], exhausted: false, minutesCharged: data.minutesCharged || 0, creditWarning: data.creditWarning || null }
     } catch (err) {
       console.error('Transcription failed:', err)
-      return { transcript: null, segments: [] }
+      return { transcript: null, segments: [], exhausted: false, minutesCharged: 0, creditWarning: null }
     }
   }
 
-  const generateNotes = async (
-    transcript: string,
-    segments: any[],
-    courseName?: string,
-    unitName?: string
-  ): Promise<{ notes: string | null; structuredNotes: SmartInkNote | undefined; structuredScript: ScriptEntry[]; detectedLanguages: string[] }> => {
+  const generateNotes = async (transcript: string, segments: any[], courseName?: string, unitName?: string) => {
     try {
       setUploadStatus('📝 Generating Smart Ink notes...')
-      const response = await fetch('/api/generate-lecture-notes', {
+      const response = await authFetch('/api/generate-lecture-notes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript, segments, courseName, unitName, userId }),
+        body: JSON.stringify({ transcript, segments, courseName, unitName }),
       })
       if (!response.ok) {
         const err = await response.json()
-        console.error('GPT error:', err)
+        console.error('Notes error:', err)
         if (response.status === 429) toast.error(err.error || 'Too many requests — please wait a moment.')
         return { notes: null, structuredNotes: undefined, structuredScript: [], detectedLanguages: [] }
       }
       const data = await response.json()
-      return {
-        notes: data.notes || null,
-        structuredNotes: data.structured || undefined,
-        structuredScript: data.structuredScript || [],
-        detectedLanguages: data.detectedLanguages || [],
-      }
+      return { notes: data.notes || null, structuredNotes: data.structured || undefined, structuredScript: data.structuredScript || [], detectedLanguages: data.detectedLanguages || [] }
     } catch (err) {
       console.error('Notes generation failed:', err)
       return { notes: null, structuredNotes: undefined, structuredScript: [], detectedLanguages: [] }
     }
   }
 
-  const runKnowledgeMapExtraction = async (
-    notesText: string,
-    courseName: string | undefined,
-    unitId: string | undefined,
-    recordingId: string,
-    recordingLabel: string
-  ) => {
-    if (!userId || !notesText.trim()) return
+  const runKnowledgeMapExtraction = async (notesText: string, courseName: string | undefined, unitId: string | undefined, recordingId: string, recordingLabel: string) => {
+    if (!notesText.trim()) return
     try {
-      const res = await fetch('/api/ai-tools', {
+      const res = await authFetch('/api/ai-tools', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mode: 'extract_concepts',
-          lectureContent: notesText,
-          subject: courseName,
-          courseName,
-          sourceLabel: recordingLabel,
-          sourceId: recordingId,
-          userId,
-        }),
+        body: JSON.stringify({ mode: 'extract_concepts', lectureContent: notesText, subject: courseName, courseName, sourceLabel: recordingLabel, sourceId: recordingId }),
       })
       if (!res.ok) return
       const data = await res.json()
@@ -359,63 +300,42 @@ export default function RecordingPage() {
         if (unit && unit.topics.length > 0) {
           const coverage = loadUnitCoverage()
           const existing = coverage[unitId] || { lecturesRecorded: 0, coveredTopics: [] }
-          const newlyCovered = unit.topics.filter(topic =>
-            !existing.coveredTopics.includes(topic) && conceptNames.some(name => topicMatchesConcept(topic, name))
-          )
-          const updated: UnitCoverageRecord = {
-            lecturesRecorded: existing.lecturesRecorded + 1,
-            coveredTopics: [...existing.coveredTopics, ...newlyCovered],
-          }
+          const newlyCovered = unit.topics.filter(topic => !existing.coveredTopics.includes(topic) && conceptNames.some(name => topicMatchesConcept(topic, name)))
+          const updated: UnitCoverageRecord = { lecturesRecorded: existing.lecturesRecorded + 1, coveredTopics: [...existing.coveredTopics, ...newlyCovered] }
           coverage[unitId] = updated
           saveUnitCoverage(coverage)
           setCoverageData({ covered: updated.coveredTopics.length, total: unit.topics.length, topics: updated.coveredTopics, unitName: unit.name })
           setShowCoverageResult(true)
         }
       }
-
       if (data.prerequisiteWarnings?.length > 0) {
         const names = data.prerequisiteWarnings.map((w: any) => w.concept).join(', ')
         toast.info(`This lecture builds on ${names} — you're still building mastery there. Check your Knowledge Map for a refresher.`)
       }
-    } catch (err) {
-      console.error('Knowledge map extraction failed (non-critical):', err)
-    }
+    } catch (err) { console.error('Knowledge map extraction failed (non-critical):', err) }
   }
 
   const handleStartClick = () => {
-    if (!selectedUnit) {
-      toast.error('Add or select a course and unit above before recording.')
-      setShowAddForm(true)
-      return
-    }
+    if (!selectedUnit) { toast.error('Add or select a course and unit above before recording.'); setShowAddForm(true); return }
+    // Optimistic pre-check only — the server independently re-verifies and
+    // trues up against the real duration once transcription completes.
     const result = checkAccess(access, 'core')
-    if (result.allowed) {
-      sessionSourceRef.current = result.source
-      liteCapRef.current = null
-      setLiteDurationCap(null)
-      startRecording()
-      return
-    }
+    if (result.allowed) { startRecording(); return }
     setLiteError('')
     setShowPaywall(true)
   }
 
-  const payForLecture = async (tier: '1hr' | '2hr') => {
+  const payForMinutes = async (plan: 'achiever' | 'achiever-plus') => {
     if (!litePhone.trim()) { setLiteError('Enter your M-Pesa number'); return }
     setLiteError('')
     setLitePaying(true)
     try {
-      const amount = tier === '1hr' ? 49 : 79
+      const amount = plan === 'achiever' ? 45 : 69
+      const minutes = plan === 'achiever' ? 45 : 90
       const res = await fetch('/api/mpesa-stk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phoneNumber: formatPhone(litePhone),
-          amount,
-          planId: `achiever-${tier}`,
-          planName: `Achiever (${tier === '1hr' ? 'up to 1 hour' : 'up to 2 hours'})`,
-          userId: access.userId,
-        }),
+        body: JSON.stringify({ phoneNumber: formatPhone(litePhone), amount, planId: plan, planName: plan === 'achiever' ? `Achiever (${minutes} min)` : `Achiever+ (${minutes} min)`, userId: access.userId }),
       })
       const data = await res.json()
       if (!data.success) {
@@ -424,14 +344,14 @@ export default function RecordingPage() {
         setLitePaying(false)
         return
       }
-      pollLitePayment(data.transactionId, tier)
+      pollPayment(data.transactionId)
     } catch {
       setLiteError('Connection error. Please try again.')
       setLitePaying(false)
     }
   }
 
-  const pollLitePayment = (transactionId: string, tier: '1hr' | '2hr') => {
+  const pollPayment = (transactionId: string) => {
     let attempts = 0
     litePollRef.current = setInterval(async () => {
       attempts++
@@ -442,16 +362,8 @@ export default function RecordingPage() {
           clearInterval(litePollRef.current!)
           setLitePaying(false)
           setShowPaywall(false)
-          const cap = tier === '1hr' ? 3600 : 7200
-          liteCapRef.current = cap
-          setLiteDurationCap(cap)
-          sessionSourceRef.current = 'achiever_session'
-
-          if (access.userId) {
-            const refreshed = await loadAccess(access.userId)
-            setAccess(refreshed)
-          }
-          toast.success('Payment confirmed! Recording unlocked.')
+          if (access.userId) setAccess(await loadAccess(access.userId))
+          toast.success('Payment confirmed! Minutes added.')
           startRecording()
         } else if (data.status === 'failed') {
           clearInterval(litePollRef.current!)
@@ -462,52 +374,31 @@ export default function RecordingPage() {
           setLitePaying(false)
           setLiteError('Still waiting for confirmation. If you completed the M-Pesa prompt, try recording again shortly.')
         }
-      } catch {
-        // keep polling on transient errors
-      }
+      } catch {}
     }, 3000)
   }
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      })
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
       audioContextRef.current = audioContext
       const source = audioContext.createMediaStreamSource(stream)
       const analyser = audioContext.createAnalyser()
       analyserRef.current = analyser
       const highPass = audioContext.createBiquadFilter()
-      highPass.type = 'highpass'
-      highPass.frequency.value = 80
+      highPass.type = 'highpass'; highPass.frequency.value = 80
       const compressor = audioContext.createDynamicsCompressor()
-      compressor.threshold.value = -50
-      compressor.knee.value = 40
-      compressor.ratio.value = 12
-      compressor.attack.value = 0.003
-      compressor.release.value = 0.25
-      source.connect(highPass)
-      highPass.connect(compressor)
-      compressor.connect(analyser)
+      compressor.threshold.value = -50; compressor.knee.value = 40; compressor.ratio.value = 12; compressor.attack.value = 0.003; compressor.release.value = 0.25
+      source.connect(highPass); highPass.connect(compressor); compressor.connect(analyser)
       const mimeType = getSupportedMimeType()
       const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
       mediaRecorderRef.current = mediaRecorder
       audioChunksRef.current = []
       mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data) }
       mediaRecorder.start(250)
-      setIsRecording(true)
-      setDuration(0)
-      setUploadStatus('')
-      timerRef.current = setInterval(() => {
-        setDuration((d) => {
-          const next = d + 1
-          if (liteCapRef.current && next >= liteCapRef.current) {
-            setTimeout(() => stopRecording(), 0)
-          }
-          return next
-        })
-      }, 1000)
+      setIsRecording(true); setDuration(0); setUploadStatus('')
+      timerRef.current = setInterval(() => setDuration((d) => d + 1), 1000)
       visualize()
     } catch {
       toast.error('Microphone access denied. Please allow microphone access and try again.')
@@ -516,6 +407,7 @@ export default function RecordingPage() {
 
   const stopRecording = () => {
     if (!mediaRecorderRef.current || !isRecording) return
+    const recordedSeconds = duration
     mediaRecorderRef.current.onstop = async () => {
       const mimeType = getSupportedMimeType()
       const blob = new Blob(audioChunksRef.current, { type: mimeType || 'audio/webm' })
@@ -525,46 +417,29 @@ export default function RecordingPage() {
       const unitObj = filteredUnits.find((u) => u.id === selectedUnit)
       const unitName = unitObj?.name
 
-      const recording: Recording = {
-        id, name: `Lecture ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`, duration, timestamp: now,
-        blob, course: courseName, unit: unitName, isProcessing: true,
-      }
-
+      const recording: Recording = { id, name: `Lecture ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`, duration: recordedSeconds, timestamp: now, blob, course: courseName, unit: unitName, isProcessing: true }
       await saveBlob(id, blob)
       setRecordings((prev) => [recording, ...prev])
 
-      const usedSource = sessionSourceRef.current
-      if (usedSource) {
-        await consumeCredit(access, usedSource)
-        setAccess((prev) => ({
-          ...prev,
-          freeCreditsUsed: usedSource === 'explorer_free' ? prev.freeCreditsUsed + 1 : prev.freeCreditsUsed,
-          liteBonusCredits: usedSource === 'bonus' ? Math.max(0, prev.liteBonusCredits - 1) : prev.liteBonusCredits,
-          lecturesUsed: usedSource === 'paid_subscription' ? prev.lecturesUsed + 1 : prev.lecturesUsed,
-        }))
-      }
-      sessionSourceRef.current = null
-      liteCapRef.current = null
-      setLiteDurationCap(null)
-
       const storageUrl = await uploadToSupabase(blob, id, userId || 'anonymous')
-      const { transcript, segments } = await transcribeAudio(blob)
+      const { transcript, segments, exhausted } = await transcribeAudio(blob, recordedSeconds)
+
+      if (exhausted) {
+        setRecordings((prev) => prev.map((r) => r.id === id ? { ...r, isProcessing: false } : r))
+        clearCanvas()
+        return
+      }
+
       const { notes, structuredNotes, structuredScript, detectedLanguages } = transcript
         ? await generateNotes(transcript, segments, courseName, unitName)
         : { notes: null, structuredNotes: undefined, structuredScript: [], detectedLanguages: [] }
 
       setUploadStatus(notes ? '✅ Smart Ink notes ready!' : '⚠️ Could not generate notes')
+      setRecordings((prev) => prev.map((r) => r.id === id ? { ...r, storageUrl: storageUrl || undefined, transcript: transcript || undefined, notes: notes || undefined, structuredNotes, structuredScript, detectedLanguages, isProcessing: false } : r))
 
-      setRecordings((prev) => prev.map((r) =>
-        r.id === id
-          ? { ...r, storageUrl: storageUrl || undefined, transcript: transcript || undefined, notes: notes || undefined, structuredNotes, structuredScript, detectedLanguages, isProcessing: false }
-          : r
-      ))
+      setAccess(await loadAccess(userId))
 
-      if (notes) {
-        runKnowledgeMapExtraction(notes, courseName, selectedUnit || undefined, id, recording.name)
-      }
-
+      if (notes) runKnowledgeMapExtraction(notes, courseName, selectedUnit || undefined, id, recording.name)
       clearCanvas()
     }
     mediaRecorderRef.current.stop()
@@ -594,9 +469,7 @@ export default function RecordingPage() {
     if (!blob) { toast.error('File not found on this device.'); return }
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url
-    a.download = `${recording.name}.webm`
-    a.click()
+    a.href = url; a.download = `${recording.name}.webm`; a.click()
     URL.revokeObjectURL(url)
   }
 
@@ -606,7 +479,8 @@ export default function RecordingPage() {
     if (playingId === id) { currentAudioRef.current?.pause(); setPlayingId(null) }
   }
 
-  const remaining = explorerLecturesRemaining(access)
+  const minutesLeft = totalMinutesAvailable(access)
+  const explorerLeft = Math.max(0, 3 - (access.freeCreditsUsed || 0))
   const notesTier = getTierFromPlan(access.currentPlan, access.subscriptionStatus)
 
   return (
@@ -633,13 +507,13 @@ export default function RecordingPage() {
             {accessLoaded && (
               <p className="text-sm mt-2">
                 {isUnlimitedPlan(access) ? (
-                  <span className="text-green-400">✨ {access.currentPlan} plan · Unlimited AI</span>
-                ) : remaining > 0 ? (
-                  <span className="text-brand-blue">🎓 {remaining} free AI credit{remaining !== 1 ? 's' : ''} left</span>
-                ) : access.liteBonusCredits > 0 ? (
-                  <span className="text-brand-blue">💳 {access.liteBonusCredits} bonus credit{access.liteBonusCredits !== 1 ? 's' : ''} available</span>
+                  <span className="text-green-400">✨ {access.currentPlan} plan · {formatMinutes(minutesLeft)} remaining this period</span>
+                ) : minutesLeft > 0 ? (
+                  <span className="text-brand-blue">💳 {formatMinutes(minutesLeft)} of AI processing time available</span>
+                ) : explorerLeft > 0 ? (
+                  <span className="text-brand-blue">🎓 {explorerLeft} free AI lecture{explorerLeft !== 1 ? 's' : ''} left</span>
                 ) : (
-                  <span className="text-brand-blue">💳 Free credits used — pay per lecture or subscribe</span>
+                  <span className="text-brand-blue">💳 No minutes left — buy a pack or subscribe</span>
                 )}
               </p>
             )}
@@ -650,8 +524,7 @@ export default function RecordingPage() {
               <div className="flex items-center justify-between">
                 <h2 className="font-sora font-bold text-xl text-white">Course & Unit</h2>
                 {courses.length > 0 && !showAddForm && (
-                  <button onClick={() => setShowAddForm(true)}
-                    className="flex items-center gap-1 text-xs text-brand-blue hover:text-brand-blue/80 font-medium">
+                  <button onClick={() => setShowAddForm(true)} className="flex items-center gap-1 text-xs text-brand-blue hover:text-brand-blue/80 font-medium">
                     <Plus size={13} /> Add new
                   </button>
                 )}
@@ -660,39 +533,24 @@ export default function RecordingPage() {
               <div className="bg-gradient-to-r from-indigo-500/10 to-purple-500/10 rounded-xl p-4 border border-indigo-500/20">
                 <p className="text-sm font-semibold text-white mb-2">🎙️ SmartCapture AI Active</p>
                 <div className="grid grid-cols-2 gap-1 text-xs text-gray-400">
-                  <p>✓ Echo cancellation</p>
-                  <p>✓ Noise suppression</p>
-                  <p>✓ Kiswahili + English</p>
-                  <p>✓ Smart Ink notes</p>
+                  <p>✓ Echo cancellation</p><p>✓ Noise suppression</p>
+                  <p>✓ Kiswahili + English</p><p>✓ Smart Ink notes</p>
                 </div>
               </div>
 
               <AnimatePresence>
                 {showAddForm && (
-                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                    className="overflow-hidden">
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
                     <div className="bg-surface-base rounded-xl p-4 space-y-3 border border-white/10">
                       <div className="flex items-center justify-between">
                         <p className="text-sm font-semibold text-white">{courses.length === 0 ? 'Add your first course' : 'Add a course or unit'}</p>
-                        {courses.length > 0 && (
-                          <button onClick={() => setShowAddForm(false)} className="text-[#8B97B5] hover:text-white">
-                            <X size={16} />
-                          </button>
-                        )}
+                        {courses.length > 0 && <button onClick={() => setShowAddForm(false)} className="text-[#8B97B5] hover:text-white"><X size={16} /></button>}
                       </div>
-                      <input type="text" placeholder="Course name, e.g. Biology 201" value={newCourseName}
-                        onChange={(e) => setNewCourseName(e.target.value)} className={inputClass} list="existing-course-names" />
-                      <datalist id="existing-course-names">
-                        {courseNames.map(name => <option key={name} value={name} />)}
-                      </datalist>
-                      <input type="text" placeholder="Unit name, e.g. Cell Biology" value={newUnitName}
-                        onChange={(e) => setNewUnitName(e.target.value)} className={inputClass} />
-                      <input type="text" placeholder="Topics, comma-separated (optional)" value={newTopicsInput}
-                        onChange={(e) => setNewTopicsInput(e.target.value)} className={inputClass} />
-                      <button onClick={handleQuickAddCourseUnit}
-                        className="w-full bg-brand-blue text-white font-semibold py-2.5 rounded-xl hover:bg-brand-blue/90 transition text-sm">
-                        Save & Select
-                      </button>
+                      <input type="text" placeholder="Course name, e.g. Biology 201" value={newCourseName} onChange={(e) => setNewCourseName(e.target.value)} className={inputClass} list="existing-course-names" />
+                      <datalist id="existing-course-names">{courseNames.map(name => <option key={name} value={name} />)}</datalist>
+                      <input type="text" placeholder="Unit name, e.g. Cell Biology" value={newUnitName} onChange={(e) => setNewUnitName(e.target.value)} className={inputClass} />
+                      <input type="text" placeholder="Topics, comma-separated (optional)" value={newTopicsInput} onChange={(e) => setNewTopicsInput(e.target.value)} className={inputClass} />
+                      <button onClick={handleQuickAddCourseUnit} className="w-full bg-brand-blue text-white font-semibold py-2.5 rounded-xl hover:bg-brand-blue/90 transition text-sm">Save & Select</button>
                       <p className="text-[10px] text-[#8B97B5]">Typing an existing course name adds this unit to it instead of duplicating it.</p>
                     </div>
                   </motion.div>
@@ -708,7 +566,6 @@ export default function RecordingPage() {
                       {courseNames.map((name) => <option key={name} value={name}>{name}</option>)}
                     </select>
                   </div>
-
                   <div>
                     <label className="block text-sm text-white mb-2">Select Unit <span className="text-[#8B97B5]">(for coverage tracking)</span></label>
                     <select value={selectedUnit} onChange={(e) => setSelectedUnit(e.target.value)} className={selectClass} disabled={!selectedCourse}>
@@ -716,10 +573,7 @@ export default function RecordingPage() {
                       {filteredUnits.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
                     </select>
                   </div>
-
-                  <button onClick={() => navigate('/units')} className="w-full text-xs text-[#8B97B5] hover:text-white underline">
-                    Manage full topic lists in Unit Management →
-                  </button>
+                  <button onClick={() => navigate('/units')} className="w-full text-xs text-[#8B97B5] hover:text-white underline">Manage full topic lists in Unit Management →</button>
                 </>
               )}
             </div>
@@ -729,40 +583,28 @@ export default function RecordingPage() {
                 <div className="flex-1 flex flex-col items-center justify-center text-center space-y-4 py-4">
                   <Lock size={32} className="text-brand-blue" />
                   <div>
-                    <p className="text-white font-semibold mb-1">Free credits used up</p>
-                    <p className="text-sm text-[#8B97B5]">Pay per lecture, or subscribe for more lectures monthly.</p>
+                    <p className="text-white font-semibold mb-1">Out of AI minutes</p>
+                    <p className="text-sm text-[#8B97B5]">Buy a minutes pack, or subscribe for the full STUDIA experience.</p>
                   </div>
-
                   <div className="w-full space-y-3">
                     <div className="relative">
                       <Phone className="absolute left-3 top-3 text-[#4A5568]" size={18} />
-                      <input
-                        type="tel"
-                        placeholder="M-Pesa number (07XX...)"
-                        value={litePhone}
-                        onChange={(e) => setLitePhone(e.target.value)}
-                        disabled={litePaying}
-                        className="w-full bg-surface-base border border-white/10 rounded-xl pl-10 pr-3 py-2.5 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40 text-sm disabled:opacity-50"
-                      />
+                      <input type="tel" placeholder="M-Pesa number (07XX...)" value={litePhone} onChange={(e) => setLitePhone(e.target.value)} disabled={litePaying}
+                        className="w-full bg-surface-base border border-white/10 rounded-xl pl-10 pr-3 py-2.5 text-white placeholder-[#4A5568] outline-none focus:border-brand-blue/40 text-sm disabled:opacity-50" />
                     </div>
-
                     {liteError && <p className="text-xs text-red-400">{liteError}</p>}
-
                     <div className="flex gap-2">
-                      <button onClick={() => payForLecture('1hr')} disabled={litePaying}
+                      <button onClick={() => payForMinutes('achiever')} disabled={litePaying}
                         className="flex-1 bg-brand-blue text-white text-sm font-medium py-2.5 rounded-xl hover:bg-brand-blue/90 disabled:opacity-50 flex items-center justify-center gap-2">
-                        {litePaying ? <Loader size={14} className="animate-spin" /> : null} KSh 49 · up to 1hr
+                        {litePaying ? <Loader size={14} className="animate-spin" /> : null} KSh 45 · 45 min
                       </button>
-                      <button onClick={() => payForLecture('2hr')} disabled={litePaying}
+                      <button onClick={() => payForMinutes('achiever-plus')} disabled={litePaying}
                         className="flex-1 bg-brand-blue text-white text-sm font-medium py-2.5 rounded-xl hover:bg-brand-blue/90 disabled:opacity-50 flex items-center justify-center gap-2">
-                        {litePaying ? <Loader size={14} className="animate-spin" /> : null} KSh 79 · up to 2hr
+                        {litePaying ? <Loader size={14} className="animate-spin" /> : null} KSh 69 · 90 min
                       </button>
                     </div>
-                    <p className="text-[10px] text-[#8B97B5]">Includes a bonus AI credit for quiz, summarize, or SAGE use afterward.</p>
-
-                    <button onClick={() => navigate('/pricing')} className="w-full text-xs text-[#8B97B5] hover:text-white underline pt-1">
-                      Or subscribe for more lectures monthly →
-                    </button>
+                    <p className="text-[10px] text-[#8B97B5]">Includes recording, transcription, and Smart Ink notes. Subscribe for SAGE, quizzes, and more.</p>
+                    <button onClick={() => navigate('/pricing')} className="w-full text-xs text-[#8B97B5] hover:text-white underline pt-1">Or subscribe for more features →</button>
                   </div>
                 </div>
               ) : (
@@ -773,9 +615,6 @@ export default function RecordingPage() {
                     <p className="text-sm text-[#8B97B5]">
                       {isRecording ? '● Recording…' : recordings.length > 0 ? `${recordings.length} recording${recordings.length !== 1 ? 's' : ''} saved` : 'Ready to record'}
                     </p>
-                    {liteDurationCap && isRecording && (
-                      <p className="text-xs text-amber-400 mt-1">Capped at {formatTime(liteDurationCap)} for this paid lecture</p>
-                    )}
                     {uploadStatus && <p className="text-xs text-brand-blue mt-2 animate-pulse">{uploadStatus}</p>}
                   </div>
                   <div className="flex justify-center">
