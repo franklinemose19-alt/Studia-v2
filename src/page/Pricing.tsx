@@ -10,12 +10,12 @@ const PLANS = [
   },
   {
     id: 'achiever', emoji: '🎯', name: 'Achiever', price: 'KSh 45', priceSub: '45 minutes of AI processing',
-    features: ['45 minutes: recording + transcription', 'AI notes & summary generation', 'Sketch-style Smart Ink notes', 'No quizzes or SAGE (subscribe for those)'],
+    features: ['45 minutes: recording + transcription', 'AI notes, summary & quiz generation', 'Sketch-style Smart Ink notes', 'No SAGE AI Tutor (subscribe for that)'],
     cta: 'Buy Minutes', highlight: false,
   },
   {
     id: 'achiever-plus', emoji: '🎯', name: 'Achiever+', price: 'KSh 69', priceSub: '90 minutes of AI processing',
-    features: ['90 minutes: recording + transcription', 'AI notes & summary generation', 'Sketch-style Smart Ink notes', 'No quizzes or SAGE (subscribe for those)'],
+    features: ['90 minutes: recording + transcription', 'AI notes, summary & quiz generation', 'Sketch-style Smart Ink notes', 'No SAGE AI Tutor (subscribe for that)'],
     cta: 'Buy Minutes', highlight: false, badge: '⭐ Best per-minute value',
   },
   {
@@ -35,7 +35,7 @@ const COMPARISON = [
   { feature: 'Recording & Transcription', values: [true, true, true, true, true] },
   { feature: 'AI Notes & Summary', values: [true, true, true, true, true] },
   { feature: 'Smart Ink Style', values: ['Plain', 'Sketch', 'Sketch', 'Full Color', 'Premium Gradient'] },
-  { feature: 'Quiz Generation', values: [true, false, false, true, true] },
+  { feature: 'Quiz Generation', values: [true, true, true, true, true] },
   { feature: 'SAGE AI Tutor', values: [false, false, false, true, true] },
   { feature: 'Flashcards & Deep Notes', values: [false, false, false, true, true] },
   { feature: 'Knowledge Map', values: [false, false, false, true, true] },
