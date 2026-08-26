@@ -3,7 +3,7 @@ import { Brain, ArrowLeft, Menu, Plus, ArrowUp, BookOpen, ChevronDown, ChevronUp
 import { useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useAuth } from '../lib/AuthContext'
-import { loadAccess, type AccessInfo, emptyAccess } from '../lib/access'
+import { loadAccess, isActiveSubscription, type AccessInfo, emptyAccess } from '../lib/access'
 import { authFetch } from '../lib/authFetch'
 import { getAllRecordings, getLecturePacket, buildLecturePromptContext, type LecturePacket, type Recording } from '../lib/lectureContext'
 import { buildStudentContext, formatContextForAI } from '../lib/studentContext'
@@ -57,8 +57,10 @@ export default function SageAITutor() {
   const threadEndRef = useRef<HTMLDivElement>(null)
 
   const [access, setAccess] = useState<AccessInfo>(emptyAccess)
+  // FIXED: was typed 'no_lectures_left' — didn't match UpgradeModal's
+  // actual prop type ('no_minutes_left') after the minutes-based rewrite.
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
-  const [upgradeReason, setUpgradeReason] = useState<'explorer_locked' | 'no_lectures_left' | 'needs_premium'>('explorer_locked')
+  const [upgradeReason, setUpgradeReason] = useState<'explorer_locked' | 'no_minutes_left' | 'needs_premium'>('explorer_locked')
 
   const [recordings, setRecordings] = useState<Recording[]>([])
   const [selectedLectureId, setSelectedLectureId] = useState('')
@@ -78,6 +80,13 @@ export default function SageAITutor() {
   const [composerPdf, setComposerPdf] = useState<string | null>(null)
   const [composerPdfName, setComposerPdfName] = useState('')
   const [sending, setSending] = useState(false)
+
+  // FIXED: previously gated purely on raw access.planLocked, which stays
+  // true forever once set — even after a student pays for a subscription
+  // or minutes pack. Now matches the same defensive logic already used in
+  // Dashboard.tsx and access.ts's checkAccess(): an active subscription or
+  // any purchased minutes always overrides a stale lock.
+  const isEffectivelyLocked = access.planLocked && !isActiveSubscription(access) && (access.purchasedMinutesRemaining || 0) <= 0
 
   useEffect(() => {
     if (!userId) return
@@ -115,14 +124,11 @@ export default function SageAITutor() {
   const lectureContent = lecturePacket ? (lecturePacket.notes || '') + '\n\n' + (lecturePacket.transcript || '') : ''
   const studentCtx = formatContextForAI(buildStudentContext(access.currentPlan))
 
-  // Auth is attached automatically by authFetch. A 402 means genuinely
-  // exhausted credits — the server is now the only source of truth for
-  // this, not anything computed client-side.
   const callSage = async (body: any) => {
     const res = await authFetch('/api/ai-tools', { method: 'POST', body: JSON.stringify(body) })
     if (res.status === 402) {
       const err = await res.json().catch(() => ({}))
-      const e: any = new Error(err.error || 'Your 3 free AI lectures have been used. Upgrade to continue using SAGE AI Tutor.')
+      const e: any = new Error(err.error || 'You\'re out of AI minutes. Upgrade to continue using SAGE AI Tutor.')
       e.isExhausted = true
       throw e
     }
@@ -188,7 +194,7 @@ export default function SageAITutor() {
     opts: { intent?: SageIntent; image?: string | null; pdfBase64?: string | null; pdfName?: string } = {}
   ) => {
     if (sending) return
-    if (access.planLocked) {
+    if (isEffectivelyLocked) {
       setUpgradeReason('explorer_locked')
       setShowUpgradeModal(true)
       return
@@ -316,7 +322,7 @@ export default function SageAITutor() {
     } catch (err: any) {
       if (err.isExhausted) {
         toast.error(err.message)
-        setUpgradeReason('explorer_locked')
+        setUpgradeReason('no_minutes_left')
         setShowUpgradeModal(true)
       } else if (err.isAuthError) {
         toast.error(err.message)
@@ -358,11 +364,8 @@ export default function SageAITutor() {
 
   const handleToolSelect = (tool: SageTool) => {
     setToolsMenuOpen(false)
-    // Knowledge Map is browsable, free, and checked before the lock gate —
-    // viewing what you've already learned shouldn't be blocked the same
-    // way generating new AI content is.
     if (tool === 'knowledge_map') { navigate('/knowledge-map'); return }
-    if (access.planLocked) {
+    if (isEffectivelyLocked) {
       setUpgradeReason('explorer_locked')
       setShowUpgradeModal(true)
       return
@@ -505,7 +508,7 @@ export default function SageAITutor() {
       <div className="border-t border-white/5 bg-surface-elevated/80 backdrop-blur-md shrink-0 pb-[72px]">
         <div className="max-w-3xl mx-auto px-4 py-3">
 
-          {access.planLocked ? (
+          {isEffectivelyLocked ? (
             <button onClick={() => { setUpgradeReason('explorer_locked'); setShowUpgradeModal(true) }}
               className="w-full bg-red-500/10 border border-red-500/30 text-red-300 py-3 rounded-2xl text-sm font-semibold hover:bg-red-500/15 transition">
               🔒 Your free lectures are used up — tap to upgrade and unlock SAGE
