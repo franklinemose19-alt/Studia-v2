@@ -136,6 +136,8 @@ export default function Quiz() {
 
   const pct = questions.length > 0 ? Math.round((score / questions.length) * 100) : 0
   const remaining = explorerLecturesRemaining(access)
+  const minutesLeft = access.purchasedMinutesRemaining || 0
+  const subscriptionMinutesLeft = Math.max(0, (access.minutesAllowance || 0) - (access.minutesUsed || 0))
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-white via-surface-light to-white">
@@ -163,11 +165,11 @@ export default function Quiz() {
               {accessLoaded && (
                 <p className="text-sm mt-2">
                   {isUnlimitedPlan(access) ? (
-                    <span className="text-mint">✨ {access.currentPlan} plan · Unlimited AI</span>
+                    <span className="text-mint">✨ {access.currentPlan} plan · {subscriptionMinutesLeft} min left this period</span>
                   ) : remaining > 0 ? (
                     <span className="text-indigo-premium">🎓 {remaining} free AI credits remaining</span>
-                  ) : access.liteBonusCredits > 0 ? (
-                    <span className="text-brand-blue">💳 {access.liteBonusCredits} bonus credits available</span>
+                  ) : minutesLeft > 0 ? (
+                    <span className="text-brand-blue">💳 {Math.round(minutesLeft)} AI minutes available</span>
                   ) : (
                     <span className="text-red-500">🔒 No credits left — <button onClick={() => navigate('/pricing')} className="underline">upgrade</button></span>
                   )}
