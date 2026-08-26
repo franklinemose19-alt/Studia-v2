@@ -34,7 +34,6 @@ export default function Landing() {
   return (
     <div className="min-h-screen bg-white overflow-hidden">
 
-      {/* Nav */}
       <nav className="fixed w-full top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -57,7 +56,6 @@ export default function Landing() {
         </div>
       </nav>
 
-      {/* ── HERO ──────────────────────────────────────────────────────────── */}
       <section className="pt-28 sm:pt-36 pb-16 sm:pb-24 px-4 sm:px-6 relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-indigo-premium/5 via-purple-premium/5 to-transparent" />
         <div className="absolute top-20 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-gradient-to-r from-indigo-premium/10 to-purple-premium/10 rounded-full blur-3xl pointer-events-none" />
@@ -132,7 +130,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── SOCIAL PROOF ───────────────────────────────────────────────────── */}
       <section className="py-12 px-4 sm:px-6 bg-gray-50/50">
         <div className="max-w-6xl mx-auto">
           <p className="text-center text-sm text-gray-400 font-medium mb-8">Students are studying smarter with STUDIA</p>
@@ -160,7 +157,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── FEATURES ────────────────────────────────────────────────────────── */}
       <section id="features" className="py-16 sm:py-24 px-4 sm:px-6">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-14">
@@ -195,7 +191,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── TRUST ───────────────────────────────────────────────────────────── */}
       <section className="py-16 px-4 sm:px-6 bg-gray-50/50">
         <div className="max-w-5xl mx-auto">
           <h2 className="font-sora font-bold text-2xl text-navy text-center mb-10">Why students trust STUDIA</h2>
@@ -218,21 +213,20 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── PRICING PREVIEW ──────────────────────────────────────────────────── */}
       <section className="py-16 sm:py-20 px-4 sm:px-6">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-10">
             <h2 className="font-sora font-bold text-3xl sm:text-4xl text-navy mb-3">
-              Affordable for every student
+              Pay for exactly what you use
             </h2>
-            <p className="text-gray-500">Start free. Pay only when you need more.</p>
+            <p className="text-gray-500">Buy AI minutes as you need them, or subscribe for the full STUDIA experience.</p>
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
             {[
-              { emoji: '🌍', plan: 'Explorer', price: 'Free', period: '', badge: null, perks: ['3 lifetime AI lectures', 'Smart Ink notes', 'Quiz generation'], highlight: false },
-              { emoji: '🎯', plan: 'Achiever', price: 'KSh 49', period: '/lecture', badge: '⭐ Popular', perks: ['Pay as you go', 'Sketch Smart Ink', '1 bonus credit'], highlight: false },
-              { emoji: '🚀', plan: 'Excellence', price: 'KSh 399', period: '/month', badge: null, perks: ['20 AI lectures/month', 'Full color Smart Ink', 'SnapSolve + Past Papers'], highlight: false },
-              { emoji: '🏆', plan: 'Valedictorian', price: 'KSh 1,200', period: '/semester', badge: '🔥 Best Value', perks: ['65 AI lectures/semester', 'Premium gradient notes', 'Everything included'], highlight: true },
+              { emoji: '🎯', plan: 'Achiever', price: 'KSh 45', period: '', badge: null, perks: ['45 AI minutes', 'Recording + transcription', 'Notes, summary & quiz'], highlight: false },
+              { emoji: '🎯', plan: 'Achiever+', price: 'KSh 69', period: '', badge: '⭐ Best per-minute value', perks: ['90 AI minutes', 'Recording + transcription', 'Notes, summary & quiz'], highlight: false },
+              { emoji: '🚀', plan: 'Excellence', price: 'KSh 399', period: '/month', badge: null, perks: ['600 AI minutes/month', 'SAGE AI Tutor', 'Full color Smart Ink'], highlight: false },
+              { emoji: '🏆', plan: 'Valedictorian', price: 'KSh 1,199', period: '/semester', badge: '🔥 Best Value', perks: ['1,800 AI minutes/semester', 'SAGE AI Tutor', 'Everything included'], highlight: true },
             ].map((plan, i) => (
               <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}
                 className={`rounded-2xl p-6 border relative ${
@@ -275,15 +269,14 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── FAQ ─────────────────────────────────────────────────────────────── */}
       <section className="py-16 px-4 sm:px-6 bg-gray-50/50">
         <div className="max-w-3xl mx-auto">
           <h2 className="font-sora font-bold text-2xl sm:text-3xl text-navy text-center mb-10">Frequently asked questions</h2>
           <div className="space-y-4">
             {[
               { q: 'Can I pay using M-Pesa?', a: 'Yes — M-Pesa is the only payment method STUDIA supports right now. All plans are paid via M-Pesa STK push directly inside the app.' },
-              { q: 'Can I upgrade anytime?', a: 'Absolutely. You can upgrade from Explorer to Achiever, Excellence, or Valedictorian at any time from your dashboard.' },
-              { q: 'What happens after my three free lectures?', a: 'Your Explorer AI features are permanently locked. There is no reset. You\'ll need to upgrade to Achiever (KSh 49–79/lecture), Excellence (KSh 399/month), or Valedictorian (KSh 1,200/semester) to continue.' },
+              { q: 'Can I upgrade anytime?', a: 'Absolutely. You can buy a minutes pack or subscribe to Excellence or Valedictorian at any time from your dashboard.' },
+              { q: 'What happens after my three free lectures?', a: 'Your Explorer AI features are permanently locked. There is no reset. You\'ll need to buy an Achiever (KSh 45, 45 min) or Achiever+ (KSh 69, 90 min) minutes pack, or subscribe to Excellence (KSh 399/month, 600 min) or Valedictorian (KSh 1,199/semester, 1,800 min) to continue.' },
               { q: 'Does STUDIA work if my lecturer teaches in Kiswahili?', a: 'Yes. STUDIA transcribes Kiswahili, English, or naturally mixed lectures, and preserves the lecturer\'s original wording and technical terms rather than force-translating everything.' },
               { q: 'Can I study using my phone?', a: 'Yes — STUDIA is built mobile-first. Install it directly from Chrome on Android or Safari on iPhone as a home screen app. Everything works offline once downloaded to your Vault.' },
               { q: 'Do my lectures stay private?', a: 'Yes. Your recordings are encrypted and stored securely in your own account. Only you can access them — STUDIA staff cannot listen to or read your recordings.' },
@@ -298,14 +291,12 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── COMMUNITY ───────────────────────────────────────────────────────── */}
       <section className="py-12 px-4 sm:px-6 bg-white border-t border-gray-100">
         <div className="max-w-3xl mx-auto">
           <CommunityCard variant="light" />
         </div>
       </section>
 
-      {/* ── CTA ─────────────────────────────────────────────────────────────── */}
       <section className="py-20 sm:py-24 px-4 sm:px-6 bg-gradient-to-br from-indigo-premium to-purple-premium text-white">
         <div className="max-w-3xl mx-auto text-center">
           <h2 className="font-sora font-bold text-4xl sm:text-5xl mb-4 leading-tight">
