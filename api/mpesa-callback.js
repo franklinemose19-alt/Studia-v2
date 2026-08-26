@@ -8,12 +8,6 @@ async function supaFetch(path, options = {}) {
   })
 }
 
-// New plan naming for the minutes-based system. Achiever / Achiever+ are
-// one-time packs added to purchased_minutes_remaining. Excellence /
-// Valedictorian are subscriptions with a periodic minutes allowance.
-// Valedictorian's period length (semester ≈ 120 days) is my best estimate,
-// not a value I have full confidence matches whatever convention was used
-// before this batch — worth confirming against your actual renewal dates.
 function getPlanActivation(planId) {
   if (planId === 'achiever') return { type: 'minutes_pack', minutes: 45 }
   if (planId === 'achiever-plus') return { type: 'minutes_pack', minutes: 90 }
@@ -49,7 +43,7 @@ export default async function handler(req, res) {
 
     if (!payment) {
       console.error('mpesa-callback: no matching payment for', checkoutRequestId)
-      return res.status(200).json({ received: true }) // ack Safaricom either way — don't retry-storm us
+      return res.status(200).json({ received: true })
     }
 
     if (resultCode !== 0) {
@@ -82,9 +76,11 @@ export default async function handler(req, res) {
         const userData = await userRes.json()
         const currentMinutes = userData?.[0]?.purchased_minutes_remaining || 0
 
+        // FIXED: now also clears plan_locked. A minutes purchase should
+        // always unlock the account, regardless of prior free-trial state.
         await supaFetch(`users?auth_id=eq.${userId}`, {
           method: 'PATCH',
-          body: JSON.stringify({ purchased_minutes_remaining: currentMinutes + activation.minutes }),
+          body: JSON.stringify({ purchased_minutes_remaining: currentMinutes + activation.minutes, plan_locked: false }),
         })
 
         await supaFetch('notifications', {
@@ -99,6 +95,9 @@ export default async function handler(req, res) {
         const now = new Date()
         const periodEnd = new Date(now.getTime() + activation.periodDays * 24 * 60 * 60 * 1000)
 
+        // FIXED: plan_locked: false added here — this is the actual root
+        // cause of the SAGE-lockout bug. A subscription activating should
+        // always mean the account is unlocked, full stop.
         await supaFetch(`users?auth_id=eq.${userId}`, {
           method: 'PATCH',
           body: JSON.stringify({
@@ -108,6 +107,7 @@ export default async function handler(req, res) {
             lectures_used: 0,
             period_start: now.toISOString(),
             period_end: periodEnd.toISOString(),
+            plan_locked: false,
           }),
         })
 
@@ -124,8 +124,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ received: true })
   } catch (error) {
     console.error('mpesa-callback error:', error)
-    // Still ack with 200 — Safaricom retries on non-200, and a retry storm
-    // on top of a genuine server error would only make things worse.
     return res.status(200).json({ received: true, error: error.message })
   }
 }
