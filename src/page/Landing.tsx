@@ -87,8 +87,9 @@ export default function Landing() {
             STUDIA transforms your lectures into notes, summaries, questions and deep study material — while SAGE connects your recordings and notes with AI knowledge to help you understand what you were taught and discover what you're missing.
           </motion.p>
 
+          {/* Get Started row — Install now lives here, inline with the main CTAs */}
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
-            className="flex flex-col sm:flex-row gap-4 justify-center mb-6">
+            className="flex flex-col sm:flex-row flex-wrap gap-4 justify-center mb-8">
             <button
               onClick={() => navigate('/signup')}
               className="bg-indigo-premium text-white px-8 py-4 rounded-xl font-bold text-base hover:bg-purple-premium transition shadow-lg shadow-indigo-premium/25 flex items-center justify-center gap-2"
@@ -101,10 +102,6 @@ export default function Landing() {
             >
               ▶️ See How It Works
             </button>
-          </motion.div>
-
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.35 }}
-            className="flex justify-center mb-8">
             <InstallButton variant="hero" />
           </motion.div>
 
@@ -278,7 +275,7 @@ export default function Landing() {
               { q: 'Can I upgrade anytime?', a: 'Absolutely. You can buy a minutes pack or subscribe to Excellence or Valedictorian at any time from your dashboard.' },
               { q: 'What happens after my three free lectures?', a: 'Your Explorer AI features are permanently locked. There is no reset. You\'ll need to buy an Achiever (KSh 45, 45 min) or Achiever+ (KSh 69, 90 min) minutes pack, or subscribe to Excellence (KSh 399/month, 600 min) or Valedictorian (KSh 1,199/semester, 1,800 min) to continue.' },
               { q: 'Does STUDIA work if my lecturer teaches in Kiswahili?', a: 'Yes. STUDIA transcribes Kiswahili, English, or naturally mixed lectures, and preserves the lecturer\'s original wording and technical terms rather than force-translating everything.' },
-              { q: 'Can I study using my phone?', a: 'Yes — STUDIA is built mobile-first. Install it directly from Chrome on Android or Safari on iPhone as a home screen app. Everything works offline once downloaded to your Vault.' },
+              { q: 'Can I study using my phone?', a: 'Yes — STUDIA is built mobile-first. Install it directly from Chrome on Android as a home screen app. Everything works offline once downloaded to your Vault.' },
               { q: 'Do my lectures stay private?', a: 'Yes. Your recordings are encrypted and stored securely in your own account. Only you can access them — STUDIA staff cannot listen to or read your recordings.' },
             ].map((item, i) => (
               <motion.div key={i} initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }}
@@ -305,7 +302,7 @@ export default function Landing() {
           <p className="text-white/80 text-lg mb-8">
             3 free AI lectures. No card. No commitment.
           </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center mb-6">
+          <div className="flex flex-col sm:flex-row flex-wrap gap-4 justify-center">
             <button onClick={() => navigate('/signup')}
               className="bg-white text-indigo-premium px-8 py-4 rounded-xl font-bold hover:bg-gray-100 transition shadow-lg">
               🚀 Start Learning Free
@@ -314,8 +311,6 @@ export default function Landing() {
               className="border-2 border-white/40 text-white px-8 py-4 rounded-xl font-bold hover:bg-white/10 transition">
               Sign In
             </button>
-          </div>
-          <div className="flex justify-center">
             <InstallButton variant="hero" />
           </div>
         </div>
