@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   try {
-    const { adminUserId, action, enabled, provider, monthlyBudgetUsd, safetyThresholdPct } = req.body
+    const { adminUserId, action, enabled, monthlyBudgetUsd, safetyThresholdPct } = req.body
     if (!adminUserId) return res.status(401).json({ error: 'Unauthorized' })
 
     const adminCheck = await supaFetch(`users?auth_id=eq.${adminUserId}&is_admin=eq.true&select=auth_id`)
@@ -25,15 +25,15 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, maintenanceMode: !!enabled })
     }
 
+    // Azure removed — these two actions now always target OpenAI, the only
+    // provider STUDIA runs on. No provider param needed anymore.
     if (action === 'toggle_ai_provider') {
-      const key = provider === 'azure' ? 'ai_azure_enabled' : 'ai_openai_enabled'
-      await supaFetch(`system_settings?key=eq.${key}`, { method: 'PATCH', body: JSON.stringify({ value: enabled ? 'true' : 'false', updated_at: new Date().toISOString() }) })
+      await supaFetch(`system_settings?key=eq.ai_openai_enabled`, { method: 'PATCH', body: JSON.stringify({ value: enabled ? 'true' : 'false', updated_at: new Date().toISOString() }) })
       return res.status(200).json({ success: true })
     }
 
     if (action === 'update_ai_budget') {
-      if (!['openai', 'azure'].includes(provider)) return res.status(400).json({ error: 'Invalid provider' })
-      await supaFetch(`ai_provider_budgets?provider=eq.${provider}`, {
+      await supaFetch(`ai_provider_budgets?provider=eq.openai`, {
         method: 'PATCH',
         body: JSON.stringify({ monthly_budget_usd: monthlyBudgetUsd, safety_threshold_pct: safetyThresholdPct }),
       })
@@ -52,17 +52,16 @@ export default async function handler(req, res) {
     const realUsers = authUsers.filter(u => u.email !== 'franklinemose19@gmail.com')
     const totalRealUsers = realUsers.length
 
-    const [completedRes, allRes, recentRes, usersRes, tokenRes, settingsRes, aiSettingsRes, aiHealthRes, aiBudgetsRes, aiFailoversRes] = await Promise.all([
+    const [completedRes, allRes, recentRes, usersRes, tokenRes, settingsRes, aiSettingsRes, aiHealthRes, aiBudgetRes] = await Promise.all([
       supaFetch(`payments?status=eq.completed&select=amount,created_at`),
       supaFetch(`payments?select=amount,status`),
       supaFetch(`payments?select=transaction_id,phone_number,amount,plan_name,status,created_at&order=created_at.desc&limit=25`),
       supaFetch(`users?select=current_plan,is_admin`),
-      supaFetch(`token_usage?select=estimated_cost_usd,total_tokens,feature,provider,created_at`),
+      supaFetch(`token_usage?select=estimated_cost_usd,total_tokens,feature,created_at`),
       supaFetch(`system_settings?key=eq.maintenance_mode&select=value`),
-      supaFetch(`system_settings?key=in.(ai_openai_enabled,ai_azure_enabled)&select=key,value`),
-      supaFetch(`ai_provider_health?select=*`),
-      supaFetch(`ai_provider_budgets?select=*`),
-      supaFetch(`ai_failovers?select=*&order=created_at.desc&limit=10`),
+      supaFetch(`system_settings?key=eq.ai_openai_enabled&select=value`),
+      supaFetch(`ai_provider_health?provider=eq.openai&select=*`),
+      supaFetch(`ai_provider_budgets?provider=eq.openai&select=*`),
     ])
 
     const completed = await completedRes.json()
@@ -73,14 +72,13 @@ export default async function handler(req, res) {
     const settingsData = await settingsRes.json()
     const aiSettingsData = await aiSettingsRes.json()
     const aiHealthData = await aiHealthRes.json()
-    const aiBudgetsData = await aiBudgetsRes.json()
-    const aiFailoversData = await aiFailoversRes.json()
+    const aiBudgetData = await aiBudgetRes.json()
 
     const safeCompleted = Array.isArray(completed) ? completed : []
     const safeAll = Array.isArray(all) ? all : []
     const safeTokens = Array.isArray(tokenData) ? tokenData : []
 
-    const planCounts = { explorer: 0, achiever: 0, excellence: 0, valedictorian: 0 }
+    const planCounts = { explorer: 0, achiever: 0, 'achiever-plus': 0, excellence: 0, valedictorian: 0 }
     if (Array.isArray(users)) users.filter(u => !u.is_admin).forEach(u => { const p = u.current_plan || 'explorer'; if (p in planCounts) planCounts[p]++ })
 
     const totalCostUSD = safeTokens.reduce((s, t) => s + parseFloat(t.estimated_cost_usd || 0), 0)
@@ -95,45 +93,21 @@ export default async function handler(req, res) {
     const newThisWeek = realUsers.filter(u => u.created_at >= startOfWeek).length
     const newThisHour = realUsers.filter(u => u.created_at >= startOfHour).length
 
-    // AI Infrastructure
-    const aiEnabled = {}
-    ;(Array.isArray(aiSettingsData) ? aiSettingsData : []).forEach(r => { aiEnabled[r.key] = r.value === 'true' })
-    const aiHealthByProvider = {}
-    ;(Array.isArray(aiHealthData) ? aiHealthData : []).forEach(r => { aiHealthByProvider[r.provider] = r })
-    const aiBudgetByProvider = {}
-    ;(Array.isArray(aiBudgetsData) ? aiBudgetsData : []).forEach(r => { aiBudgetByProvider[r.provider] = r })
-    const monthSpendByProvider = { openai: 0, azure: 0 }
-    safeTokens.filter(t => t.created_at >= startOfMonth).forEach(t => {
-      const p = t.provider || 'openai'
-      monthSpendByProvider[p] = (monthSpendByProvider[p] || 0) + parseFloat(t.estimated_cost_usd || 0)
-    })
-
-    const azureConfigured = !!(process.env.AZURE_OPENAI_ENDPOINT && process.env.AZURE_OPENAI_API_KEY && process.env.AZURE_OPENAI_DEPLOYMENT_CHAT)
+    const openaiSpendThisMonth = safeTokens.filter(t => t.created_at >= startOfMonth).reduce((s, t) => s + parseFloat(t.estimated_cost_usd || 0), 0)
+    const aiHealth = Array.isArray(aiHealthData) ? aiHealthData[0] : null
+    const aiBudget = Array.isArray(aiBudgetData) ? aiBudgetData[0] : null
 
     const aiInfrastructure = {
-      providers: {
-        openai: {
-          enabled: aiEnabled.ai_openai_enabled !== false,
-          configured: !!process.env.OPENAI_API_KEY,
-          status: aiHealthByProvider.openai?.status || 'healthy',
-          consecutiveFailures: aiHealthByProvider.openai?.consecutive_failures || 0,
-          avgLatencyMs: aiHealthByProvider.openai?.avg_latency_ms || 0,
-          monthlyBudgetUsd: aiBudgetByProvider.openai?.monthly_budget_usd || 0,
-          safetyThresholdPct: aiBudgetByProvider.openai?.safety_threshold_pct || 90,
-          monthSpendUsd: parseFloat((monthSpendByProvider.openai || 0).toFixed(4)),
-        },
-        azure: {
-          enabled: aiEnabled.ai_azure_enabled === true,
-          configured: azureConfigured,
-          status: aiHealthByProvider.azure?.status || 'unavailable',
-          consecutiveFailures: aiHealthByProvider.azure?.consecutive_failures || 0,
-          avgLatencyMs: aiHealthByProvider.azure?.avg_latency_ms || 0,
-          monthlyBudgetUsd: aiBudgetByProvider.azure?.monthly_budget_usd || 0,
-          safetyThresholdPct: aiBudgetByProvider.azure?.safety_threshold_pct || 90,
-          monthSpendUsd: parseFloat((monthSpendByProvider.azure || 0).toFixed(4)),
-        },
+      openai: {
+        enabled: Array.isArray(aiSettingsData) && aiSettingsData[0] ? aiSettingsData[0].value !== 'false' : true,
+        configured: !!process.env.OPENAI_API_KEY,
+        status: aiHealth?.status || 'healthy',
+        consecutiveFailures: aiHealth?.consecutive_failures || 0,
+        avgLatencyMs: aiHealth?.avg_latency_ms || 0,
+        monthlyBudgetUsd: aiBudget?.monthly_budget_usd || 0,
+        safetyThresholdPct: aiBudget?.safety_threshold_pct || 90,
+        monthSpendUsd: parseFloat(openaiSpendThisMonth.toFixed(4)),
       },
-      recentFailovers: Array.isArray(aiFailoversData) ? aiFailoversData : [],
     }
 
     return res.status(200).json({
