@@ -87,7 +87,6 @@ export default function Landing() {
             STUDIA transforms your lectures into notes, summaries, questions and deep study material — while SAGE connects your recordings and notes with AI knowledge to help you understand what you were taught and discover what you're missing.
           </motion.p>
 
-          {/* Get Started row — Install now lives here, inline with the main CTAs */}
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
             className="flex flex-col sm:flex-row flex-wrap gap-4 justify-center mb-8">
             <button
