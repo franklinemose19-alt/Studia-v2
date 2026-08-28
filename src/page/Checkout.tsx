@@ -106,7 +106,7 @@ export default function Checkout() {
     <div className="min-h-screen bg-gradient-to-br from-white via-surface-light to-white">
       <nav className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <button onClick={() => navigate('/pricing')} className="flex items-center gap-2 text-navy hover:text-indigo-premium transition text-sm font-medium">
+          <button onClick={() => navigate('/pricing', { replace: true })} className="flex items-center gap-2 text-navy hover:text-indigo-premium transition text-sm font-medium">
             <ArrowLeft size={18} /> Back to Pricing
           </button>
           <span className="font-sora font-bold text-lg text-navy">Checkout</span>
