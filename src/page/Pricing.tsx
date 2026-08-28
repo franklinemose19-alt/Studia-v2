@@ -48,7 +48,7 @@ export default function Pricing() {
     <div className="min-h-screen bg-gradient-to-br from-white via-surface-light to-white">
       <nav className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <button onClick={() => navigate(-1)} className="text-navy hover:text-indigo-premium transition text-sm font-medium">← Back</button>
+          <button onClick={() => navigate('/dashboard', { replace: true })} className="text-navy hover:text-indigo-premium transition text-sm font-medium">← Back</button>
           <span className="font-sora font-bold text-lg text-navy">Pricing</span>
           <div className="w-16" />
         </div>
@@ -63,7 +63,11 @@ export default function Pricing() {
         <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-5">
           {PLANS.map((plan, i) => (
             <motion.div key={plan.id} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}
-              className={`rounded-2xl p-6 border relative flex flex-col ${plan.highlight ? 'bg-gradient-to-br from-warning/15 to-red-500/5 border-warning/40 shadow-xl lg:scale-105' : 'bg-white border-gray-200 hover:shadow-md transition'}`}>
+              className={`rounded-2xl p-6 border relative flex flex-col ${
+                plan.highlight
+                  ? 'bg-gradient-to-br from-warning/15 to-red-500/5 border-warning/40 shadow-xl lg:scale-105'
+                  : 'bg-white border-gray-200 hover:shadow-md transition'
+              }`}>
               {plan.badge && (
                 <span className={`absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full text-xs font-bold text-white whitespace-nowrap ${plan.highlight ? 'bg-warning' : 'bg-light-blue'}`}>{plan.badge}</span>
               )}
