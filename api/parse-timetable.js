@@ -1,7 +1,24 @@
 import pdfParse from 'pdf-parse'
 import { checkRateLimit } from './_utils/rateLimiter.js'
 import { chatCompletion } from './_utils/aiGateway.js'
-import { getVerifiedUserId } from './_utils/verifyUser.js'
+
+const SUPABASE_URL = process.env.SUPABASE_URL
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+async function getVerifiedUserId(req) {
+  const authHeader = req.headers.authorization || req.headers.Authorization
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null
+  const token = authHeader.slice(7).trim()
+  if (!token) return null
+  try {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_SERVICE_KEY },
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data?.id || null
+  } catch { return null }
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
