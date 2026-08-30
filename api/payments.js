@@ -1,44 +1,57 @@
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
+async function getVerifiedUserId(req) {
+  const authHeader = req.headers.authorization || req.headers.Authorization
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null
+  const token = authHeader.slice(7).trim()
+  if (!token) return null
+  try {
+    const res = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: { Authorization: `Bearer ${token}`, apikey: supabaseServiceKey },
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data?.id || null
+  } catch { return null }
+}
+
 export default async function handler(req, res) {
   if (req.method === 'GET') {
-    const { transactionId, userId } = req.query
+    const { transactionId, userId: queryUserId } = req.query
 
     if (transactionId) {
+      // Now requires proof the caller owns this transaction before
+      // handing back a phone number and amount.
+      const authId = await getVerifiedUserId(req)
+      if (!authId) return res.status(401).json({ error: 'Please sign in again.' })
       try {
         const response = await fetch(
           `${supabaseUrl}/rest/v1/payments?transaction_id=eq.${transactionId}`,
-          {
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${supabaseServiceKey}`,
-              apikey: supabaseServiceKey,
-            },
-          }
+          { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${supabaseServiceKey}`, apikey: supabaseServiceKey } }
         )
         const payments = await response.json()
-        if (!payments || payments.length === 0) {
-          return res.status(404).json({ error: 'Payment not found' })
-        }
-        return res.status(200).json(payments[0])
+        const payment = payments?.[0]
+        if (!payment) return res.status(404).json({ error: 'Payment not found' })
+        if (payment.created_by !== authId) return res.status(403).json({ error: 'Forbidden' })
+        return res.status(200).json(payment)
       } catch (err) {
         console.error('Get Payment Error:', err)
         return res.status(500).json({ error: 'Failed to retrieve payment' })
       }
     }
 
-    if (userId) {
+    if (queryUserId) {
+      // FIXED: previously trusted whatever userId was in the query string,
+      // with zero verification — the actual security hole. The verified
+      // caller's own identity is now the only thing ever used, regardless
+      // of what the query string says.
+      const authId = await getVerifiedUserId(req)
+      if (!authId) return res.status(401).json({ error: 'Please sign in again.' })
       try {
         const response = await fetch(
-          `${supabaseUrl}/rest/v1/payments?created_by=eq.${userId}&order=created_at.desc&limit=100`,
-          {
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${supabaseServiceKey}`,
-              apikey: supabaseServiceKey,
-            },
-          }
+          `${supabaseUrl}/rest/v1/payments?created_by=eq.${authId}&order=created_at.desc&limit=100`,
+          { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${supabaseServiceKey}`, apikey: supabaseServiceKey } }
         )
         const payments = await response.json()
         return res.status(200).json(payments)
