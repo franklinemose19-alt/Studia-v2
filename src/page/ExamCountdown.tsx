@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, Trash2, Plus, Calendar, Upload, Loader, CheckCircle2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
+import { authFetch } from '../lib/authFetch'
 import { toast } from '../lib/toast'
 
 interface Exam {
@@ -68,9 +69,6 @@ export default function ExamCountdown() {
 
   // ── PDF upload + auto-match ──────────────────────────────────────────
 
-  // Reads the actual shape UnitManagement.tsx saves: Course[] with nested
-  // units[].name — not a flat {course, unitName} list. The old key/shape
-  // here never matched, so course-matching silently never worked.
   const getSavedCourses = (): SavedCourse[] => {
     try {
       const courses = JSON.parse(localStorage.getItem('studia_courses') || '[]')
@@ -116,11 +114,25 @@ export default function ExamCountdown() {
 
         setParseStatus('🤖 AI is finding your exams...')
 
-        const response = await fetch('/api/parse-timetable', {
+        // FIXED: was a plain fetch sending userId in the body — that
+        // endpoint now requires a verified session token instead, same
+        // as every other AI-calling endpoint.
+        const response = await authFetch('/api/parse-timetable', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pdfBase64: base64, courses, userId }),
+          body: JSON.stringify({ pdfBase64: base64, courses }),
         })
+
+        if (response.status === 401) {
+          setParseStatus('⚠️ Session expired — please sign in again.')
+          setIsParsing(false)
+          return
+        }
+        if (response.status === 429) {
+          const err = await response.json().catch(() => ({}))
+          setParseStatus(`⚠️ ${err.error || 'Too many requests — please wait a moment.'}`)
+          setIsParsing(false)
+          return
+        }
 
         const data = await response.json()
 
@@ -208,7 +220,6 @@ export default function ExamCountdown() {
             <p className="text-[#8B97B5]">Upload your timetable — STUDIA finds your exams automatically.</p>
           </div>
 
-          {/* PDF Upload */}
           <div className="bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-500/20 rounded-2xl p-6 space-y-4">
             <h2 className="font-sora font-bold text-xl text-white flex items-center gap-2">
               <Upload size={20} className="text-brand-blue" /> Upload Exam Timetable
@@ -232,7 +243,6 @@ export default function ExamCountdown() {
             )}
           </div>
 
-          {/* Unmatched exams fallback */}
           <AnimatePresence>
             {unmatchedExams.length > 0 && (
               <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
@@ -253,7 +263,6 @@ export default function ExamCountdown() {
             )}
           </AnimatePresence>
 
-          {/* Manual add fallback */}
           <div className="bg-surface-elevated border border-white/5 rounded-2xl p-6 space-y-4">
             <h2 className="font-sora font-bold text-xl text-white">Or Add Manually</h2>
             <div className="space-y-3">
