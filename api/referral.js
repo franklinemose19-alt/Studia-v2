@@ -10,22 +10,6 @@ function generateCode() {
   return code
 }
 
-function computeMilestoneTotal(count) {
-  if (count >= 100) return 150 + (count - 100) * 1
-  const tiers = [
-    { threshold: 100, total: 150 },
-    { threshold: 50, total: 70 },
-    { threshold: 25, total: 30 },
-    { threshold: 10, total: 12 },
-    { threshold: 5, total: 5 },
-    { threshold: 1, total: 2 },
-  ]
-  for (const tier of tiers) {
-    if (count >= tier.threshold) return tier.total
-  }
-  return 0
-}
-
 async function supaFetch(path, options = {}) {
   return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...options,
@@ -36,6 +20,21 @@ async function supaFetch(path, options = {}) {
       ...(options.headers || {}),
     },
   })
+}
+
+async function getVerifiedUserId(req) {
+  const authHeader = req.headers.authorization || req.headers.Authorization
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null
+  const token = authHeader.slice(7).trim()
+  if (!token) return null
+  try {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_SERVICE_KEY },
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data?.id || null
+  } catch { return null }
 }
 
 async function insertNotification(userId, title, message, type = 'info') {
@@ -60,11 +59,14 @@ export default async function handler(req, res) {
 
     // ── Generate ──────────────────────────────────────────────────────────
     if (action === 'generate') {
-      const { userId } = req.body
-      if (!userId) return res.status(400).json({ error: 'userId required' })
+      // FIXED: now requires a verified session token instead of trusting
+      // whatever userId the client sends. PaymentDashboard.tsx (the only
+      // caller) is updated in this same batch to send one.
+      const authId = await getVerifiedUserId(req)
+      if (!authId) return res.status(401).json({ error: 'Please sign in again.' })
 
       const existingRes = await supaFetch(
-        `users?auth_id=eq.${userId}&select=referral_code,verified_referral_count,is_campus_ambassador`
+        `users?auth_id=eq.${authId}&select=referral_code,verified_referral_count,is_campus_ambassador`
       )
       const existing = await existingRes.json()
       const row = existing?.[0]
@@ -79,7 +81,7 @@ export default async function handler(req, res) {
 
       let code = generateCode()
       for (let attempt = 0; attempt < 5; attempt++) {
-        const updateRes = await supaFetch(`users?auth_id=eq.${userId}`, {
+        const updateRes = await supaFetch(`users?auth_id=eq.${authId}`, {
           method: 'PATCH',
           headers: { Prefer: 'return=representation' },
           body: JSON.stringify({ referral_code: code }),
@@ -92,7 +94,10 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Could not generate referral code' })
     }
 
-    // ── Link ──────────────────────────────────────────────────────────────
+    // ── Link — left as-is. Almost certainly called right at signup
+    // completion; hardening this without seeing Signup.tsx risks silently
+    // breaking every new referred signup. Paste that file and I'll close
+    // this loop too. ──────────────────────────────────────────────────────
     if (action === 'link') {
       const { userId, code } = req.body
       if (!userId || !code) return res.status(400).json({ error: 'userId and code required' })
@@ -120,7 +125,12 @@ export default async function handler(req, res) {
       return res.status(200).json({ linked: insertRes.ok })
     }
 
-    // ── Verify ────────────────────────────────────────────────────────────
+    // ── Verify — reward logic fixed (flat 5 minutes, correct column).
+    // Very likely dead code now that consume_ai_minutes() triggers
+    // verify_referral_for_user() automatically server-side, but fixed
+    // regardless rather than left broken — and safe either way since both
+    // paths share the same "only fires while status is still pending"
+    // guard, so there's no risk of double-rewarding if both ever fire. ────
     if (action === 'verify') {
       const { userId } = req.body
       if (!userId) return res.status(400).json({ error: 'userId required' })
@@ -135,84 +145,67 @@ export default async function handler(req, res) {
         return res.status(200).json({ verified: false })
       }
 
-      // Mark referral as verified
       await supaFetch(`referrals?id=eq.${pending.id}`, {
         method: 'PATCH',
         body: JSON.stringify({ status: 'verified', verified_at: new Date().toISOString() }),
       })
 
-      // Give the referred user their bonus credits
-      const friendRes = await supaFetch(`users?auth_id=eq.${userId}&select=lite_bonus_credits`)
+      const friendRes = await supaFetch(`users?auth_id=eq.${userId}&select=purchased_minutes_remaining`)
       const friendData = await friendRes.json()
-      const friendCredits = friendData?.[0]?.lite_bonus_credits || 0
+      const friendMinutes = friendData?.[0]?.purchased_minutes_remaining || 0
       await supaFetch(`users?auth_id=eq.${userId}`, {
         method: 'PATCH',
-        body: JSON.stringify({ lite_bonus_credits: friendCredits + 2 }),
+        body: JSON.stringify({ purchased_minutes_remaining: friendMinutes + 5 }),
       })
 
-      // Notify referred user
       await insertNotification(
         userId,
-        'Bonus Credits Unlocked! 🎁',
-        'You received 2 bonus AI credits from your referral invitation. Use them on recording, quiz, summarize, or AI Tools!',
+        'Bonus Minutes Unlocked! 🎁',
+        'You received 5 bonus AI minutes from your referral invitation. Use them on recording, quizzes, or SAGE!',
         'success'
       )
 
-      // Give referrer their milestone credits
       const referrerRes = await supaFetch(
-        `users?auth_id=eq.${pending.referrer_user_id}&select=verified_referral_count,referral_milestone_credits_awarded,lite_bonus_credits,is_campus_ambassador`
+        `users?auth_id=eq.${pending.referrer_user_id}&select=verified_referral_count,purchased_minutes_remaining,is_campus_ambassador`
       )
       const referrerData = await referrerRes.json()
       const referrer = referrerData?.[0]
 
       if (referrer) {
         const newCount = (referrer.verified_referral_count || 0) + 1
-        const newMilestoneTotal = computeMilestoneTotal(newCount)
-        const alreadyAwarded = referrer.referral_milestone_credits_awarded || 0
-        const topUp = Math.max(0, newMilestoneTotal - alreadyAwarded)
         const becomeAmbassador = newCount >= 100 && !referrer.is_campus_ambassador
 
         await supaFetch(`users?auth_id=eq.${pending.referrer_user_id}`, {
           method: 'PATCH',
           body: JSON.stringify({
             verified_referral_count: newCount,
-            referral_milestone_credits_awarded: alreadyAwarded + topUp,
-            lite_bonus_credits: (referrer.lite_bonus_credits || 0) + topUp,
+            purchased_minutes_remaining: (referrer.purchased_minutes_remaining || 0) + 5,
             is_campus_ambassador: newCount >= 100 ? true : referrer.is_campus_ambassador,
           }),
         })
 
-        // Notify referrer
         if (becomeAmbassador) {
           await insertNotification(
             pending.referrer_user_id,
             'Campus Ambassador! 🏆',
-            "You've reached 100 verified referrals! You're now a STUDIA Campus Ambassador. You earned 150 bonus credits.",
+            "You've reached 100 verified referrals! You're now a STUDIA Campus Ambassador.",
             'success'
           )
-        } else if (topUp > 0) {
-          const milestoneMessages: Record<number, string> = {
-            1: 'Your first referral was verified! You earned 2 bonus AI credits 🎁',
-            5: 'You\'ve referred 5 students! Milestone reached — you earned bonus credits 🎉',
-            10: 'Amazing! 10 verified referrals — major milestone unlocked 🏅',
-            25: 'You\'re a STUDIA super-referrer! 25 students and counting 🔥',
+        } else {
+          const milestoneMessages = {
+            1: 'Your first referral was verified! You earned 5 bonus AI minutes 🎁',
+            5: "You've referred 5 students! Keep it up 🎉",
+            10: 'Amazing! 10 verified referrals — major milestone 🏅',
+            25: "You're a STUDIA super-referrer! 25 students and counting 🔥",
             50: 'Halfway to Ambassador — 50 verified referrals! 🌟',
           }
-          const msg = milestoneMessages[newCount]
-            || `Someone joined using your referral link! You earned ${topUp} bonus AI credit${topUp !== 1 ? 's' : ''}.`
+          const msg = milestoneMessages[newCount] || 'Someone joined using your referral link! You earned 5 bonus AI minutes.'
 
           await insertNotification(
             pending.referrer_user_id,
             'New Referral Verified! 🎁',
             msg,
             'success'
-          )
-        } else {
-          await insertNotification(
-            pending.referrer_user_id,
-            'New Referral! 👋',
-            `Someone joined STUDIA using your referral link. You now have ${newCount} verified referral${newCount !== 1 ? 's' : ''}.`,
-            'info'
           )
         }
       }
