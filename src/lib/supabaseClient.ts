@@ -1,11 +1,8 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
-// Primary: read from Vite env vars (set in Vercel dashboard)
-// Fallback: hardcoded values
 const SUPABASE_URL =
   import.meta.env.VITE_SUPABASE_URL ||
   'https://dmqjhhbjhzzyinxnblge.supabase.co'
-
 const SUPABASE_ANON_KEY =
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRtcWpoaGJqaHp6eWlueG5ibGdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyNDkwNzMsImV4cCI6MjA5NjgyNTA3M30.SEGicDknNe-iNewG7FHbO5nWKoJj0im6kBWTtR9_4uc'
@@ -37,15 +34,12 @@ export const supabase = {
     const client = getClient()
     console.log('Starting signin for:', email)
     console.log('Supabase client initialized')
-
     const { data, error } = await client.auth.signInWithPassword({ email, password })
     if (error) {
       console.error('Sign in error:', error.message)
       throw error
     }
-
     console.log('Signin successful, user ID:', data.user?.id)
-
     if (data.user) {
       await ensureUserRow(
         data.user.id,
@@ -53,27 +47,21 @@ export const supabase = {
         data.user.user_metadata?.full_name || ''
       )
     }
-
     return { user: data.user, session: data.session }
   },
-
   signUp: async (email: string, password: string, name: string, phone?: string) => {
     const client = getClient()
-
     const { data, error } = await client.auth.signUp({
       email,
       password,
       options: { data: { full_name: name } },
     })
     if (error) throw error
-
     if (data.user?.id) {
       await createUserRow(data.user.id, email, name, phone)
     }
-
     return { user: data.user, session: data.session }
   },
-
   signInWithGoogle: async () => {
     const client = getClient()
     const { error } = await client.auth.signInWithOAuth({
@@ -128,14 +116,15 @@ async function createUserRow(
   }
 }
 
-async function ensureUserRow(userId: string, email: string, name: string) {
+// Exported — AuthContext.tsx now calls this directly on every sign-in
+// event, covering Google OAuth as well as email/password.
+export async function ensureUserRow(userId: string, email: string, name: string) {
   const client = getClient()
   const { data } = await client
     .from('users')
     .select('auth_id')
     .eq('auth_id', userId)
     .maybeSingle()
-
   if (!data) {
     await createUserRow(userId, email, name)
   }
