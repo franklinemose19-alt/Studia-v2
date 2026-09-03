@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from '../lib/toast'
+import { authFetch } from '../lib/authFetch'
 
 interface StudySession {
   id: string
@@ -78,16 +79,13 @@ export default function StudyPlanner() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const alarmRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Load sessions
   useEffect(() => {
     try { setSessions(JSON.parse(localStorage.getItem('studySessions') || '[]')) } catch {}
 
-    // Request notifications
     if ('Notification' in window) {
       setNotifPermission(Notification.permission)
     }
 
-    // Start alarm checker
     alarmRef.current = setInterval(checkAlarms, 30000)
     return () => {
       if (alarmRef.current) clearInterval(alarmRef.current)
@@ -104,7 +102,6 @@ export default function StudyPlanner() {
     const completed = sessions.filter(s => s.completed)
     const totalHours = completed.reduce((sum, s) => sum + (s.totalMinutes || s.duration) / 60, 0)
 
-    // Streak calculation
     const studyDates = new Set(completed.map(s => s.date))
     let streak = 0
     const cursor = new Date()
@@ -150,7 +147,7 @@ export default function StudyPlanner() {
         if (s.snoozedUntil && Date.now() < s.snoozedUntil) return
         const sessionTime = new Date(`${s.date}T${s.time}`)
         const diff = sessionTime.getTime() - now.getTime()
-        if (diff <= 0 && diff > -120000) { // within 2 minutes of start
+        if (diff <= 0 && diff > -120000) {
           fireNotification(s)
           updated[i] = { ...s, notified: true }
           changed = true
@@ -198,12 +195,13 @@ export default function StudyPlanner() {
     setTimerRunning(true)
     timerRef.current = setInterval(() => setTimerSeconds(prev => prev + 1), 1000)
 
-    // Get SAGE recommendation
+    // FIXED: was a plain fetch with no Authorization header — api/ai-tools.js
+    // now requires a verified session token for every mode including
+    // 'chat', so this was silently 401ing every time.
     setSageRec('')
     setSageLoading(true)
-    fetch('/api/ai-tools', {
+    authFetch('/api/ai-tools', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         mode: 'chat',
         chatMessages: [{
@@ -281,7 +279,6 @@ export default function StudyPlanner() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8">
 
-        {/* Active study timer */}
         <AnimatePresence>
           {activeSession && (
             <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
@@ -335,7 +332,6 @@ export default function StudyPlanner() {
           )}
         </AnimatePresence>
 
-        {/* Notifications banner */}
         {notifPermission !== 'granted' && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-4 flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-3">
@@ -352,7 +348,6 @@ export default function StudyPlanner() {
           </div>
         )}
 
-        {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
           {[
             { icon: CheckCircle, label: 'Sessions Done', value: stats.completedSessions, color: 'text-mint' },
@@ -368,7 +363,6 @@ export default function StudyPlanner() {
           ))}
         </div>
 
-        {/* Add session form */}
         <AnimatePresence>
           {showForm && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}
@@ -437,7 +431,6 @@ export default function StudyPlanner() {
           )}
         </AnimatePresence>
 
-        {/* Upcoming sessions */}
         <div>
           <h2 className="font-sora font-bold text-xl text-navy mb-4">📅 Upcoming Sessions</h2>
           {upcoming.length === 0 ? (
@@ -505,7 +498,6 @@ export default function StudyPlanner() {
           )}
         </div>
 
-        {/* Completed sessions */}
         {completed.length > 0 && (
           <div>
             <h2 className="font-sora font-bold text-xl text-navy mb-4">✅ Completed Sessions</h2>
