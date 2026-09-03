@@ -4,6 +4,7 @@ import { ArrowLeft, Loader, Eye, EyeOff, Check, RefreshCw } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../lib/AuthContext'
+import { authFetch } from '../lib/authFetch'
 
 const MAX_RETRIES = 5
 const RETRY_DELAYS = [4000, 8000, 16000, 32000, 64000]
@@ -87,13 +88,16 @@ export default function Signup() {
     setRetryCountdown(0)
 
     try {
-      const result = await attemptSignup(0)
-      const newUserId = result?.user?.id
-      if (newUserId && refCode) {
-        fetch('/api/referral', {
+      await attemptSignup(0)
+      // FIXED: now uses authFetch — a real session exists at this point
+      // (signUp establishes one immediately since email confirmation is
+      // off) — so the server derives identity from the verified token
+      // instead of trusting a userId in the body, matching every other
+      // hardened endpoint.
+      if (refCode) {
+        authFetch('/api/referral', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'link', userId: newUserId, code: refCode }),
+          body: JSON.stringify({ action: 'link', code: refCode }),
         }).catch(() => {})
       }
       setSuccess(true)
@@ -163,12 +167,11 @@ export default function Signup() {
             {step === 1 ? 'Start with your basic info' : step === 2 ? 'Set a secure password' : 'Almost done!'}
           </p>
 
-          {/* Google Sign Up — only show on step 1 */}
           {step === 1 && (
             <>
               {refCode && (
                 <div className="bg-mint/10 border border-mint/20 rounded-xl p-3 mb-5">
-                  <p className="text-xs text-mint font-semibold">🎁 You'll get 2 bonus AI credits after your first action — invited via referral!</p>
+                  <p className="text-xs text-mint font-semibold">🎁 You'll get 5 bonus AI minutes after your first action — invited via referral!</p>
                 </div>
               )}
 
@@ -198,7 +201,6 @@ export default function Signup() {
             </>
           )}
 
-          {/* Progress dots */}
           <div className="flex items-center gap-2 mb-6">
             {[1, 2, 3].map((s) => (
               <div key={s} className={`h-1.5 rounded-full transition-all ${
@@ -207,7 +209,6 @@ export default function Signup() {
             ))}
           </div>
 
-          {/* Retry state */}
           {isRetrying && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
               className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-5 flex items-start gap-3">
