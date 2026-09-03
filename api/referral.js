@@ -57,11 +57,7 @@ export default async function handler(req, res) {
   try {
     const { action } = req.body
 
-    // ── Generate ──────────────────────────────────────────────────────────
     if (action === 'generate') {
-      // FIXED: now requires a verified session token instead of trusting
-      // whatever userId the client sends. PaymentDashboard.tsx (the only
-      // caller) is updated in this same batch to send one.
       const authId = await getVerifiedUserId(req)
       if (!authId) return res.status(401).json({ error: 'Please sign in again.' })
 
@@ -94,19 +90,20 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Could not generate referral code' })
     }
 
-    // ── Link — left as-is. Almost certainly called right at signup
-    // completion; hardening this without seeing Signup.tsx risks silently
-    // breaking every new referred signup. Paste that file and I'll close
-    // this loop too. ──────────────────────────────────────────────────────
+    // FIXED: now requires a verified session token, matching Signup.tsx's
+    // switch to authFetch. userId no longer comes from the body at all.
     if (action === 'link') {
-      const { userId, code } = req.body
-      if (!userId || !code) return res.status(400).json({ error: 'userId and code required' })
+      const authId = await getVerifiedUserId(req)
+      if (!authId) return res.status(401).json({ error: 'Please sign in again.' })
+
+      const { code } = req.body
+      if (!code) return res.status(400).json({ error: 'code required' })
 
       const referrerRes = await supaFetch(`users?referral_code=eq.${code}&select=auth_id`)
       const referrerData = await referrerRes.json()
       const referrer = referrerData?.[0]
 
-      if (!referrer || referrer.auth_id === userId) {
+      if (!referrer || referrer.auth_id === authId) {
         return res.status(200).json({ linked: false })
       }
 
@@ -115,7 +112,7 @@ export default async function handler(req, res) {
         headers: { Prefer: 'return=minimal' },
         body: JSON.stringify({
           referrer_user_id: referrer.auth_id,
-          referred_user_id: userId,
+          referred_user_id: authId,
           referral_code_used: code,
           status: 'pending',
           created_at: new Date().toISOString(),
@@ -125,12 +122,6 @@ export default async function handler(req, res) {
       return res.status(200).json({ linked: insertRes.ok })
     }
 
-    // ── Verify — reward logic fixed (flat 5 minutes, correct column).
-    // Very likely dead code now that consume_ai_minutes() triggers
-    // verify_referral_for_user() automatically server-side, but fixed
-    // regardless rather than left broken — and safe either way since both
-    // paths share the same "only fires while status is still pending"
-    // guard, so there's no risk of double-rewarding if both ever fire. ────
     if (action === 'verify') {
       const { userId } = req.body
       if (!userId) return res.status(400).json({ error: 'userId required' })
@@ -200,13 +191,7 @@ export default async function handler(req, res) {
             50: 'Halfway to Ambassador — 50 verified referrals! 🌟',
           }
           const msg = milestoneMessages[newCount] || 'Someone joined using your referral link! You earned 5 bonus AI minutes.'
-
-          await insertNotification(
-            pending.referrer_user_id,
-            'New Referral Verified! 🎁',
-            msg,
-            'success'
-          )
+          await insertNotification(pending.referrer_user_id, 'New Referral Verified! 🎁', msg, 'success')
         }
       }
 
